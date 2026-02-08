@@ -1,0 +1,421 @@
+version: "2"
+
+run:
+  timeout: 5m
+  build-tags:
+  - test
+  modules-download-mode: readonly
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-issued-lines: true
+      print-linter-name: true
+  sort-results: true
+
+linters:
+  default: none
+  enable:
+  - asasalint
+  - asciicheck
+  - bidichk
+  - containedctx
+  - contextcheck
+  - decorder
+  - depguard
+  - dogsled
+  - dupword
+  - durationcheck
+  - err113
+  - errcheck
+  - errchkjson
+  - errname
+  - errorlint
+  - exhaustive
+  - forbidigo
+  - forcetypeassert
+  - ginkgolinter
+  - gocheckcompilerdirectives
+  - gochecknoinits
+  - gocritic
+  - gocyclo
+  - godot
+  - goheader
+  - gomoddirectives
+  - goprintffuncname
+  - gosec
+  - govet
+  - grouper
+  - ineffassign
+  - loggercheck
+  - misspell
+  - nakedret
+  - nilerr
+  - nilnil
+  - noctx
+  - nolintlint
+  - nonamedreturns
+  - nosprintfhostport
+  - paralleltest
+  - prealloc
+  - predeclared
+  - reassign
+  - revive
+  - staticcheck
+  - testableexamples
+  - testpackage
+  - thelper
+  - tparallel
+  - unconvert
+  - unparam
+  - unused
+  - usestdlibvars
+  - wastedassign
+  disable:
+  - dupl
+  - musttag
+  settings:
+    asasalint:
+      exclude:
+      - ^(fmt|log|logger|t|)\.(Print|Fprint|Sprint|Fatal|Panic|Error|Warn|Warning|Info|Debug|Log)(|f|ln)$
+      use-builtin-exclusions: true
+      ignore-test: false
+    bidichk:
+      left-to-right-embedding: true
+      right-to-left-embedding: true
+      pop-directional-formatting: true
+      left-to-right-override: true
+      right-to-left-override: true
+      left-to-right-isolate: true
+      right-to-left-isolate: true
+      first-strong-isolate: true
+      pop-directional-isolate: true
+    decorder:
+      dec-order:
+      - type
+      - const
+      - var
+      - func
+      disable-dec-order-check: true
+      disable-init-func-first-check: true
+      disable-dec-num-check: true
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          deny:
+          - pkg: github.com/pkg/errors
+            desc: Should be replaced by standard lib errors package
+    dogsled:
+      max-blank-identifiers: 2
+    dupword:
+      keywords: []
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+      disable-default-exclusions: false
+      exclude-functions: []
+    errchkjson:
+      check-error-free-encoding: false
+      report-no-exported: true
+    errorlint:
+      errorf: true
+      errorf-multi: true
+      asserts: true
+      comparison: true
+    exhaustive:
+      check:
+      - switch
+      check-generated: true
+      default-signifies-exhaustive: true
+      ignore-enum-members: ""
+      ignore-enum-types: ""
+      package-scope-only: false
+      explicit-exhaustive-switch: true
+      explicit-exhaustive-map: true
+    forbidigo:
+      forbid:
+      - pattern: ^(fmt\.Print(|f|ln)|print|println)$
+      analyze-types: true
+    ginkgolinter:
+      suppress-len-assertion: false
+      suppress-nil-assertion: false
+      suppress-err-assertion: false
+      suppress-compare-assertion: false
+      allow-havelen-zero: false
+    gocritic:
+      enabled-checks:
+      - nestingReduce
+      - rangeExprCopy
+      - rangeValCopy
+      - tooManyResultsChecker
+      - truncateCmp
+      enabled-tags: []
+      disabled-tags: []
+      settings:
+        captLocal:
+          paramsOnly: true
+        elseif:
+          skipBalanced: true
+        nestingReduce:
+          bodyWidth: 5
+        rangeExprCopy:
+          sizeThreshold: 512
+          skipTestFuncs: true
+        rangeValCopy:
+          sizeThreshold: 128
+          skipTestFuncs: true
+        tooManyResultsChecker:
+          maxResults: 5
+        truncateCmp:
+          skipArchDependent: true
+        underef:
+          skipRecvDeref: true
+    gocyclo:
+      min-complexity: 30
+    godot:
+      scope: declarations
+      exclude: []
+      period: false
+      capital: false
+    gomoddirectives:
+      replace-local: false
+      replace-allow-list: []
+      retract-allow-no-explanation: false
+      exclude-forbidden: false
+    gosec:
+      includes: []
+      excludes:
+      - G115
+      exclude-generated: false
+      severity: low
+      confidence: low
+      config:
+        global:
+          nosec: false
+          show-ignored: false
+          audit: false
+        G101:
+          pattern: (?i)passwd|pass|password|pwd|secret|token|pw|apiKey|bearer|cred
+          ignore_entropy: false
+          entropy_threshold: "80.0"
+          per_char_threshold: "3.0"
+          truncate: "16"
+        G104:
+          fmt:
+          - Fscanf
+        G111:
+          pattern: http\.Dir\("\/"\)|http\.Dir\('\/'\)
+        G301: "0750"
+        G302: "0600"
+        G306: "0600"
+    govet:
+      settings:
+        shadow:
+          strict: false
+        unusedresult:
+          stringmethods: []
+      enable:
+      - asmdecl
+      - assign
+      - atomic
+      - atomicalign
+      - bools
+      - buildtag
+      - cgocall
+      - composites
+      - copylocks
+      - deepequalerrors
+      - errorsas
+      - findcall
+      - framepointer
+      - httpresponse
+      - ifaceassert
+      - loopclosure
+      - lostcancel
+      - nilfunc
+      - nilness
+      - printf
+      - reflectvaluecompare
+      - shadow
+      - shift
+      - sigchanyzer
+      - sortslice
+      - stdmethods
+      - stringintconv
+      - structtag
+      - testinggoroutine
+      - tests
+      - unmarshal
+      - unreachable
+      - unsafeptr
+      - unusedresult
+      - unusedwrite
+    grouper:
+      const-require-single-const: false
+      const-require-grouping: false
+      import-require-single-import: false
+      import-require-grouping: false
+      type-require-single-type: false
+      type-require-grouping: false
+      var-require-single-var: false
+      var-require-grouping: false
+    loggercheck:
+      kitlog: false
+      klog: false
+      logr: false
+      zap: true
+      require-string-key: true
+      no-printf-like: false
+      rules: []
+    misspell: {}
+    nakedret:
+      max-func-lines: 30
+    nilnil:
+      checked-types:
+      - ptr
+      - func
+      - iface
+      - map
+      - chan
+    nolintlint:
+      allow-unused: false
+      allow-no-explanation: []
+      require-explanation: false
+      require-specific: false
+    nonamedreturns:
+      report-error-in-defer: false
+    paralleltest:
+      ignore-missing: true
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+    predeclared:
+      ignore: ""
+      q: false
+    reassign:
+      patterns:
+      - EOF
+      - Err.*
+    revive:
+      max-open-files: 2048
+      ignore-generated-header: false
+      severity: warning
+      enable-all-rules: false
+      confidence: 0.8
+      rules:
+      - name: blank-imports
+        disabled: false
+      - name: context-as-argument
+        disabled: false
+      - name: context-keys-type
+        disabled: false
+      - name: dot-imports
+        disabled: true
+      - name: empty-block
+        disabled: false
+      - name: error-naming
+        disabled: false
+      - name: error-return
+        disabled: false
+      - name: error-strings
+        disabled: false
+      - name: errorf
+        disabled: false
+      - name: exported
+        disabled: false
+      - name: if-return
+        disabled: false
+      - name: increment-decrement
+        disabled: false
+      - name: indent-error-flow
+        disabled: false
+      - name: package-comments
+        disabled: false
+      - name: range
+        disabled: false
+      - name: receiver-naming
+        disabled: false
+      - name: redefines-builtin-id
+        disabled: false
+      - name: superfluous-else
+        disabled: false
+      - name: time-naming
+        disabled: false
+      - name: unexported-return
+        disabled: false
+      - name: unreachable-code
+        disabled: false
+      - name: unused-parameter
+        disabled: true
+      - name: var-declaration
+        disabled: false
+      - name: var-naming
+        disabled: true
+    staticcheck:
+      checks:
+      - '*'
+    testpackage:
+      skip-regexp: (export|internal)_test\.go
+      allow-packages:
+      - main
+    thelper:
+      test:
+        first: true
+        name: true
+        begin: true
+      benchmark:
+        first: true
+        name: true
+        begin: true
+      tb:
+        first: true
+        name: false
+        begin: true
+      fuzz:
+        first: true
+        name: true
+        begin: true
+    usestdlibvars:
+      http-method: true
+      http-status-code: true
+      time-weekday: true
+      time-month: false
+      time-layout: false
+      crypto-hash: false
+      default-rpc-path: false
+      sql-isolation-level: false
+      tls-signature-scheme: false
+      constant-kind: false
+    unparam:
+      check-exported: false
+  exclusions:
+    rules:
+    - path: _test\.go
+      linters:
+      - dupl
+    - text: 'shadow: declaration of "(?:err|ctx)" shadows declaration at'
+      linters:
+      - govet
+    - text: 'shadow: declaration of "[^"]+" shadows declaration at'
+      path: _test\.go
+      linters:
+      - govet
+    - text: Function `.*` should pass the context parameter
+      path: _test\.go
+      linters:
+      - contextcheck
+    - text: 'do not define dynamic errors, use wrapped static errors instead:'
+      linters:
+      - err113
+    - text: 'context-as-argument: context.Context should be the first parameter of a function'
+      path: (?:_test|/(?:testing|mocks)/.*)\.go
+      linters:
+      - revive
+
+severity:
+  default-severity: ""
+  case-sensitive: false
+  rules: []
