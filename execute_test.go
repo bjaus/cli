@@ -634,6 +634,394 @@ func TestExecute_InvalidIntEqualsValue(t *testing.T) {
 	require.Error(t, err)
 }
 
-// --- Additional flags_test coverage ---
+// --- Version interface ---
 
+type versionedRoot struct {
+	serve *serveCmd
+}
 
+func (v *versionedRoot) Run(_ context.Context, _ []string) error { return nil }
+func (v *versionedRoot) Name() string                            { return "myapp" }
+func (v *versionedRoot) Version() string                         { return "v2.1.0" }
+func (v *versionedRoot) Subcommands() []cli.Runner               { return []cli.Runner{v.serve} }
+
+func TestExecute_Version(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args       []string
+		wantOutput string
+	}{
+		"long version":  {args: []string{"--version"}, wantOutput: "v2.1.0\n"},
+		"short version": {args: []string{"-V"}, wantOutput: "v2.1.0\n"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			root := &versionedRoot{serve: &serveCmd{}}
+			err := cli.Execute(context.Background(), root, tt.args, cli.WithStdout(&buf))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantOutput, buf.String())
+		})
+	}
+}
+
+func TestExecute_VersionNoVersioner(t *testing.T) {
+	t.Parallel()
+
+	// --version on a non-Versioner becomes positional.
+	var gotArgs []string
+	cmd := cli.RunFunc(func(_ context.Context, args []string) error {
+		gotArgs = args
+		return nil
+	})
+
+	err := cli.Execute(context.Background(), cmd, []string{"--version"})
+	require.NoError(t, err)
+	assert.Contains(t, gotArgs, "--version")
+}
+
+// --- Deprecater interface ---
+
+type deprecatedCmd struct{}
+
+func (c *deprecatedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *deprecatedCmd) Name() string                            { return "oldcmd" }
+func (c *deprecatedCmd) Deprecated() string                      { return "use newcmd instead" }
+
+func TestExecute_Deprecated(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	cmd := &deprecatedCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStderr(&stderr))
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "deprecated")
+	assert.Contains(t, stderr.String(), "use newcmd instead")
+}
+
+// --- Fallbacker interface ---
+
+type defaultParentCmd struct {
+	defaultCmd cli.Runner
+	child      *serveCmd
+}
+
+func (p *defaultParentCmd) Run(_ context.Context, _ []string) error { return nil }
+func (p *defaultParentCmd) Name() string                            { return "app" }
+func (p *defaultParentCmd) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *defaultParentCmd) Fallback() cli.Runner                    { return p.defaultCmd }
+
+func TestExecute_Fallback(t *testing.T) {
+	t.Parallel()
+
+	var defaultRan bool
+	def := cli.RunFunc(func(_ context.Context, _ []string) error {
+		defaultRan = true
+		return nil
+	})
+
+	parent := &defaultParentCmd{defaultCmd: def, child: &serveCmd{}}
+	err := cli.Execute(context.Background(), parent, nil)
+	require.NoError(t, err)
+	assert.True(t, defaultRan)
+}
+
+func TestExecute_FallbackNotUsedWhenSubcommandMatches(t *testing.T) {
+	t.Parallel()
+
+	var defaultRan bool
+	def := cli.RunFunc(func(_ context.Context, _ []string) error {
+		defaultRan = true
+		return nil
+	})
+
+	serve := &serveCmd{}
+	parent := &defaultParentCmd{defaultCmd: def, child: serve}
+	err := cli.Execute(context.Background(), parent, []string{"serve", "--port", "3000"})
+	require.NoError(t, err)
+	assert.False(t, defaultRan)
+	assert.Equal(t, 3000, serve.Port)
+}
+
+// --- Prefix matching ---
+
+func TestExecute_PrefixMatching(t *testing.T) {
+	t.Parallel()
+
+	serve := &serveCmd{}
+	root := &rootCmd{serve: serve}
+
+	err := cli.Execute(context.Background(), root, []string{"ser", "--port", "4000"}, cli.WithPrefixMatching(true))
+	require.NoError(t, err)
+	assert.Equal(t, 4000, serve.Port)
+}
+
+func TestExecute_PrefixMatchingDisabled(t *testing.T) {
+	t.Parallel()
+
+	var gotArgs []string
+	root := cli.RunFunc(func(_ context.Context, args []string) error {
+		gotArgs = args
+		return nil
+	})
+
+	err := cli.Execute(context.Background(), root, []string{"ser"})
+	require.NoError(t, err)
+	assert.Contains(t, gotArgs, "ser")
+}
+
+// --- Short option handling ---
+
+type shortOptCmd struct {
+	Verbose bool `flag:"verbose" short:"v"`
+	Debug   bool `flag:"debug" short:"d"`
+	Port    int  `flag:"port" short:"p" default:"8080"`
+
+	gotArgs []string
+}
+
+func (c *shortOptCmd) Run(_ context.Context, args []string) error {
+	c.gotArgs = args
+	return nil
+}
+
+func TestExecute_ShortOptionHandling(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args        []string
+		wantVerbose bool
+		wantDebug   bool
+		wantPort    int
+	}{
+		"combined bools": {
+			args:        []string{"-vd"},
+			wantVerbose: true,
+			wantDebug:   true,
+			wantPort:    8080,
+		},
+		"combined with value last": {
+			args:        []string{"-vp", "9090"},
+			wantVerbose: true,
+			wantPort:    9090,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &shortOptCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args, cli.WithShortOptionHandling(true))
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantVerbose, cmd.Verbose)
+			assert.Equal(t, tt.wantDebug, cmd.Debug)
+			assert.Equal(t, tt.wantPort, cmd.Port)
+		})
+	}
+}
+
+// --- Categorizer in help ---
+
+type catSubCmd struct {
+	n   string
+	cat string
+}
+
+func (c *catSubCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *catSubCmd) Name() string                            { return c.n }
+func (c *catSubCmd) Description() string                     { return c.n + " desc" }
+func (c *catSubCmd) Category() string                        { return c.cat }
+
+type catParentCmd struct{}
+
+func (p *catParentCmd) Run(_ context.Context, _ []string) error { return nil }
+func (p *catParentCmd) Name() string                            { return "app" }
+
+func (p *catParentCmd) Subcommands() []cli.Runner {
+	return []cli.Runner{
+		&catSubCmd{n: "serve", cat: "Server"},
+		&catSubCmd{n: "deploy", cat: "Ops"},
+	}
+}
+
+func TestExecute_HelpWithCategories(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &catParentCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Server:")
+	assert.Contains(t, buf.String(), "Ops:")
+}
+
+// --- Slice flags via Execute ---
+
+type sliceCmd struct {
+	Tags []string `flag:"tag" short:"t"`
+
+	gotArgs []string
+}
+
+func (c *sliceCmd) Run(_ context.Context, args []string) error {
+	c.gotArgs = args
+	return nil
+}
+
+func TestExecute_SliceFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sliceCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--tag", "a", "-t", "b", "positional"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, cmd.Tags)
+	assert.Equal(t, []string{"positional"}, cmd.gotArgs)
+}
+
+// --- Negatable via Execute ---
+
+type negatableExtCmd struct {
+	Color bool `flag:"color" negatable:"true" default:"true"`
+}
+
+func (c *negatableExtCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_Negatable(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args      []string
+		wantColor bool
+	}{
+		"default true":  {args: nil, wantColor: true},
+		"negated":       {args: []string{"--no-color"}, wantColor: false},
+		"explicit true": {args: []string{"--color"}, wantColor: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &negatableExtCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantColor, cmd.Color)
+		})
+	}
+}
+
+// --- Counter via Execute ---
+
+type counterExtCmd struct {
+	Verbosity int `flag:"verbose" short:"v" counter:"true"`
+}
+
+func (c *counterExtCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_Counter(t *testing.T) {
+	t.Parallel()
+
+	cmd := &counterExtCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"-v", "-v", "-v"})
+	require.NoError(t, err)
+	assert.Equal(t, 3, cmd.Verbosity)
+}
+
+// --- Counter with short option combining ---
+
+func TestExecute_CounterWithShortOptions(t *testing.T) {
+	t.Parallel()
+
+	cmd := &counterExtCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"-vvv"}, cli.WithShortOptionHandling(true))
+	require.NoError(t, err)
+	assert.Equal(t, 3, cmd.Verbosity)
+}
+
+// --- Enum via Execute ---
+
+type enumExtCmd struct {
+	Format string `flag:"format" enum:"json,yaml,text" default:"json"`
+}
+
+func (c *enumExtCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_Enum(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args      []string
+		assertErr require.ErrorAssertionFunc
+	}{
+		"valid":   {args: []string{"--format", "yaml"}, assertErr: require.NoError},
+		"invalid": {args: []string{"--format", "csv"}, assertErr: require.Error},
+		"default": {args: nil, assertErr: require.NoError},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &enumExtCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args)
+			tt.assertErr(t, err)
+		})
+	}
+}
+
+// --- Map flags via Execute ---
+
+type mapExtCmd struct {
+	Headers map[string]string `flag:"header" short:"H"`
+}
+
+func (c *mapExtCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_MapFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &mapExtCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"-H", "X-Foo=bar", "-H", "X-Baz=qux"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"X-Foo": "bar", "X-Baz": "qux"}, cmd.Headers)
+}
+
+// --- ScanFlags new fields ---
+
+type flagScanTestCmd struct {
+	Format  string   `flag:"format" enum:"json,yaml"`
+	Verbose int      `flag:"verbose" counter:"true"`
+	Color   bool     `flag:"color" negatable:"true"`
+	Tags    []string `flag:"tag"`
+}
+
+func (c *flagScanTestCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestScanFlags_NewFields(t *testing.T) {
+	t.Parallel()
+
+	cmd := &flagScanTestCmd{}
+	defs := cli.ScanFlags(cmd)
+	require.Len(t, defs, 4)
+
+	format := findFlagDef(defs, "format")
+	require.NotNil(t, format)
+	assert.Equal(t, "json,yaml", format.Enum)
+
+	verbose := findFlagDef(defs, "verbose")
+	require.NotNil(t, verbose)
+	assert.True(t, verbose.IsCounter)
+
+	color := findFlagDef(defs, "color")
+	require.NotNil(t, color)
+	assert.True(t, color.Negatable)
+
+	tag := findFlagDef(defs, "tag")
+	require.NotNil(t, tag)
+	assert.Equal(t, "strings", tag.TypeName)
+}

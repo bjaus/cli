@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/bjaus/cli"
 )
@@ -155,4 +156,253 @@ func ExampleExecute_middleware() {
 	// middleware: before
 	// executing
 	// middleware: after
+}
+
+// --- Tier 1 & 2 Feature Examples ---
+
+// Slice flags accumulate values from repeated flags.
+// Use when a flag can be specified multiple times, like --tag staging --tag prod.
+type BuildCmd struct {
+	Tags []string `flag:"tag" short:"t" help:"Tags to apply"`
+}
+
+func (b *BuildCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "tags: %s\n", strings.Join(b.Tags, ", ")) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_sliceFlags() {
+	cmd := &BuildCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"--tag", "v1", "--tag", "latest"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: tags: v1, latest
+}
+
+// Map flags accept key=value pairs. Repeated flags add entries.
+// Use for label-like data: --env DB_HOST=localhost --env DB_PORT=5432.
+type DeployCmd struct {
+	Env map[string]string `flag:"env" short:"e" help:"Environment variables"`
+}
+
+func (d *DeployCmd) Run(_ context.Context, _ []string) error {
+	for k, v := range d.Env {
+		fmt.Fprintf(os.Stdout, "%s=%s\n", k, v) //nolint:errcheck // example output
+	}
+	return nil
+}
+
+func ExampleExecute_mapFlags() {
+	cmd := &DeployCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"--env", "REGION=us-east-1"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: REGION=us-east-1
+}
+
+// Negatable bools support --flag and --no-flag patterns.
+// Use for features with sensible defaults that users may want to explicitly disable:
+// --color is on by default, --no-color turns it off.
+type ColorCmd struct {
+	Color bool `flag:"color" default:"true" negatable:"true" help:"Colorize output"`
+}
+
+func (c *ColorCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "color: %v\n", c.Color) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_negatableBool() {
+	cmd := &ColorCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"--no-color"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: color: false
+}
+
+// Versioner interface adds --version / -V support.
+// Implement on your root command to report the application version.
+type MyApp struct{}
+
+func (a *MyApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *MyApp) Name() string                            { return "myapp" }
+func (a *MyApp) Version() string                         { return "2.1.0" }
+
+func ExampleExecute_versioner() {
+	app := &MyApp{}
+	_ = cli.Execute(context.Background(), app, []string{"--version"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: 2.1.0
+}
+
+// Deprecater interface prints a warning to stderr when a command runs.
+// Use when retiring a command — keep it functional but warn users to migrate.
+type OldCmd struct{}
+
+func (o *OldCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintln(os.Stdout, "still works") //nolint:errcheck // example output
+	return nil
+}
+
+func (o *OldCmd) Name() string       { return "old-cmd" }
+func (o *OldCmd) Deprecated() string { return "use new-cmd instead" }
+
+func ExampleExecute_deprecated() {
+	cmd := &OldCmd{}
+	// Redirect stderr to stdout so the example can capture it.
+	_ = cli.Execute(context.Background(), cmd, nil, cli.WithStdout(os.Stdout), cli.WithStderr(os.Stdout)) //nolint:errcheck // example
+	// Output:
+	// Warning: "old-cmd" is deprecated: use new-cmd instead
+	// still works
+}
+
+// Categorizer interface groups subcommands in help output.
+// Use to organize large CLIs with many subcommands into logical groups.
+type AdminCmd struct{}
+
+func (a *AdminCmd) Run(_ context.Context, _ []string) error { return nil }
+func (a *AdminCmd) Name() string                            { return "users" }
+func (a *AdminCmd) Description() string                     { return "Manage users" }
+func (a *AdminCmd) Category() string                        { return "Admin Commands" }
+
+type CoreCmd struct{}
+
+func (c *CoreCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *CoreCmd) Name() string                            { return "run" }
+func (c *CoreCmd) Description() string                     { return "Run the app" }
+
+type CategorizedApp struct{}
+
+func (a *CategorizedApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *CategorizedApp) Name() string                            { return "myapp" }
+func (a *CategorizedApp) Description() string                     { return "Categorized example" }
+func (a *CategorizedApp) Subcommands() []cli.Runner {
+	return []cli.Runner{&CoreCmd{}, &AdminCmd{}}
+}
+
+func ExampleExecute_categories() {
+	app := &CategorizedApp{}
+	_ = cli.Execute(context.Background(), app, []string{"--help"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output:
+	// Categorized example
+	//
+	// Usage:
+	//   myapp [command]
+	//   myapp [args...]
+	//
+	// Commands:
+	//   run    Run the app
+	//
+	// Admin Commands:
+	//   users  Manage users
+	//
+	// Use "myapp [command] --help" for more information about a command.
+}
+
+// Enum validation restricts a flag to a fixed set of values.
+// The framework validates automatically — no need to check in Run.
+type OutputCmd struct {
+	Format string `flag:"format" short:"f" default:"text" enum:"text,json,yaml" help:"Output format"`
+}
+
+func (o *OutputCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "format: %s\n", o.Format) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_enum() {
+	cmd := &OutputCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"--format", "json"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+
+	// Invalid values produce a clear error.
+	err := cli.Execute(context.Background(), cmd, []string{"--format", "xml"})
+	fmt.Fprintln(os.Stdout, err) //nolint:errcheck // example output
+	// Output:
+	// format: json
+	// invalid flag value: --format must be one of [text,json,yaml]
+}
+
+// Counter flags increment an int each time the flag appears.
+// Classic use case: -v for info, -vv for debug, -vvv for trace.
+type VerboseCmd struct {
+	Verbosity int `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
+}
+
+func (c *VerboseCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "verbosity: %d\n", c.Verbosity) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_counter() {
+	cmd := &VerboseCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"-v", "-v", "-v"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: verbosity: 3
+}
+
+// Short option combining lets users merge single-character flags.
+// Enable with WithShortOptionHandling. -abc expands to -a -b -c.
+// Combine with counters: -vvv is equivalent to -v -v -v.
+type CompactCmd struct {
+	All     bool `flag:"all" short:"a" help:"Show all"`
+	Long    bool `flag:"long" short:"l" help:"Long format"`
+	Reverse bool `flag:"reverse" short:"r" help:"Reverse order"`
+}
+
+func (c *CompactCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "all=%v long=%v reverse=%v\n", c.All, c.Long, c.Reverse) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_shortOptionHandling() {
+	cmd := &CompactCmd{}
+	_ = cli.Execute(context.Background(), cmd, []string{"-alr"}, //nolint:errcheck // example
+		cli.WithStdout(os.Stdout),
+		cli.WithShortOptionHandling(true),
+	)
+	// Output: all=true long=true reverse=true
+}
+
+// Prefix matching resolves unique prefixes to full subcommand names.
+// "sta" matches "status" if no other subcommand starts with "sta".
+// Ambiguous prefixes (matching multiple commands) produce an error.
+type StatusCmd struct{}
+
+func (s *StatusCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintln(os.Stdout, "all systems go") //nolint:errcheck // example output
+	return nil
+}
+
+func (s *StatusCmd) Name() string { return "status" }
+
+type PrefixApp struct{}
+
+func (a *PrefixApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *PrefixApp) Name() string                            { return "app" }
+func (a *PrefixApp) Subcommands() []cli.Runner               { return []cli.Runner{&StatusCmd{}} }
+
+func ExampleExecute_prefixMatching() {
+	app := &PrefixApp{}
+	_ = cli.Execute(context.Background(), app, []string{"sta"}, //nolint:errcheck // example
+		cli.WithStdout(os.Stdout),
+		cli.WithPrefixMatching(true),
+	)
+	// Output: all systems go
+}
+
+// Fallbacker interface provides a fallback subcommand when none is specified.
+// Use for CLIs where the "main" action shouldn't require a subcommand name.
+type ServeCmd struct{}
+
+func (s *ServeCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintln(os.Stdout, "serving on :8080") //nolint:errcheck // example output
+	return nil
+}
+
+func (s *ServeCmd) Name() string { return "serve" }
+
+type DefaultApp struct{}
+
+func (a *DefaultApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *DefaultApp) Name() string                            { return "app" }
+func (a *DefaultApp) Subcommands() []cli.Runner               { return []cli.Runner{&ServeCmd{}} }
+func (a *DefaultApp) Fallback() cli.Runner                    { return &ServeCmd{} }
+
+func ExampleExecute_defaultCommand() {
+	app := &DefaultApp{}
+	// No subcommand specified — Fallback() is invoked automatically.
+	_ = cli.Execute(context.Background(), app, nil, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: serving on :8080
 }

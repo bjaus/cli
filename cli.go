@@ -23,11 +23,13 @@ func (f RunFunc) Run(ctx context.Context, args []string) error {
 type Option func(*options)
 
 type options struct {
-	stdout       io.Writer
-	stderr       io.Writer
-	flagParser   FlagParser
-	helpRenderer HelpRenderer
-	suggest      bool
+	stdout              io.Writer
+	stderr              io.Writer
+	flagParser          FlagParser
+	helpRenderer        HelpRenderer
+	suggest             bool
+	shortOptionHandling bool
+	prefixMatching      bool
 }
 
 func defaults() *options {
@@ -62,6 +64,18 @@ func WithHelpRenderer(r HelpRenderer) Option {
 // commands and flags. Enabled by default.
 func WithSuggest(enabled bool) Option {
 	return func(o *options) { o.suggest = enabled }
+}
+
+// WithShortOptionHandling enables POSIX-style short option combining.
+// When enabled, -abc is expanded to -a -b -c (all but last must be bool/counter).
+func WithShortOptionHandling(enabled bool) Option {
+	return func(o *options) { o.shortOptionHandling = enabled }
+}
+
+// WithPrefixMatching enables unique prefix matching for subcommand names.
+// When enabled, "ser" matches "serve" if no other subcommand starts with "ser".
+func WithPrefixMatching(enabled bool) Option {
+	return func(o *options) { o.prefixMatching = enabled }
 }
 
 // Execute runs the command tree rooted at root with the given args and options.

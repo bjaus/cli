@@ -126,7 +126,8 @@ func suggestFlagName(cmd Runner, unknown string) string {
 	var bestName string
 	var bestScore float64
 
-	for _, f := range flags {
+	for i := range flags {
+		f := &flags[i]
 		score := jaroWinkler(stripped, f.Name)
 		if score > bestScore {
 			bestScore = score

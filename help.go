@@ -40,34 +40,9 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 		}
 	}
 
-	// Subcommands
+	// Subcommands (grouped by category)
 	if p, ok := cmd.(Parent); ok {
-		subs := p.Subcommands()
-		var visible []Runner
-		for _, s := range subs {
-			si := resolveInfo(s)
-			if !si.hidden {
-				visible = append(visible, s)
-			}
-		}
-
-		if len(visible) > 0 {
-			b.WriteString("\nCommands:\n")
-
-			// Find max name width for alignment
-			maxWidth := 0
-			for _, s := range visible {
-				si := resolveInfo(s)
-				if len(si.name) > maxWidth {
-					maxWidth = len(si.name)
-				}
-			}
-
-			for _, s := range visible {
-				si := resolveInfo(s)
-				fmt.Fprintf(&b, "  %-*s  %s\n", maxWidth, si.name, si.description)
-			}
-		}
+		renderSubcommands(&b, p.Subcommands())
 	}
 
 	// Flags
@@ -81,14 +56,20 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 		var lines []flagLine
 		maxLeft := 0
 
-		for _, f := range flags {
+		for i := range flags {
+			f := &flags[i]
 			var left string
-			if f.Short != "" {
+			switch {
+			case f.Negatable && f.Short != "":
+				left = fmt.Sprintf("-%s, --[no-]%s", f.Short, f.Name)
+			case f.Negatable:
+				left = fmt.Sprintf("    --[no-]%s", f.Name)
+			case f.Short != "":
 				left = fmt.Sprintf("-%s, --%s", f.Short, f.Name)
-			} else {
+			default:
 				left = fmt.Sprintf("    --%s", f.Name)
 			}
-			if !f.IsBool {
+			if !f.IsBool && !f.IsCounter {
 				left += " " + f.TypeName
 			}
 
@@ -96,6 +77,12 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 			parts = append(parts, f.Help)
 			if f.Required {
 				parts = append(parts, "(required)")
+			}
+			if f.IsCounter {
+				parts = append(parts, "(repeatable)")
+			}
+			if f.Enum != "" {
+				parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(f.Enum, ",", "|")))
 			}
 			if f.Default != "" {
 				parts = append(parts, fmt.Sprintf("(default: %s)", f.Default))
@@ -124,6 +111,60 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 	}
 
 	return b.String()
+}
+
+func renderSubcommands(b *strings.Builder, subs []Runner) {
+	var uncategorized []Runner
+	categoryMap := make(map[string][]Runner)
+	var categoryOrder []string
+
+	for _, s := range subs {
+		si := resolveInfo(s)
+		if si.hidden {
+			continue
+		}
+
+		if c, ok := s.(Categorizer); ok {
+			cat := c.Category()
+			if _, exists := categoryMap[cat]; !exists {
+				categoryOrder = append(categoryOrder, cat)
+			}
+			categoryMap[cat] = append(categoryMap[cat], s)
+		} else {
+			uncategorized = append(uncategorized, s)
+		}
+	}
+
+	if len(uncategorized) == 0 && len(categoryMap) == 0 {
+		return
+	}
+
+	// Find max name width across all visible commands for alignment.
+	maxWidth := 0
+	for _, s := range subs {
+		si := resolveInfo(s)
+		if !si.hidden && len(si.name) > maxWidth {
+			maxWidth = len(si.name)
+		}
+	}
+
+	// Uncategorized commands.
+	if len(uncategorized) > 0 {
+		b.WriteString("\nCommands:\n")
+		for _, s := range uncategorized {
+			si := resolveInfo(s)
+			fmt.Fprintf(b, "  %-*s  %s\n", maxWidth, si.name, si.description)
+		}
+	}
+
+	// Categorized groups.
+	for _, cat := range categoryOrder {
+		fmt.Fprintf(b, "\n%s:\n", cat)
+		for _, s := range categoryMap[cat] {
+			si := resolveInfo(s)
+			fmt.Fprintf(b, "  %-*s  %s\n", maxWidth, si.name, si.description)
+		}
+	}
 }
 
 func commandChainNames(chain []Runner) string {

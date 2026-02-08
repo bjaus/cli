@@ -21,10 +21,15 @@ type flagIndex struct {
 func buildFlagIndex(cmd Runner) flagIndex {
 	flags := ScanFlags(cmd)
 	idx := flagIndex{known: make(map[string]bool, len(flags)*2)}
-	for _, f := range flags {
-		idx.known["--"+f.Name] = f.IsBool
+	for i := range flags {
+		f := &flags[i]
+		boolLike := f.IsBool || f.IsCounter
+		idx.known["--"+f.Name] = boolLike
 		if f.Short != "" {
-			idx.known["-"+f.Short] = f.IsBool
+			idx.known["-"+f.Short] = boolLike
+		}
+		if f.Negatable {
+			idx.known["--no-"+f.Name] = true
 		}
 	}
 	return idx
@@ -40,7 +45,7 @@ func (fi flagIndex) isBool(name string) bool {
 }
 
 // resolveCommand walks the command tree using flags-anywhere logic.
-func resolveCommand(root Runner, args []string) *resolvedCommand {
+func resolveCommand(root Runner, args []string, opts *options) *resolvedCommand {
 	chain := []Runner{root}
 	chainArgs := [][]string{nil}
 	remaining := args
@@ -58,10 +63,24 @@ func resolveCommand(root Runner, args []string) *resolvedCommand {
 		}
 
 		fi := buildFlagIndex(current)
-		cmdFlags, next, found := scanLevel(remaining, fi, subs)
+
+		if opts.shortOptionHandling {
+			remaining = expandShortOptions(remaining, fi)
+		}
+
+		cmdFlags, next, found := scanLevel(remaining, fi, subs, opts.prefixMatching)
 		chainArgs[idx] = cmdFlags
 
 		if found == nil {
+			// Check for Fallbacker interface.
+			if d, ok := current.(Fallbacker); ok {
+				chain = append(chain, d.Fallback())
+				chainArgs = append(chainArgs, nil)
+				if next != nil {
+					remaining = next
+				}
+				continue
+			}
 			if next != nil {
 				remaining = next
 			}
@@ -76,6 +95,11 @@ func resolveCommand(root Runner, args []string) *resolvedCommand {
 	// Separate remaining into leaf flags and positional args.
 	leafIdx := len(chain) - 1
 	fi := buildFlagIndex(chain[leafIdx])
+
+	if opts.shortOptionHandling {
+		remaining = expandShortOptions(remaining, fi)
+	}
+
 	leafFlags, positional := separateLeafArgs(remaining, fi)
 	chainArgs[leafIdx] = append(chainArgs[leafIdx], leafFlags...)
 
@@ -94,7 +118,7 @@ type subMatch struct {
 // scanLevel scans args at the current command level, consuming known flags
 // and looking for a subcommand match. Returns consumed flags, unconsumed
 // non-flag args, and a subMatch if a subcommand was found.
-func scanLevel(args []string, fi flagIndex, subs []Runner) ([]string, []string, *subMatch) {
+func scanLevel(args []string, fi flagIndex, subs []Runner, prefixMatch bool) ([]string, []string, *subMatch) {
 	var cmdFlags, next []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -113,7 +137,7 @@ func scanLevel(args []string, fi flagIndex, subs []Runner) ([]string, []string, 
 		}
 
 		if !strings.HasPrefix(arg, "-") {
-			sub := findSubcommand(subs, arg)
+			sub := findSubcommand(subs, arg, prefixMatch)
 			if sub != nil {
 				return cmdFlags, nil, &subMatch{sub: sub, remaining: args[i+1:]}
 			}
@@ -186,7 +210,8 @@ func separateLeafArgs(args []string, fi flagIndex) ([]string, []string) {
 	return flags, positional
 }
 
-func findSubcommand(subs []Runner, name string) Runner {
+func findSubcommand(subs []Runner, name string, prefixMatch bool) Runner {
+	// Exact match first.
 	for _, s := range subs {
 		info := resolveInfo(s)
 		if info.name == name {
@@ -198,14 +223,86 @@ func findSubcommand(subs []Runner, name string) Runner {
 			}
 		}
 	}
-	return nil
+
+	if !prefixMatch {
+		return nil
+	}
+
+	// Unique prefix match.
+	var match Runner
+	for _, s := range subs {
+		info := resolveInfo(s)
+		if strings.HasPrefix(info.name, name) {
+			if match != nil {
+				return nil // ambiguous
+			}
+			match = s
+		}
+		for _, alias := range info.aliases {
+			if strings.HasPrefix(alias, name) {
+				if match != nil {
+					return nil
+				}
+				match = s
+			}
+		}
+	}
+	return match
+}
+
+// expandShortOptions expands combined short flags like -abc into -a -b -c.
+// All flags except the last must be bool/counter (no-value). The last flag
+// can take a value from the next argument.
+func expandShortOptions(args []string, fi flagIndex) []string {
+	var expanded []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			expanded = append(expanded, args[i:]...)
+			break
+		}
+
+		// Candidate: starts with single -, not --, more than 2 chars, no =
+		if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' && !strings.Contains(arg, "=") {
+			allKnown := true
+			allBoolExceptLast := true
+
+			for j := 1; j < len(arg); j++ {
+				shortFlag := "-" + string(arg[j])
+				if !fi.has(shortFlag) {
+					allKnown = false
+					break
+				}
+				if j < len(arg)-1 && !fi.isBool(shortFlag) {
+					allBoolExceptLast = false
+					break
+				}
+			}
+
+			if allKnown && allBoolExceptLast {
+				for j := 1; j < len(arg); j++ {
+					expanded = append(expanded, "-"+string(arg[j]))
+				}
+				continue
+			}
+		}
+
+		expanded = append(expanded, arg)
+	}
+	return expanded
 }
 
 func execute(ctx context.Context, root Runner, args []string, opts *options) error {
-	resolved := resolveCommand(root, args)
+	resolved := resolveCommand(root, args, opts)
 
 	chain := resolved.chain
 	leaf := chain[len(chain)-1]
+
+	// Check --version before help.
+	if v := findVersioner(chain); v != nil && versionRequested(resolved) {
+		_, err := fmt.Fprintln(opts.stdout, v.Version())
+		return err
+	}
 
 	if helpRequested(resolved) {
 		return renderHelp(leaf, chain, opts)
@@ -237,6 +334,15 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	if v, ok := leaf.(Validator); ok {
 		if err := v.Validate(); err != nil {
 			return err
+		}
+	}
+
+	// Print deprecation warnings.
+	for _, cmd := range chain {
+		if d, ok := cmd.(Deprecater); ok {
+			if msg := d.Deprecated(); msg != "" {
+				fmt.Fprintf(opts.stderr, "Warning: %q is deprecated: %s\n", resolveInfo(cmd).name, msg) //nolint:errcheck // best-effort warning
+			}
 		}
 	}
 
@@ -289,7 +395,29 @@ func helpRequested(resolved *resolvedCommand) bool {
 	return false
 }
 
+func versionRequested(resolved *resolvedCommand) bool {
+	for _, arg := range resolved.positional {
+		if arg == "--version" || arg == "-V" {
+			return true
+		}
+	}
+	return false
+}
+
+func findVersioner(chain []Runner) Versioner {
+	for _, cmd := range chain {
+		if v, ok := cmd.(Versioner); ok {
+			return v
+		}
+	}
+	return nil
+}
+
 func parseFlags(cmd Runner, args []string, opts *options) ([]string, error) {
+	if opts.shortOptionHandling {
+		fi := buildFlagIndex(cmd)
+		args = expandShortOptions(args, fi)
+	}
 	if p, ok := cmd.(FlagParser); ok {
 		return p.ParseFlags(cmd, args)
 	}
