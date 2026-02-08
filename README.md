@@ -1,10 +1,9 @@
 # cli
 
-[![CI](https://github.com/bjaus/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/bjaus/cli/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/bjaus/cli.svg)](https://pkg.go.dev/github.com/bjaus/cli)
 [![Go Report Card](https://goreportcard.com/badge/github.com/bjaus/cli)](https://goreportcard.com/report/github.com/bjaus/cli)
+[![CI](https://github.com/bjaus/cli/actions/workflows/ci.yml/badge.svg)](https://github.com/bjaus/cli/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/bjaus/cli/branch/main/graph/badge.svg)](https://codecov.io/gh/bjaus/cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A composable CLI framework for Go built on small interfaces.
 
