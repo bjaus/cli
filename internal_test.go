@@ -223,7 +223,7 @@ func TestDefaultParseFlags(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalFlaggedCmd{}
-			remaining, err := defaultParseFlags(cmd, tt.args)
+			remaining, _, err := defaultParseFlags(cmd, tt.args)
 			tt.assertErr(t, err)
 			if err != nil {
 				return
@@ -241,7 +241,7 @@ func TestDefaultParseFlags(t *testing.T) {
 func TestDefaultParseFlags_EnvVar(t *testing.T) {
 	t.Setenv("PORT", "9999")
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 9999, cmd.Port)
 }
@@ -249,7 +249,7 @@ func TestDefaultParseFlags_EnvVar(t *testing.T) {
 func TestDefaultParseFlags_ExplicitOverridesEnv(t *testing.T) {
 	t.Setenv("PORT", "9999")
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--port", "3000"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port", "3000"})
 	require.NoError(t, err)
 	assert.Equal(t, 3000, cmd.Port)
 }
@@ -276,7 +276,10 @@ func TestDefaultParseFlags_RequiredFlag(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalRequiredFlagCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, provided, err := defaultParseFlags(cmd, tt.args)
+			if err == nil {
+				err = ValidateFlags(cmd, provided)
+			}
 			tt.assertErr(t, err)
 		})
 	}
@@ -286,7 +289,9 @@ func TestDefaultParseFlags_RequiredFlagErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalRequiredFlagCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil)
+	require.NoError(t, err)
+	err = ValidateFlags(cmd, provided)
 	require.ErrorIs(t, err, ErrRequiredFlag)
 	assert.Contains(t, err.Error(), "--name")
 }
@@ -295,7 +300,7 @@ func TestDefaultParseFlags_CustomUnmarshaler(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalCustomFlagCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--tag", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--tag", "foo"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, cmd.Tags.vals)
 }
@@ -316,7 +321,7 @@ func TestDefaultParseFlags_InvalidValue(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalFlaggedCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args)
 			require.Error(t, err)
 		})
 	}
@@ -326,7 +331,7 @@ func TestDefaultParseFlags_UnknownFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--unknown"})
+	_, _, err := defaultParseFlags(cmd, []string{"--unknown"})
 	require.ErrorIs(t, err, ErrUnknownFlag)
 }
 
@@ -334,7 +339,7 @@ func TestDefaultParseFlags_MissingValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--port"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port"})
 	require.ErrorIs(t, err, ErrFlagRequiresVal)
 }
 
@@ -964,7 +969,7 @@ func TestParseFlags_CommandFlagParser(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlagParserCmd{}
-	_, err := parseFlags(cmd, []string{"--foo"}, defaults())
+	_, _, err := parseFlags(cmd, []string{"--foo"}, defaults())
 	require.NoError(t, err)
 	assert.True(t, cmd.parseCalled)
 }
@@ -986,7 +991,7 @@ func TestParseFlags_GlobalFlagParser(t *testing.T) {
 	opts.flagParser = parser
 
 	cmd := &internalBareCmd{}
-	_, err := parseFlags(cmd, []string{"arg"}, opts)
+	_, _, err := parseFlags(cmd, []string{"arg"}, opts)
 	require.NoError(t, err)
 	assert.True(t, parser.called)
 }
@@ -1072,7 +1077,7 @@ func TestDefaultParseFlags_BoolEquals(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolValueCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--debug=true"})
+	_, _, err := defaultParseFlags(cmd, []string{"--debug=true"})
 	require.NoError(t, err)
 	assert.True(t, cmd.Debug)
 }
@@ -1081,7 +1086,7 @@ func TestDefaultParseFlags_BoolInvalidValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolValueCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--debug=notbool"})
+	_, _, err := defaultParseFlags(cmd, []string{"--debug=notbool"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1089,7 +1094,7 @@ func TestDefaultParseFlags_NonStruct(t *testing.T) {
 	t.Parallel()
 
 	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
-	remaining, err := defaultParseFlags(cmd, []string{"arg1", "arg2"})
+	remaining, _, err := defaultParseFlags(cmd, []string{"arg1", "arg2"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"arg1", "arg2"}, remaining)
 }
@@ -1104,7 +1109,7 @@ func TestDefaultParseFlags_InvalidDefault(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadDefaultCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil)
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1118,7 +1123,7 @@ func TestDefaultParseFlags_InvalidEnv(t *testing.T) {
 	t.Setenv("BAD_PORT", "not-a-number")
 
 	cmd := &internalEnvCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil)
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1126,7 +1131,7 @@ func TestDefaultParseFlags_EqualsUnknown(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--unknown=value"})
+	_, _, err := defaultParseFlags(cmd, []string{"--unknown=value"})
 	require.ErrorIs(t, err, ErrUnknownFlag)
 }
 
@@ -1134,7 +1139,7 @@ func TestDefaultParseFlags_EqualsInvalidValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--port=abc"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port=abc"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1150,7 +1155,7 @@ func TestDefaultParseFlags_UnsupportedType(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalUnsupportedFieldCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--ch", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--ch", "foo"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1459,7 +1464,7 @@ func TestDefaultParseFlags_ValueReceiverUnmarshaler(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalValueUnmarshalerCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--val", "test"})
+	_, _, err := defaultParseFlags(cmd, []string{"--val", "test"})
 	require.NoError(t, err)
 }
 
@@ -1507,7 +1512,7 @@ func TestDefaultParseFlags_Int64(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalInt64Cmd{}
-	_, err := defaultParseFlags(cmd, []string{"--big", "9999999999"})
+	_, _, err := defaultParseFlags(cmd, []string{"--big", "9999999999"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(9999999999), cmd.Big)
 }
@@ -1555,7 +1560,7 @@ func TestDefaultParseFlags_Slice(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalSliceCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args)
 			require.NoError(t, err)
 			if tt.wantTags != nil {
 				assert.Equal(t, tt.wantTags, cmd.Tags)
@@ -1631,7 +1636,7 @@ func TestDefaultParseFlags_Map(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalMapCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args)
 			tt.assertErr(t, err)
 			if err != nil {
 				return
@@ -1677,7 +1682,7 @@ func TestDefaultParseFlags_Negatable(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalNegatableCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantVerbose, cmd.Verbose)
 		})
@@ -1732,7 +1737,7 @@ func TestDefaultParseFlags_Counter(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalCounterCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantVerbosity, cmd.Verbosity)
 		})
@@ -1796,7 +1801,10 @@ func TestDefaultParseFlags_Enum(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalEnumCmd{}
-			_, err := defaultParseFlags(cmd, tt.args)
+			_, provided, err := defaultParseFlags(cmd, tt.args)
+			if err == nil {
+				err = ValidateFlags(cmd, provided)
+			}
 			tt.assertErr(t, err)
 			if err != nil {
 				return
@@ -1817,8 +1825,9 @@ func TestDefaultParseFlags_EnumNoDefault(t *testing.T) {
 
 	// No default, no flag provided → zero value, no enum validation.
 	cmd := &internalEnumNoDefaultCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil)
 	require.NoError(t, err)
+	require.NoError(t, ValidateFlags(cmd, provided))
 	assert.Empty(t, cmd.Format)
 }
 
@@ -2253,7 +2262,7 @@ func TestDefaultParseFlags_DurationSlice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalDurationSliceCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--timeout", "5s", "--timeout", "10m"})
+	_, _, err := defaultParseFlags(cmd, []string{"--timeout", "5s", "--timeout", "10m"})
 	require.NoError(t, err)
 	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Minute}, cmd.Timeouts)
 }
@@ -2279,7 +2288,7 @@ func TestDefaultParseFlags_Int64Slice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalInt64SliceCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--id", "100", "--id", "200"})
+	_, _, err := defaultParseFlags(cmd, []string{"--id", "100", "--id", "200"})
 	require.NoError(t, err)
 	assert.Equal(t, []int64{100, 200}, cmd.IDs)
 }
@@ -2296,7 +2305,7 @@ func TestDefaultParseFlags_SliceUnsupportedElem(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadSliceCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--item", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "foo"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2312,7 +2321,7 @@ func TestDefaultParseFlags_MapUnsupportedKey(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadMapKeyCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2328,7 +2337,7 @@ func TestDefaultParseFlags_MapUnsupportedValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadMapValCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2344,7 +2353,9 @@ func TestDefaultParseFlags_EnumEnv(t *testing.T) {
 	t.Setenv("TEST_FORMAT", "xml")
 
 	cmd := &internalEnumEnvCmd{}
-	_, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil)
+	require.NoError(t, err)
+	err = ValidateFlags(cmd, provided)
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 	assert.Contains(t, err.Error(), "must be one of")
 }
@@ -2361,7 +2372,7 @@ func TestDefaultParseFlags_BoolSlice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolSliceCmd{}
-	_, err := defaultParseFlags(cmd, []string{"--flag", "true", "--flag", "false"})
+	_, _, err := defaultParseFlags(cmd, []string{"--flag", "true", "--flag", "false"})
 	require.NoError(t, err)
 	assert.Equal(t, []bool{true, false}, cmd.Flags)
 }
@@ -2462,4 +2473,86 @@ func TestDefaultRenderHelp_NegatableNoShort(t *testing.T) {
 
 	text := defaultRenderHelp(cmd, chain, flags)
 	assert.Contains(t, text, "    --[no-]color")
+}
+
+// --- inheritFlags ---
+
+type internalInheritParent struct {
+	Env string `flag:"env"`
+}
+
+func (p *internalInheritParent) Run(_ context.Context, _ []string) error { return nil }
+
+type internalInheritChild struct {
+	Env string `flag:"env"`
+}
+
+func (c *internalInheritChild) Run(_ context.Context, _ []string) error { return nil }
+
+// Test that a non-struct ancestor (RunFunc) is safely skipped.
+func TestInheritFlags_NonStructAncestor(t *testing.T) {
+	t.Parallel()
+
+	parent := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	child := &internalInheritChild{}
+	chain := []Runner{parent, child}
+	provided := []map[string]bool{nil, nil}
+
+	inheritFlags(chain, provided)
+	// RunFunc is not a struct, so no inheritance occurs; child stays zero.
+	assert.Empty(t, child.Env)
+}
+
+// Test provided[i] == nil branch: child has no provided map (e.g. custom parser returned nil).
+func TestInheritFlags_NilProvidedMap(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalInheritParent{Env: "prod"}
+	child := &internalInheritChild{}
+	chain := []Runner{parent, child}
+	// Parent provided "env", child provided map is nil.
+	provided := []map[string]bool{{"env": true}, nil}
+
+	inheritFlags(chain, provided)
+	assert.Equal(t, "prod", child.Env)
+	assert.True(t, provided[1]["env"])
+}
+
+// --- inheritTagFields ---
+
+type internalInheritTagChild struct {
+	Env string `inherit:"env"`
+}
+
+func (c *internalInheritTagChild) Run(_ context.Context, _ []string) error { return nil }
+
+// Test that a non-struct ancestor (RunFunc) is safely skipped.
+func TestInheritTagFields_NonStructAncestor(t *testing.T) {
+	t.Parallel()
+
+	parent := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	child := &internalInheritTagChild{}
+	chain := []Runner{parent, child}
+
+	inheritTagFields(chain)
+	assert.Empty(t, child.Env)
+}
+
+// Test type mismatch: parent has int env, child inherits string env.
+type internalInheritTagIntParent struct {
+	Env int `flag:"env"`
+}
+
+func (p *internalInheritTagIntParent) Run(_ context.Context, _ []string) error { return nil }
+
+func TestInheritTagFields_TypeMismatch(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalInheritTagIntParent{Env: 42}
+	child := &internalInheritTagChild{}
+	chain := []Runner{parent, child}
+
+	inheritTagFields(chain)
+	// Types don't match (int vs string), so child stays zero.
+	assert.Empty(t, child.Env)
 }

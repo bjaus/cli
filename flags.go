@@ -83,31 +83,42 @@ type fieldInfo struct {
 }
 
 // defaultParseFlags is the built-in flag parser using struct tag reflection.
-func defaultParseFlags(cmd Runner, args []string) ([]string, error) {
+// It returns remaining args, a set of flag names that were explicitly provided
+// (by CLI args or env vars), and any error. Validation is deferred so that
+// inheritance can fill in values before required/enum checks run.
+func defaultParseFlags(cmd Runner, args []string) ([]string, map[string]bool, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return args, nil
+		return args, nil, nil
 	}
 
 	fields := buildFieldMap(v.Type())
 
 	if err := applyDefaultsAndEnv(v, fields); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	remaining, err := parseExplicitFlags(v, args, fields)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if err := validateFlags(v, fields); err != nil {
-		return nil, err
-	}
+	provided := collectProvided(fields)
+	return remaining, provided, nil
+}
 
-	return remaining, nil
+// collectProvided extracts the set of flag names that were explicitly set.
+func collectProvided(fields map[string]*fieldInfo) map[string]bool {
+	provided := make(map[string]bool)
+	for _, fi := range fields {
+		if fi.provided {
+			provided[fi.def.Name] = true
+		}
+	}
+	return provided
 }
 
 func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
@@ -251,6 +262,28 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 	return nil
 }
 
+// ValidateFlags runs required and enum checks on a command using the given
+// provided set. This is called after flag inheritance so that inherited values
+// satisfy required constraints and are checked against enum lists.
+func ValidateFlags(cmd Runner, provided map[string]bool) error {
+	v := reflect.ValueOf(cmd)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	fields := buildFieldMap(v.Type())
+	for key, fi := range fields {
+		if provided[fi.def.Name] {
+			fi.provided = true
+		}
+		fields[key] = fi
+	}
+	return validateFlags(v, fields)
+}
+
 func enumContains(enum, val string) bool {
 	for _, e := range strings.Split(enum, ",") {
 		if strings.TrimSpace(e) == val {
@@ -367,5 +400,109 @@ func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
 		return reflect.ValueOf(b), nil
 	default:
 		return reflect.Value{}, fmt.Errorf("%w: %s", ErrUnsupportedType, typ)
+	}
+}
+
+// inheritFlags copies matching flag values from parent commands to child
+// commands when the child's flag was not explicitly provided. It walks
+// parent→child and for each child flag not in its provided set, finds the
+// nearest ancestor with the same flag name and compatible type.
+func inheritFlags(chain []Runner, provided []map[string]bool) {
+	for i := 1; i < len(chain); i++ {
+		cv := reflect.ValueOf(chain[i])
+		if cv.Kind() == reflect.Ptr {
+			cv = cv.Elem()
+		}
+		if cv.Kind() != reflect.Struct {
+			continue
+		}
+
+		ct := cv.Type()
+		for j := range ct.NumField() {
+			cf := ct.Field(j)
+			name := cf.Tag.Get("flag")
+			if name == "" {
+				continue
+			}
+			if provided[i][name] {
+				continue
+			}
+
+			// Walk ancestors from nearest to farthest.
+			for a := i - 1; a >= 0; a-- {
+				pv := reflect.ValueOf(chain[a])
+				if pv.Kind() == reflect.Ptr {
+					pv = pv.Elem()
+				}
+				if pv.Kind() != reflect.Struct {
+					continue
+				}
+				pt := pv.Type()
+				for k := range pt.NumField() {
+					pf := pt.Field(k)
+					if pf.Tag.Get("flag") != name {
+						continue
+					}
+					if pf.Type != cf.Type {
+						continue
+					}
+					cv.Field(j).Set(pv.Field(k))
+					if provided[i] == nil {
+						provided[i] = make(map[string]bool)
+					}
+					provided[i][name] = true
+					goto nextField
+				}
+			}
+		nextField:
+		}
+	}
+}
+
+// inheritTagFields copies values from ancestor flag fields into child fields
+// tagged with `inherit:"flagname"`. The child field does not register a CLI
+// flag — it silently receives the nearest ancestor's matching flag value.
+func inheritTagFields(chain []Runner) {
+	for i := 1; i < len(chain); i++ {
+		cv := reflect.ValueOf(chain[i])
+		if cv.Kind() == reflect.Ptr {
+			cv = cv.Elem()
+		}
+		if cv.Kind() != reflect.Struct {
+			continue
+		}
+
+		ct := cv.Type()
+		for j := range ct.NumField() {
+			cf := ct.Field(j)
+			inheritName := cf.Tag.Get("inherit")
+			if inheritName == "" {
+				continue
+			}
+
+			// Walk ancestors from nearest to farthest.
+			for a := i - 1; a >= 0; a-- {
+				pv := reflect.ValueOf(chain[a])
+				if pv.Kind() == reflect.Ptr {
+					pv = pv.Elem()
+				}
+				if pv.Kind() != reflect.Struct {
+					continue
+				}
+				pt := pv.Type()
+				for k := range pt.NumField() {
+					pf := pt.Field(k)
+					if pf.Tag.Get("flag") != inheritName {
+						continue
+					}
+					if pf.Type != cf.Type {
+						continue
+					}
+					cv.Field(j).Set(pv.Field(k))
+					goto nextInheritField
+				}
+			}
+		nextInheritField:
+		}
 	}
 }

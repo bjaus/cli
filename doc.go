@@ -70,6 +70,36 @@
 //
 // Flags can appear anywhere — before or after subcommand names.
 //
+// # Inheritance
+//
+// Flags can flow from parent commands to child subcommands automatically.
+// Two complementary mechanisms are supported:
+//
+// Automatic flag inheritance: when a parent and child both declare a flag
+// with the same name and type, the child inherits the parent's parsed value
+// if the child's flag was not explicitly provided via CLI args or env var.
+// The child's flag still appears in help output and accepts CLI args normally.
+//
+//	type App struct {
+//	    Env string `flag:"env" required:"true" enum:"dev,qa,prod" help:"Target environment"`
+//	}
+//	type ServeCmd struct {
+//	    Env  string `flag:"env" help:"Target environment"`
+//	    Port int    `flag:"port" default:"8080" help:"Listen port"`
+//	}
+//
+// Inherit tag: a child field tagged with `inherit:"flagname"` receives the
+// value from the nearest ancestor's matching flag without registering its
+// own CLI flag. It does not appear in help output and does not accept CLI args.
+//
+//	type ServeCmd struct {
+//	    Env  string `inherit:"env"`
+//	    Port int    `flag:"port" default:"8080" help:"Listen port"`
+//	}
+//
+// Priority for automatic flag inheritance:
+// explicit child flag > child env var > inherited from parent > child default > zero value.
+//
 // # Extensibility
 //
 // Every major subsystem is replaceable:

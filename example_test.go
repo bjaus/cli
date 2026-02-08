@@ -473,3 +473,59 @@ func ExampleExecute_defaultCommand() {
 	_ = cli.Execute(context.Background(), app, nil, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
 	// Output: serving on :8080
 }
+
+// Automatic flag inheritance: parent and child both declare --env.
+// The child inherits the parent's parsed value when its flag is not set.
+type InheritApp struct {
+	Env string `flag:"env" help:"Target environment"`
+}
+
+func (a *InheritApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *InheritApp) Name() string                            { return "app" }
+func (a *InheritApp) Subcommands() []cli.Runner               { return []cli.Runner{&InheritServe{}} }
+
+type InheritServe struct {
+	Env  string `flag:"env" help:"Target environment"`
+	Port int    `flag:"port" default:"8080" help:"Listen port"`
+}
+
+func (s *InheritServe) Name() string { return "serve" }
+func (s *InheritServe) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "env=%s port=%d\n", s.Env, s.Port) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_flagInheritance() {
+	app := &InheritApp{}
+	// --env is set on the parent; child inherits it automatically.
+	_ = cli.Execute(context.Background(), app, []string{"--env", "prod", "serve"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: env=prod port=8080
+}
+
+// Inherit tag: the child gets the parent's flag value without registering
+// its own CLI flag. Does not appear in help, does not accept CLI args.
+type InheritTagApp struct {
+	Env string `flag:"env" help:"Target environment"`
+}
+
+func (a *InheritTagApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *InheritTagApp) Name() string                            { return "app" }
+func (a *InheritTagApp) Subcommands() []cli.Runner               { return []cli.Runner{&InheritTagServe{}} }
+
+type InheritTagServe struct {
+	Env  string `inherit:"env"`
+	Port int    `flag:"port" default:"8080" help:"Listen port"`
+}
+
+func (s *InheritTagServe) Name() string { return "serve" }
+func (s *InheritTagServe) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "env=%s port=%d\n", s.Env, s.Port) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_inheritTag() {
+	app := &InheritTagApp{}
+	// --env is set on the parent; child's Env field receives it via inherit tag.
+	_ = cli.Execute(context.Background(), app, []string{"--env", "staging", "serve"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: env=staging port=8080
+}

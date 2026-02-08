@@ -309,14 +309,15 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 		return renderHelp(leaf, chain, opts)
 	}
 
-	// Parse flags for each command in chain.
+	// Parse flags for each command in chain (defaults, env, explicit).
+	provided := make([]map[string]bool, len(chain))
 	for i, cmd := range chain {
 		cmdArgs := resolved.chainArgs[i]
 		if len(cmdArgs) == 0 && len(ScanFlags(cmd)) == 0 {
 			continue
 		}
 
-		remaining, parseErr := parseFlags(cmd, cmdArgs, opts)
+		remaining, prov, parseErr := parseFlags(cmd, cmdArgs, opts)
 		if parseErr != nil {
 			if opts.suggest {
 				if suggestion := suggestFlag(cmd, parseErr); suggestion != "" {
@@ -325,9 +326,21 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 			}
 			return parseErr
 		}
+		provided[i] = prov
 
 		if i == len(chain)-1 {
 			resolved.positional = append(remaining, resolved.positional...)
+		}
+	}
+
+	// Inherit matching flag values from parent to child.
+	inheritFlags(chain, provided)
+	inheritTagFields(chain)
+
+	// Validate flags after inheritance so inherited values satisfy constraints.
+	for i, cmd := range chain {
+		if err := ValidateFlags(cmd, provided[i]); err != nil {
+			return err
 		}
 	}
 
@@ -417,16 +430,18 @@ func findVersioner(chain []Runner) Versioner {
 	return nil
 }
 
-func parseFlags(cmd Runner, args []string, opts *options) ([]string, error) {
+func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]bool, error) {
 	if opts.shortOptionHandling {
 		fi := buildFlagIndex(cmd)
 		args = expandShortOptions(args, fi)
 	}
 	if p, ok := cmd.(FlagParser); ok {
-		return p.ParseFlags(cmd, args)
+		remaining, err := p.ParseFlags(cmd, args)
+		return remaining, nil, err
 	}
 	if opts.flagParser != nil {
-		return opts.flagParser.ParseFlags(cmd, args)
+		remaining, err := opts.flagParser.ParseFlags(cmd, args)
+		return remaining, nil, err
 	}
 	return defaultParseFlags(cmd, args)
 }
