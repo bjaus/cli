@@ -1,0 +1,639 @@
+package cli_test
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"testing"
+
+	"github.com/bjaus/cli"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+)
+
+// --- Shared test commands ---
+
+type bareCmd struct{}
+
+func (c *bareCmd) Run(_ context.Context, _ []string) error { return nil }
+
+type rootCmd struct {
+	serve *serveCmd
+}
+
+func (r *rootCmd) Run(_ context.Context, _ []string) error { return nil }
+func (r *rootCmd) Name() string                            { return "app" }
+func (r *rootCmd) Description() string                     { return "Test application" }
+func (r *rootCmd) Subcommands() []cli.Runner               { return []cli.Runner{r.serve} }
+
+type serveCmd struct {
+	Port int    `flag:"port" short:"p" default:"8080" help:"Port"`
+	Host string `flag:"host" default:"localhost" help:"Host"`
+
+	gotArgs []string
+}
+
+func (s *serveCmd) Run(_ context.Context, args []string) error {
+	s.gotArgs = args
+	return nil
+}
+
+func (s *serveCmd) Name() string        { return "serve" }
+func (s *serveCmd) Description() string { return "Start the server" }
+
+// --- Simple execution tests ---
+
+func TestExecute_SimpleCommand(t *testing.T) {
+	t.Parallel()
+
+	var gotArgs []string
+	cmd := cli.RunFunc(func(_ context.Context, args []string) error {
+		gotArgs = args
+		return nil
+	})
+
+	err := cli.Execute(context.Background(), cmd, []string{"foo", "bar"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"foo", "bar"}, gotArgs)
+}
+
+func TestExecute_ErrorPropagation(t *testing.T) {
+	t.Parallel()
+
+	cmd := cli.RunFunc(func(_ context.Context, _ []string) error {
+		return errors.New("boom")
+	})
+
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+	assert.Equal(t, "boom", err.Error())
+}
+
+// --- Subcommand tests ---
+
+func TestExecute_Subcommand(t *testing.T) {
+	t.Parallel()
+
+	serve := &serveCmd{}
+	root := &rootCmd{serve: serve}
+
+	err := cli.Execute(context.Background(), root, []string{"serve", "--port", "9090"})
+	require.NoError(t, err)
+	assert.Equal(t, 9090, serve.Port)
+	assert.Equal(t, "localhost", serve.Host)
+}
+
+func TestExecute_FlagsAnywhere(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args     []string
+		wantPort int
+	}{
+		"flags after subcommand": {
+			args:     []string{"serve", "--port", "3000"},
+			wantPort: 3000,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			serve := &serveCmd{}
+			root := &rootCmd{serve: serve}
+			err := cli.Execute(context.Background(), root, tt.args)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPort, serve.Port)
+		})
+	}
+}
+
+// --- Lifecycle suite ---
+
+type LifecycleSuite struct {
+	suite.Suite
+}
+
+type lifecycleTracker struct {
+	order        []string
+	beforeCtxKey string
+}
+
+type ctxKey string
+
+type trackedRoot struct {
+	tracker *lifecycleTracker
+	child   *trackedChild
+}
+
+func (r *trackedRoot) Run(_ context.Context, _ []string) error { return nil }
+func (r *trackedRoot) Name() string                            { return "root" }
+func (r *trackedRoot) Subcommands() []cli.Runner               { return []cli.Runner{r.child} }
+
+func (r *trackedRoot) Before(ctx context.Context) (context.Context, error) {
+	r.tracker.order = append(r.tracker.order, "root-before")
+	return context.WithValue(ctx, ctxKey("root"), "enriched"), nil
+}
+
+func (r *trackedRoot) After(_ context.Context) error {
+	r.tracker.order = append(r.tracker.order, "root-after")
+	return nil
+}
+
+type trackedChild struct {
+	tracker *lifecycleTracker
+}
+
+func (c *trackedChild) Run(ctx context.Context, _ []string) error {
+	c.tracker.order = append(c.tracker.order, "child-run")
+	val, ok := ctx.Value(ctxKey("root")).(string)
+	if ok {
+		c.tracker.beforeCtxKey = val
+	}
+	return nil
+}
+
+func (c *trackedChild) Name() string { return "child" }
+
+func (c *trackedChild) Before(ctx context.Context) (context.Context, error) {
+	c.tracker.order = append(c.tracker.order, "child-before")
+	return ctx, nil
+}
+
+func (c *trackedChild) After(_ context.Context) error {
+	c.tracker.order = append(c.tracker.order, "child-after")
+	return nil
+}
+
+func (s *LifecycleSuite) TestBeforeAfterOrder() {
+	tracker := &lifecycleTracker{}
+	child := &trackedChild{tracker: tracker}
+	root := &trackedRoot{tracker: tracker, child: child}
+
+	err := cli.Execute(context.Background(), root, []string{"child"})
+	s.Require().NoError(err)
+
+	s.Equal([]string{
+		"root-before",
+		"child-before",
+		"child-run",
+		"child-after",
+		"root-after",
+	}, tracker.order)
+}
+
+func (s *LifecycleSuite) TestContextEnrichment() {
+	tracker := &lifecycleTracker{}
+	child := &trackedChild{tracker: tracker}
+	root := &trackedRoot{tracker: tracker, child: child}
+
+	err := cli.Execute(context.Background(), root, []string{"child"})
+	s.Require().NoError(err)
+	s.Equal("enriched", tracker.beforeCtxKey)
+}
+
+func (s *LifecycleSuite) TestAfterRunsOnError() {
+	tracker := &lifecycleTracker{}
+	failChild := &failingChild{tracker: tracker}
+	wrapper := &parentWithCustomChild{tracker: tracker, child: failChild}
+
+	err := cli.Execute(context.Background(), wrapper, []string{"fail"})
+	s.Require().Error(err)
+	s.Contains(tracker.order, "wrapper-after")
+}
+
+type failingChild struct {
+	tracker *lifecycleTracker
+}
+
+func (c *failingChild) Run(_ context.Context, _ []string) error {
+	c.tracker.order = append(c.tracker.order, "fail-run")
+	return errors.New("child failed")
+}
+
+func (c *failingChild) Name() string { return "fail" }
+
+type parentWithCustomChild struct {
+	tracker *lifecycleTracker
+	child   cli.Runner
+}
+
+func (p *parentWithCustomChild) Run(_ context.Context, _ []string) error { return nil }
+func (p *parentWithCustomChild) Name() string                            { return "wrapper" }
+func (p *parentWithCustomChild) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+
+func (p *parentWithCustomChild) After(_ context.Context) error {
+	p.tracker.order = append(p.tracker.order, "wrapper-after")
+	return nil
+}
+
+func TestLifecycleSuite(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(LifecycleSuite))
+}
+
+// --- Validator tests ---
+
+type validatingCmd struct {
+	Name string `flag:"name" required:"true"`
+}
+
+func (c *validatingCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func (c *validatingCmd) Validate() error {
+	if len(c.Name) < 3 {
+		return errors.New("name must be at least 3 characters")
+	}
+	return nil
+}
+
+func TestExecute_Validator(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args      []string
+		assertErr require.ErrorAssertionFunc
+	}{
+		"valid": {
+			args:      []string{"--name", "alice"},
+			assertErr: require.NoError,
+		},
+		"invalid": {
+			args:      []string{"--name", "ab"},
+			assertErr: require.Error,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &validatingCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args)
+			tt.assertErr(t, err)
+		})
+	}
+}
+
+// --- Help tests ---
+
+func TestExecute_HelpFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args []string
+	}{
+		"long help":  {args: []string{"--help"}},
+		"short help": {args: []string{"-h"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			cmd := &serveCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args, cli.WithStdout(&buf))
+			require.NoError(t, err)
+			assert.Contains(t, buf.String(), "Flags:")
+		})
+	}
+}
+
+// --- Middleware in execution ---
+
+type middlewareCmd struct {
+	order *[]string
+}
+
+func (c *middlewareCmd) Run(_ context.Context, _ []string) error {
+	*c.order = append(*c.order, "run")
+	return nil
+}
+
+func (c *middlewareCmd) Middleware() []func(next cli.RunFunc) cli.RunFunc {
+	return []func(next cli.RunFunc) cli.RunFunc{
+		func(next cli.RunFunc) cli.RunFunc {
+			return func(ctx context.Context, args []string) error {
+				*c.order = append(*c.order, "mw-before")
+				err := next(ctx, args)
+				*c.order = append(*c.order, "mw-after")
+				return err
+			}
+		},
+	}
+}
+
+func TestExecute_WithMiddleware(t *testing.T) {
+	t.Parallel()
+
+	var order []string
+	cmd := &middlewareCmd{order: &order}
+
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"mw-before", "run", "mw-after"}, order)
+}
+
+// --- Option tests ---
+
+func TestWithStderr(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := cli.RunFunc(func(_ context.Context, _ []string) error { return nil })
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStderr(&buf))
+	require.NoError(t, err)
+}
+
+func TestWithFlagParser(t *testing.T) {
+	t.Parallel()
+
+	parsed := false
+	parser := &testFlagParser{
+		fn: func(_ cli.Runner, args []string) ([]string, error) {
+			parsed = true
+			return args, nil
+		},
+	}
+
+	// serveCmd has flags, so parseFlags is not skipped.
+	cmd := &serveCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithFlagParser(parser))
+	require.NoError(t, err)
+	assert.True(t, parsed)
+}
+
+type testFlagParser struct {
+	fn func(cli.Runner, []string) ([]string, error)
+}
+
+func (p *testFlagParser) ParseFlags(cmd cli.Runner, args []string) ([]string, error) {
+	return p.fn(cmd, args)
+}
+
+func TestWithSuggest_Disabled(t *testing.T) {
+	t.Parallel()
+
+	// Use a custom FlagParser that returns an unknown flag error to trigger suggestion path.
+	parser := &testFlagParser{
+		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+			return nil, fmt.Errorf("unknown flag: --prot")
+		},
+	}
+
+	cmd := &serveCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithFlagParser(parser), cli.WithSuggest(false))
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "Did you mean")
+}
+
+func TestWithSuggest_Enabled(t *testing.T) {
+	t.Parallel()
+
+	// Use a custom FlagParser that returns an unknown flag error to trigger suggestion path.
+	parser := &testFlagParser{
+		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+			return nil, fmt.Errorf("unknown flag: --prot")
+		},
+	}
+
+	cmd := &serveCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithFlagParser(parser), cli.WithSuggest(true))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Did you mean")
+}
+
+// --- Alias resolution ---
+
+type aliasedCmd struct{}
+
+func (c *aliasedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *aliasedCmd) Name() string                            { return "deploy" }
+func (c *aliasedCmd) Aliases() []string                       { return []string{"d", "dep"} }
+
+type aliasParent struct{}
+
+func (p *aliasParent) Run(_ context.Context, _ []string) error { return nil }
+func (p *aliasParent) Name() string                            { return "app" }
+func (p *aliasParent) Subcommands() []cli.Runner               { return []cli.Runner{&aliasedCmd{}} }
+
+func TestExecute_AliasResolution(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args []string
+	}{
+		"full name":   {args: []string{"deploy"}},
+		"short alias": {args: []string{"d"}},
+		"long alias":  {args: []string{"dep"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			root := &aliasParent{}
+			err := cli.Execute(context.Background(), root, tt.args)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// --- ExecuteAndExit subprocess tests ---
+
+func TestExecuteAndExit(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		envMode  string
+		wantCode int
+	}{
+		"success exits 0":        {envMode: "success", wantCode: 0},
+		"exit coder exits code":  {envMode: "exitcoder", wantCode: 42},
+		"generic error exits 1":  {envMode: "error", wantCode: 1},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=TestExecuteAndExitHelper") //nolint:gosec // test subprocess
+			cmd.Env = append(os.Environ(), "EXEC_AND_EXIT_MODE="+tt.envMode)
+
+			err := cmd.Run()
+			if tt.wantCode == 0 {
+				require.NoError(t, err)
+				return
+			}
+
+			var exitErr *exec.ExitError
+			require.ErrorAs(t, err, &exitErr)
+			assert.Equal(t, tt.wantCode, exitErr.ExitCode())
+		})
+	}
+}
+
+// TestExecuteAndExitHelper is a helper for the subprocess test. It is not run
+// directly; instead TestExecuteAndExit invokes it via exec.Command.
+func TestExecuteAndExitHelper(t *testing.T) {
+	mode := os.Getenv("EXEC_AND_EXIT_MODE")
+	if mode == "" {
+		return
+	}
+
+	switch mode {
+	case "success":
+		cli.ExecuteAndExit(context.Background(),
+			cli.RunFunc(func(_ context.Context, _ []string) error { return nil }), nil)
+	case "exitcoder":
+		cli.ExecuteAndExit(context.Background(),
+			cli.RunFunc(func(_ context.Context, _ []string) error { return cli.Exit("fail", 42) }), nil)
+	case "error":
+		cli.ExecuteAndExit(context.Background(),
+			cli.RunFunc(func(_ context.Context, _ []string) error { return errors.New("boom") }), nil)
+	}
+}
+
+// --- parseFlags remaining prepend test ---
+
+func TestExecute_ParseRemainingPrepend(t *testing.T) {
+	t.Parallel()
+
+	// Use serveCmd (has flags) with a custom FlagParser that returns remaining args.
+	parser := &testFlagParser{
+		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+			return []string{"extra"}, nil
+		},
+	}
+
+	serve := &serveCmd{}
+	err := cli.Execute(context.Background(), serve, []string{"pos1"}, cli.WithFlagParser(parser))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"extra", "pos1"}, serve.gotArgs)
+}
+
+// --- Help flag in subcommand chain ---
+
+func TestExecute_HelpInSubcommandChain(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	serve := &serveCmd{}
+	root := &rootCmd{serve: serve}
+
+	err := cli.Execute(context.Background(), root, []string{"serve", "--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Flags:")
+	assert.Contains(t, buf.String(), "--port")
+}
+
+// --- After hook error test ---
+
+type afterErrorParent struct {
+	errMsg string
+}
+
+func (p *afterErrorParent) Run(_ context.Context, _ []string) error { return nil }
+func (p *afterErrorParent) Name() string                            { return "app" }
+
+func (p *afterErrorParent) After(_ context.Context) error {
+	return fmt.Errorf("%s", p.errMsg)
+}
+
+func TestExecute_AfterHookError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &afterErrorParent{errMsg: "after cleanup failed"}
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+	assert.Equal(t, "after cleanup failed", err.Error())
+}
+
+// --- ExecuteAndExit with exit code ---
+
+func TestExecute_ExitCoderFromRun(t *testing.T) {
+	t.Parallel()
+
+	cmd := cli.RunFunc(func(_ context.Context, _ []string) error {
+		return cli.Exit("port in use", 2)
+	})
+
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+
+	var ec cli.ExitCoder
+	require.ErrorAs(t, err, &ec)
+	assert.Equal(t, 2, ec.ExitCode())
+}
+
+// --- ScanFlags on RunFunc ---
+
+func TestScanFlags_RunFunc(t *testing.T) {
+	t.Parallel()
+
+	cmd := cli.RunFunc(func(_ context.Context, _ []string) error { return nil })
+	defs := cli.ScanFlags(cmd)
+	assert.Nil(t, defs)
+}
+
+// --- Env var satisfies required flag ---
+
+type envRequiredCmd struct {
+	Port int    `flag:"port" required:"true" env:"TEST_REQ_PORT"`
+	Name string `flag:"name" required:"true"`
+}
+
+func (c *envRequiredCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_EnvSatisfiesRequired(t *testing.T) {
+	t.Setenv("TEST_REQ_PORT", "9090")
+
+	cmd := &envRequiredCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--name", "test"})
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port)
+	assert.Equal(t, "test", cmd.Name)
+}
+
+// --- Validate env var satisfying required (use type assertion helper) ---
+
+func TestScanFlags_EnvAndRequired(t *testing.T) {
+	t.Parallel()
+
+	cmd := &envRequiredCmd{}
+	defs := cli.ScanFlags(cmd)
+
+	portFlag := findFlagDef(defs, "port")
+	require.NotNil(t, portFlag)
+	assert.True(t, portFlag.Required)
+	assert.Equal(t, "TEST_REQ_PORT", portFlag.Env)
+}
+
+func findFlagDef(defs []cli.FlagDef, name string) *cli.FlagDef {
+	for i := range defs {
+		if defs[i].Name == name {
+			return &defs[i]
+		}
+	}
+	return nil
+}
+
+// --- strconv error path for equals syntax ---
+
+func TestExecute_InvalidIntEqualsValue(t *testing.T) {
+	t.Parallel()
+
+	cmd := &serveCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--port=abc"})
+	require.Error(t, err)
+}
+
+// --- Additional flags_test coverage ---
+
+

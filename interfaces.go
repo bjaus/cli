@@ -1,0 +1,116 @@
+package cli
+
+import "context"
+
+// --- Discovery interfaces (all optional) ---
+
+// Namer overrides the command name. The default is the lowercase struct type name.
+type Namer interface {
+	Name() string
+}
+
+// Describer provides a one-line description shown in help output.
+type Describer interface {
+	Description() string
+}
+
+// Aliaser declares alternate names for the command.
+type Aliaser interface {
+	Aliases() []string
+}
+
+// Parent declares subcommands.
+type Parent interface {
+	Subcommands() []Runner
+}
+
+// Hider hides the command from help output.
+type Hider interface {
+	Hidden() bool
+}
+
+// Example represents a single usage example.
+type Example struct {
+	Description string
+	Command     string
+}
+
+// Exampler provides usage examples shown in help output.
+type Exampler interface {
+	Examples() []Example
+}
+
+// --- Lifecycle interfaces (all optional) ---
+
+// BeforeRunner runs setup logic before Run. Called parent-first through the
+// command chain. The returned context flows forward to subsequent hooks and Run.
+type BeforeRunner interface {
+	Before(ctx context.Context) (context.Context, error)
+}
+
+// AfterRunner runs teardown logic after Run. Called child-first through the
+// command chain. After hooks always run, even if Run returned an error.
+type AfterRunner interface {
+	After(ctx context.Context) error
+}
+
+// Validator validates command state after flag parsing and before Run.
+type Validator interface {
+	Validate() error
+}
+
+// --- UX interfaces (all optional) ---
+
+// Completer provides shell completion candidates.
+type Completer interface {
+	Complete(ctx context.Context, args []string) []string
+}
+
+// Middlewarer provides middleware that wraps the command's Run function.
+type Middlewarer interface {
+	Middleware() []func(next RunFunc) RunFunc
+}
+
+// Suggester provides a custom suggestion algorithm for a command.
+// Given an unknown name, it returns a suggestion or empty string.
+type Suggester interface {
+	Suggest(name string) string
+}
+
+// --- Extensibility interfaces (all optional) ---
+
+// FlagUnmarshaler allows custom types to be used as flag values.
+type FlagUnmarshaler interface {
+	UnmarshalFlag(value string) error
+}
+
+// Helper overrides help text for a single command.
+type Helper interface {
+	Help() string
+}
+
+// FlagParser replaces the flag parsing engine. Checked on the command first,
+// then falls back to the global parser set via [WithFlagParser], then to the
+// default struct-tag parser.
+type FlagParser interface {
+	ParseFlags(cmd Runner, args []string) (remaining []string, err error)
+}
+
+// HelpRenderer replaces the help rendering engine. Checked on the command
+// first, then falls back to the global renderer set via [WithHelpRenderer],
+// then to the default renderer.
+type HelpRenderer interface {
+	RenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string
+}
+
+// FlagDef describes a single flag for use by custom [HelpRenderer] implementations.
+type FlagDef struct {
+	Name     string
+	Short    string
+	Help     string
+	Default  string
+	Env      string
+	Required bool
+	TypeName string
+	IsBool   bool
+}
