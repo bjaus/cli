@@ -14,6 +14,10 @@ var (
 	ErrInvalidFlagValue = errors.New("invalid flag value")
 )
 
+// ErrShowHelp can be returned from [Runner.Run] to make the framework render
+// help for the current command. The error is not propagated to the caller.
+var ErrShowHelp = errors.New("show help")
+
 // ExitCoder is implemented by errors that carry a process exit code.
 type ExitCoder interface {
 	ExitCode() int

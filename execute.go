@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -374,6 +375,9 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	afterErr := runAfterHooks(ctx, afterHooks)
 
 	if runErr != nil {
+		if errors.Is(runErr, ErrShowHelp) {
+			return renderHelp(leaf, chain, opts)
+		}
 		return runErr
 	}
 	return afterErr

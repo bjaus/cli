@@ -40,6 +40,27 @@ type Exampler interface {
 	Examples() []Example
 }
 
+// Versioner provides a version string, displayed when --version is passed.
+type Versioner interface {
+	Version() string
+}
+
+// Deprecater marks a command as deprecated. A non-empty return value
+// is printed as a warning to stderr before the command runs.
+type Deprecater interface {
+	Deprecated() string
+}
+
+// Categorizer groups the command under a heading in help output.
+type Categorizer interface {
+	Category() string
+}
+
+// Fallbacker provides a fallback subcommand to run when no subcommand name matches.
+type Fallbacker interface {
+	Fallback() Runner
+}
+
 // --- Lifecycle interfaces (all optional) ---
 
 // BeforeRunner runs setup logic before Run. Called parent-first through the
@@ -118,25 +139,3 @@ type FlagDef struct {
 	Negatable bool
 }
 
-// --- Additional discovery interfaces (all optional) ---
-
-// Versioner provides a version string, displayed when --version is passed.
-type Versioner interface {
-	Version() string
-}
-
-// Deprecater marks a command as deprecated. A non-empty return value
-// is printed as a warning to stderr before the command runs.
-type Deprecater interface {
-	Deprecated() string
-}
-
-// Categorizer groups the command under a heading in help output.
-type Categorizer interface {
-	Category() string
-}
-
-// Fallbacker provides a fallback subcommand to run when no subcommand name matches.
-type Fallbacker interface {
-	Fallback() Runner
-}

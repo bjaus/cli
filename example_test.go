@@ -10,6 +10,73 @@ import (
 	"github.com/bjaus/cli"
 )
 
+// A complete CLI with a root command, subcommand, and flags.
+// This is the typical starting point for building a CLI with this package.
+type exRoot struct{}
+
+func (r *exRoot) Name() string        { return "mytool" }
+func (r *exRoot) Description() string { return "A CLI built with the cli package" }
+func (r *exRoot) Version() string     { return "1.0.0" }
+func (r *exRoot) Subcommands() []cli.Runner {
+	return []cli.Runner{&exHello{}}
+}
+
+func (r *exRoot) Run(_ context.Context, _ []string) error {
+	return cli.ErrShowHelp
+}
+
+type exHello struct {
+	Recipient string `flag:"name" short:"n" default:"World" help:"Who to greet"`
+}
+
+func (h *exHello) Name() string        { return "hello" }
+func (h *exHello) Description() string { return "Say hello" }
+func (h *exHello) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "Hello, %s!\n", h.Recipient) //nolint:errcheck // example output
+	return nil
+}
+
+func Example() {
+	app := &exRoot{}
+	_ = cli.Execute(context.Background(), app, []string{"hello", "--name", "Alice"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: Hello, Alice!
+}
+
+func Example_help() {
+	app := &exRoot{}
+	_ = cli.Execute(context.Background(), app, []string{"--help"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output:
+	// A CLI built with the cli package
+	//
+	// Usage:
+	//   mytool [command]
+	//   mytool [args...]
+	//
+	// Commands:
+	//   hello  Say hello
+	//
+	// Use "mytool [command] --help" for more information about a command.
+}
+
+// ErrShowHelp lets a command request help display from within Run.
+// This is useful for root commands whose bare invocation should show help.
+func ExampleErrShowHelp() {
+	app := &exRoot{}
+	// Bare invocation — root's Run returns ErrShowHelp, so the framework shows help.
+	_ = cli.Execute(context.Background(), app, nil, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output:
+	// A CLI built with the cli package
+	//
+	// Usage:
+	//   mytool [command]
+	//   mytool [args...]
+	//
+	// Commands:
+	//   hello  Say hello
+	//
+	// Use "mytool [command] --help" for more information about a command.
+}
+
 // A minimal command using RunFunc.
 func ExampleRunFunc() {
 	hello := cli.RunFunc(func(_ context.Context, _ []string) error {
