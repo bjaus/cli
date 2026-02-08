@@ -25,6 +25,10 @@
 //   - [Parent] — return subcommands
 //   - [Hider] — hide the command from help output
 //   - [Exampler] — provide usage examples
+//   - [Versioner] — report a version string via --version / -V
+//   - [Deprecater] — mark a command as deprecated with a warning message
+//   - [Categorizer] — group subcommands under headings in help output
+//   - [Fallbacker] — provide a fallback subcommand when no name matches
 //
 // # Lifecycle Interfaces
 //
@@ -37,12 +41,30 @@
 // The default flag parser reads struct tags:
 //
 //	type ServeCmd struct {
-//	    Port int    `flag:"port" short:"p" default:"8080" help:"Port to listen on" env:"PORT"`
-//	    Host string `flag:"host" default:"localhost" help:"Host to bind to"`
+//	    Port    int           `flag:"port" short:"p" default:"8080" help:"Port to listen on" env:"PORT"`
+//	    Host    string        `flag:"host" default:"localhost" help:"Host to bind to"`
+//	    Tags    []string      `flag:"tag" short:"t" help:"Tags to apply (repeatable)"`
+//	    Env     map[string]string `flag:"env" help:"Environment variables as key=value"`
+//	    Format  string        `flag:"format" enum:"text,json,yaml" default:"text" help:"Output format"`
+//	    Verbose int           `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
+//	    Color   bool          `flag:"color" default:"true" negatable:"true" help:"Colorize output"`
 //	}
 //
 // Supported types: string, int, int64, float64, bool, time.Duration,
-// and any type implementing [FlagUnmarshaler].
+// slices of any scalar type, map[string]string, and any type implementing
+// [FlagUnmarshaler].
+//
+// Struct tag keys:
+//
+//   - flag — the flag name (required to register the field as a flag)
+//   - short — single-character short form
+//   - default — default value if not provided
+//   - help — description shown in help output
+//   - env — environment variable to read from (overrides default, overridden by explicit flag)
+//   - enum — comma-separated list of allowed values
+//   - required — "true" to require the flag
+//   - counter — "true" to increment an int on each occurrence (-vvv)
+//   - negatable — "true" to add a --no- prefix that sets a bool to false
 //
 // Priority: explicit flag > env var > default > zero value.
 //
@@ -63,5 +85,7 @@
 //	cli.Execute(ctx, root, os.Args[1:],
 //	    cli.WithStdout(os.Stdout),
 //	    cli.WithFlagParser(myParser),
+//	    cli.WithShortOptionHandling(true),
+//	    cli.WithPrefixMatching(true),
 //	)
 package cli
