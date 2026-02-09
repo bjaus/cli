@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -4159,4 +4160,218 @@ func TestDefaultRenderHelp_MultiLevelGlobalFlags(t *testing.T) {
 	// Only one --region should appear.
 	assert.Equal(t, 1, strings.Count(text, "--region"))
 	assert.Contains(t, text, "--env")
+}
+
+// --- Interactive Prompts ---
+
+func TestDefaultIsTerminal(t *testing.T) {
+	t.Parallel()
+
+	// Just verify it doesn't panic and returns a bool.
+	_ = defaultIsTerminal()
+}
+
+func TestReadPrompt(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		flag       FlagDef
+		input      string
+		wantPrompt string
+		wantValue  string
+	}{
+		"uses help as label": {
+			flag:       FlagDef{Name: "env", Help: "Target environment"},
+			input:      "prod\n",
+			wantPrompt: "Target environment: ",
+			wantValue:  "prod",
+		},
+		"falls back to name": {
+			flag:       FlagDef{Name: "env"},
+			input:      "dev\n",
+			wantPrompt: "env: ",
+			wantValue:  "dev",
+		},
+		"empty input": {
+			flag:       FlagDef{Name: "env", Help: "Target environment"},
+			input:      "\n",
+			wantPrompt: "Target environment: ",
+			wantValue:  "",
+		},
+		"EOF without newline": {
+			flag:       FlagDef{Name: "env", Help: "Target environment"},
+			input:      "staging",
+			wantPrompt: "Target environment: ",
+			wantValue:  "staging",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var stderr bytes.Buffer
+			scanner := bufio.NewScanner(strings.NewReader(tt.input))
+
+			val, err := readPrompt(tt.flag, &stderr, scanner)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPrompt, stderr.String())
+			assert.Equal(t, tt.wantValue, val)
+		})
+	}
+}
+
+type promptCmd struct {
+	Name_ string `flag:"name" required:"true" help:"Your name"`
+	Age   int    `flag:"age" required:"true" help:"Your age"`
+	Host  string `flag:"host" default:"localhost" help:"Hostname"`
+}
+
+func (c *promptCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestPromptForFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input       string
+		provided    map[string]bool
+		terminal    bool
+		interactive bool
+		wantName    string
+		wantAge     int
+		wantProv    map[string]bool
+		assertErr   require.ErrorAssertionFunc
+	}{
+		"prompts for missing required flags": {
+			input:       "Alice\n30\n",
+			interactive: true,
+			terminal:    true,
+			wantName:    "Alice",
+			wantAge:     30,
+			wantProv:    map[string]bool{"name": true, "age": true},
+			assertErr:   require.NoError,
+		},
+		"skips already provided flags": {
+			input:       "25\n",
+			provided:    map[string]bool{"name": true},
+			interactive: true,
+			terminal:    true,
+			wantName:    "",
+			wantAge:     25,
+			wantProv:    map[string]bool{"name": true, "age": true},
+			assertErr:   require.NoError,
+		},
+		"no prompts when not interactive": {
+			input:       "",
+			interactive: false,
+			terminal:    true,
+			assertErr:   require.NoError,
+		},
+		"no prompts when not terminal": {
+			input:       "Alice\n30\n",
+			interactive: true,
+			terminal:    false,
+			assertErr:   require.NoError,
+		},
+		"empty input skipped": {
+			input:       "\n30\n",
+			interactive: true,
+			terminal:    true,
+			wantName:    "",
+			wantAge:     30,
+			wantProv:    map[string]bool{"age": true},
+			assertErr:   require.NoError,
+		},
+		"invalid type returns error": {
+			input:       "Alice\nnot-a-number\n",
+			interactive: true,
+			terminal:    true,
+			assertErr:   require.Error,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &promptCmd{}
+			opts := &options{
+				stderr:      &bytes.Buffer{},
+				stdin:       strings.NewReader(tt.input),
+				isTerminal:  func() bool { return tt.terminal },
+				interactive: tt.interactive,
+			}
+
+			prov, err := promptForFlags(cmd, tt.provided, opts)
+			tt.assertErr(t, err)
+			if err != nil {
+				return
+			}
+			assert.Equal(t, tt.wantProv, prov)
+			assert.Equal(t, tt.wantName, cmd.Name_)
+			assert.Equal(t, tt.wantAge, cmd.Age)
+		})
+	}
+}
+
+type customPrompterCmd struct {
+	Env string `flag:"env" required:"true" help:"Target environment"`
+}
+
+func (c *customPrompterCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func (c *customPrompterCmd) Prompt(flag FlagDef) (string, error) {
+	if flag.Name == "env" {
+		return "production", nil
+	}
+	return "", nil
+}
+
+func TestPromptForFlags_CustomPrompter(t *testing.T) {
+	t.Parallel()
+
+	cmd := &customPrompterCmd{}
+	opts := &options{
+		stderr:      &bytes.Buffer{},
+		stdin:       strings.NewReader(""),
+		isTerminal:  func() bool { return true },
+		interactive: true,
+	}
+
+	prov, err := promptForFlags(cmd, nil, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "production", cmd.Env)
+	assert.True(t, prov["env"])
+}
+
+type interactiveCmd struct {
+	Name_ string `flag:"name" required:"true" help:"Your name"`
+}
+
+func (c *interactiveCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_InteractiveDisabled(t *testing.T) {
+	t.Parallel()
+
+	cmd := &interactiveCmd{}
+	err := Execute(
+		context.Background(), cmd, nil,
+		WithStdin(strings.NewReader("Bob\n")),
+	)
+	// Without WithInteractive, prompting is disabled — required flag fails.
+	require.Error(t, err)
+}
+
+func TestExecute_InteractivePrompt_MockTerminal(t *testing.T) {
+	t.Parallel()
+
+	cmd := &interactiveCmd{}
+	o := defaults()
+	o.interactive = true
+	o.stdin = strings.NewReader("Charlie\n")
+	o.isTerminal = func() bool { return true }
+
+	err := execute(context.Background(), cmd, nil, o)
+	require.NoError(t, err)
+	assert.Equal(t, "Charlie", cmd.Name_)
 }

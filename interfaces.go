@@ -186,6 +186,17 @@ type FlagGrouper interface {
 	FlagGroups() []FlagGroup
 }
 
+// --- Interactive interfaces (all optional) ---
+
+// Prompter customizes how a command prompts for missing required flags in
+// interactive mode. When [WithInteractive] is enabled and stdin is a terminal,
+// the framework calls Prompt for each missing required flag before validation.
+// Returning an empty string causes the flag to remain unset (validation will
+// catch it). Return an error to abort execution.
+type Prompter interface {
+	Prompt(flag FlagDef) (string, error)
+}
+
 // --- Extensibility interfaces (all optional) ---
 
 // FlagUnmarshaler allows custom types to be used as flag values.

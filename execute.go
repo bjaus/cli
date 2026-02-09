@@ -468,6 +468,14 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 	inheritFlags(chain, provided)
 	inheritTagFields(chain)
 
+	// Prompt for missing required flags on the leaf command.
+	leafIdx := len(chain) - 1
+	prov, err := promptForFlags(chain[leafIdx], provided[leafIdx], opts)
+	if err != nil {
+		return nil, err
+	}
+	provided[leafIdx] = prov
+
 	for i, cmd := range chain {
 		if err := ValidateFlags(cmd, provided[i]); err != nil {
 			return nil, err

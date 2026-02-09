@@ -28,6 +28,7 @@ type Option func(*options)
 type options struct {
 	stdout              io.Writer
 	stderr              io.Writer
+	stdin               io.Reader
 	flagParser          FlagParser
 	helpRenderer        HelpRenderer
 	configResolver      ConfigResolver
@@ -40,13 +41,17 @@ type options struct {
 	ignoreUnknown       bool
 	sortedHelp          bool
 	signalHandling      bool
+	interactive         bool
+	isTerminal          func() bool
 }
 
 func defaults() *options {
 	return &options{
-		stdout:  os.Stdout,
-		stderr:  os.Stderr,
-		suggest: true,
+		stdout:     os.Stdout,
+		stderr:     os.Stderr,
+		stdin:      os.Stdin,
+		suggest:    true,
+		isTerminal: defaultIsTerminal,
 	}
 }
 
@@ -135,6 +140,18 @@ func WithConfigResolver(r ConfigResolver) Option {
 // SIGTERM, causing the context to be canceled when either signal is received.
 func WithSignalHandling(enabled bool) Option {
 	return func(o *options) { o.signalHandling = enabled }
+}
+
+// WithInteractive enables interactive prompting for missing required flags
+// when stdin is a terminal. Commands can implement [Prompter] to customize
+// the prompting behavior.
+func WithInteractive(enabled bool) Option {
+	return func(o *options) { o.interactive = enabled }
+}
+
+// WithStdin sets the reader used for standard input (e.g., interactive prompts).
+func WithStdin(r io.Reader) Option {
+	return func(o *options) { o.stdin = r }
 }
 
 // Execute runs the command tree rooted at root with the given args and options.
