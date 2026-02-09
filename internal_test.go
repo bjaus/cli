@@ -3813,3 +3813,53 @@ func TestDefaultRenderHelp_WithArgs(t *testing.T) {
 	assert.Contains(t, text, "dest")
 	assert.Contains(t, text, "(required)")
 }
+
+// --- Signal Handling ---
+
+type signalCmd struct {
+	ctxErr error
+}
+
+func (c *signalCmd) Run(ctx context.Context, _ []string) error {
+	// Send SIGINT to ourselves.
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return err
+	}
+	if err := p.Signal(os.Interrupt); err != nil {
+		return err
+	}
+	// Give the signal handler a moment.
+	time.Sleep(50 * time.Millisecond)
+	c.ctxErr = ctx.Err()
+	return nil
+}
+
+func TestSignalHandling(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("signal test not supported on windows")
+	}
+
+	cmd := &signalCmd{}
+	err := Execute(context.Background(), cmd, nil, WithSignalHandling(true))
+	require.NoError(t, err)
+	assert.ErrorIs(t, cmd.ctxErr, context.Canceled)
+}
+
+type noopCmd struct {
+	ctxErr error
+}
+
+func (c *noopCmd) Run(ctx context.Context, _ []string) error {
+	c.ctxErr = ctx.Err()
+	return nil
+}
+
+func TestSignalHandling_Disabled(t *testing.T) {
+	t.Parallel()
+
+	cmd := &noopCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.NoError(t, cmd.ctxErr)
+}

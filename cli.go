@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 // Runner is the core interface every command must implement.
@@ -36,6 +38,7 @@ type options struct {
 	caseInsensitive     bool
 	ignoreUnknown       bool
 	sortedHelp          bool
+	signalHandling      bool
 }
 
 func defaults() *options {
@@ -126,6 +129,13 @@ func WithConfigResolver(r ConfigResolver) Option {
 	return func(o *options) { o.configResolver = r }
 }
 
+// WithSignalHandling enables automatic signal handling. When enabled,
+// [Execute] wraps the context with [signal.NotifyContext] for SIGINT and
+// SIGTERM, causing the context to be canceled when either signal is received.
+func WithSignalHandling(enabled bool) Option {
+	return func(o *options) { o.signalHandling = enabled }
+}
+
 // Execute runs the command tree rooted at root with the given args and options.
 // It resolves subcommands, parses flags, runs lifecycle hooks, and executes
 // the target command.
@@ -133,6 +143,11 @@ func Execute(ctx context.Context, root Runner, args []string, opts ...Option) er
 	o := defaults()
 	for _, opt := range opts {
 		opt(o)
+	}
+	if o.signalHandling {
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
 	}
 	return execute(ctx, root, args, o)
 }
