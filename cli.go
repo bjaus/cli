@@ -27,6 +27,7 @@ type options struct {
 	stderr              io.Writer
 	flagParser          FlagParser
 	helpRenderer        HelpRenderer
+	configResolver      ConfigResolver
 	suggest             bool
 	shortOptionHandling bool
 	prefixMatching      bool
@@ -76,6 +77,13 @@ func WithShortOptionHandling(enabled bool) Option {
 // When enabled, "ser" matches "serve" if no other subcommand starts with "ser".
 func WithPrefixMatching(enabled bool) Option {
 	return func(o *options) { o.prefixMatching = enabled }
+}
+
+// WithConfigResolver sets a global config resolver for flag values.
+// Config values have lower priority than env vars and explicit CLI flags,
+// but higher priority than defaults: explicit flag > env > config > default > zero.
+func WithConfigResolver(r ConfigResolver) Option {
+	return func(o *options) { o.configResolver = r }
 }
 
 // Execute runs the command tree rooted at root with the given args and options.

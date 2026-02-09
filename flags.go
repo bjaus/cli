@@ -85,9 +85,9 @@ type fieldInfo struct {
 
 // defaultParseFlags is the built-in flag parser using struct tag reflection.
 // It returns remaining args, a set of flag names that were explicitly provided
-// (by CLI args or env vars), and any error. Validation is deferred so that
-// inheritance can fill in values before required/enum checks run.
-func defaultParseFlags(cmd Runner, args []string) ([]string, map[string]bool, error) {
+// (by CLI args, config resolver, or env vars), and any error. Validation is
+// deferred so that inheritance can fill in values before required/enum checks run.
+func defaultParseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]bool, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -98,7 +98,16 @@ func defaultParseFlags(cmd Runner, args []string) ([]string, map[string]bool, er
 
 	fields := buildFieldMap(v.Type())
 
-	if err := applyDefaultsAndEnv(v, fields); err != nil {
+	if err := applyDefaults(v, fields); err != nil {
+		return nil, nil, err
+	}
+
+	resolver := resolveConfigResolver(cmd, opts)
+	if err := applyConfig(v, fields, resolver); err != nil {
+		return nil, nil, err
+	}
+
+	if err := applyEnv(v, fields); err != nil {
 		return nil, nil, err
 	}
 
@@ -158,22 +167,57 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 	return fields
 }
 
-func applyDefaultsAndEnv(v reflect.Value, fields map[string]*fieldInfo) error {
+func applyDefaults(v reflect.Value, fields map[string]*fieldInfo) error {
 	for _, fi := range fields {
-		field := v.Field(fi.index)
 		if fi.def.Default != "" {
+			field := v.Field(fi.index)
 			if err := setFieldValue(field, fi.def.Default); err != nil {
 				return fmt.Errorf("%w: invalid default for --%s: %w", ErrInvalidFlagValue, fi.def.Name, err)
 			}
 		}
+	}
+	return nil
+}
+
+func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigResolver) error {
+	if resolver == nil {
+		return nil
+	}
+	for _, fi := range fields {
+		val, found := resolver(fi.def.Name)
+		if !found {
+			continue
+		}
+		field := v.Field(fi.index)
+		if err := setFieldValue(field, val); err != nil {
+			return fmt.Errorf("%w: --%s (from config): %w", ErrInvalidFlagValue, fi.def.Name, err)
+		}
+		fi.provided = true
+	}
+	return nil
+}
+
+func applyEnv(v reflect.Value, fields map[string]*fieldInfo) error {
+	for _, fi := range fields {
 		if fi.def.Env != "" {
 			if envVal, ok := os.LookupEnv(fi.def.Env); ok {
+				field := v.Field(fi.index)
 				if err := setFieldValue(field, envVal); err != nil {
 					return fmt.Errorf("%w: --%s (from %s): %w", ErrInvalidFlagValue, fi.def.Name, fi.def.Env, err)
 				}
 				fi.provided = true
 			}
 		}
+	}
+	return nil
+}
+
+func resolveConfigResolver(cmd Runner, opts *options) ConfigResolver {
+	if cp, ok := cmd.(ConfigProvider); ok {
+		return cp.ConfigResolver()
+	}
+	if opts != nil {
+		return opts.configResolver
 	}
 	return nil
 }

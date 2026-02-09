@@ -1303,3 +1303,154 @@ func TestExecute_InheritTag_NoAncestorMatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", child.Env)
 }
+
+// --- Config resolver tests ---
+
+type configCmd struct {
+	Port int    `flag:"port" default:"8080" help:"Listen port"`
+	Host string `flag:"host" default:"localhost" help:"Host"`
+}
+
+func (c *configCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_ConfigResolver_Applied(t *testing.T) {
+	t.Parallel()
+
+	resolver := cli.ConfigResolver(func(name string) (string, bool) {
+		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
+		v, ok := m[name]
+		return v, ok
+	})
+
+	cmd := &configCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port)
+	assert.Equal(t, "0.0.0.0", cmd.Host)
+}
+
+type envConfigCmd struct {
+	Port int `flag:"port" default:"8080" env:"CFG_PORT"`
+}
+
+func (c *envConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_EnvOverridesConfig(t *testing.T) {
+	t.Setenv("CFG_PORT", "5555")
+
+	resolver := cli.ConfigResolver(func(name string) (string, bool) {
+		if name == "port" {
+			return "9090", true
+		}
+		return "", false
+	})
+
+	cmd := &envConfigCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, 5555, cmd.Port)
+}
+
+func TestExecute_ExplicitFlagOverridesConfig(t *testing.T) {
+	t.Parallel()
+
+	resolver := cli.ConfigResolver(func(name string) (string, bool) {
+		if name == "port" {
+			return "9090", true
+		}
+		return "", false
+	})
+
+	cmd := &configCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--port", "3000"}, cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, 3000, cmd.Port)
+}
+
+type reqConfigCmd struct {
+	Name string `flag:"name" required:"true"`
+}
+
+func (c *reqConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_ConfigSatisfiesRequired(t *testing.T) {
+	t.Parallel()
+
+	resolver := cli.ConfigResolver(func(name string) (string, bool) {
+		if name == "name" {
+			return "alice", true
+		}
+		return "", false
+	})
+
+	cmd := &reqConfigCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+}
+
+type enumConfigCmd struct {
+	Format string `flag:"format" enum:"json,yaml,text"`
+}
+
+func (c *enumConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_ConfigValidatedAgainstEnum(t *testing.T) {
+	t.Parallel()
+
+	// Valid enum value from config.
+	cmd := &enumConfigCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(
+		cli.ConfigResolver(func(name string) (string, bool) {
+			if name == "format" {
+				return "json", true
+			}
+			return "", false
+		}),
+	))
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
+
+	// Invalid enum value from config.
+	cmd2 := &enumConfigCmd{}
+	err = cli.Execute(context.Background(), cmd2, nil, cli.WithConfigResolver(
+		cli.ConfigResolver(func(name string) (string, bool) {
+			if name == "format" {
+				return "xml", true
+			}
+			return "", false
+		}),
+	))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be one of")
+}
+
+type configProviderCmd struct {
+	Port int `flag:"port" default:"8080"`
+}
+
+func (c *configProviderCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func (c *configProviderCmd) ConfigResolver() cli.ConfigResolver {
+	return func(name string) (string, bool) {
+		if name == "port" {
+			return "4000", true
+		}
+		return "", false
+	}
+}
+
+func TestExecute_ConfigProvider_OverridesGlobal(t *testing.T) {
+	t.Parallel()
+
+	global := cli.ConfigResolver(func(name string) (string, bool) {
+		if name == "port" {
+			return "9090", true
+		}
+		return "", false
+	})
+
+	cmd := &configProviderCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(global))
+	require.NoError(t, err)
+	assert.Equal(t, 4000, cmd.Port) // command-level wins
+}

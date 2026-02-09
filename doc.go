@@ -67,7 +67,7 @@
 //   - counter — "true" to increment an int on each occurrence (-vvv)
 //   - negatable — "true" to add a --no- prefix that sets a bool to false
 //
-// Priority: explicit flag > env var > default > zero value.
+// Priority: explicit flag > env var > config > default > zero value.
 //
 // Flags can appear anywhere — before or after subcommand names.
 //
@@ -100,6 +100,48 @@
 //
 // Priority for automatic flag inheritance:
 // explicit child flag > child env var > inherited from parent > child default > zero value.
+//
+// # Config
+//
+// Flag values can be loaded from external configuration sources via a
+// [ConfigResolver]. A resolver is a single function:
+//
+//	type ConfigResolver func(flagName string) (value string, found bool)
+//
+// Given a flag name, it returns the string value and whether it was found.
+// The framework handles all type conversion, validation, required checks,
+// and enum enforcement — the resolver only needs to return strings.
+//
+// Priority chain: explicit CLI flag > env var > config > default > zero value.
+//
+// Set a global resolver via [WithConfigResolver]:
+//
+//	f, _ := os.Open("config.json")
+//	resolver, _ := config.FromJSON(f)
+//	cli.Execute(ctx, root, os.Args[1:],
+//	    cli.WithConfigResolver(resolver),
+//	)
+//
+// Or implement [ConfigProvider] on a command for per-command resolvers:
+//
+//	func (c *ServeCmd) ConfigResolver() cli.ConfigResolver {
+//	    return config.FromMap(map[string]string{"port": "9090"})
+//	}
+//
+// Command-level resolvers take priority over the global resolver. Use
+// [config.Chain] to try multiple sources in order:
+//
+//	resolver := config.Chain(
+//	    config.FromMap(overrides),
+//	    jsonResolver,
+//	)
+//
+// The [config] subpackage ships [config.FromMap], [config.FromJSON], and
+// [config.Chain]. Because [ConfigResolver] is a plain function and
+// [config.FromMap] accepts any map[string]string, adding support for any
+// configuration format — YAML, TOML, HCL, .env files, remote stores —
+// is a matter of decoding into a map and calling [config.FromMap].
+// See the [config] package documentation for copy-paste adapter examples.
 //
 // # Extensibility
 //

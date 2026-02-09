@@ -105,6 +105,19 @@ type Suggester interface {
 	Suggest(name string) string
 }
 
+// --- Config interfaces (all optional) ---
+
+// ConfigResolver resolves flag values from an external source such as a
+// config file. Given a flag name, it returns the string value and whether
+// the flag was found. The framework handles type conversion.
+type ConfigResolver func(flagName string) (value string, found bool)
+
+// ConfigProvider is implemented by commands that supply their own resolver.
+// Checked before the global resolver set via [WithConfigResolver].
+type ConfigProvider interface {
+	ConfigResolver() ConfigResolver
+}
+
 // --- Extensibility interfaces (all optional) ---
 
 // FlagUnmarshaler allows custom types to be used as flag values.

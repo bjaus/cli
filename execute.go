@@ -443,7 +443,7 @@ func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]
 		remaining, err := opts.flagParser.ParseFlags(cmd, args)
 		return remaining, nil, err
 	}
-	return defaultParseFlags(cmd, args)
+	return defaultParseFlags(cmd, args, opts)
 }
 
 func runAfterHooks(ctx context.Context, hooks []Runner) error {

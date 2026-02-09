@@ -529,3 +529,57 @@ func ExampleExecute_inheritTag() {
 	_ = cli.Execute(context.Background(), app, []string{"--env", "staging", "serve"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
 	// Output: env=staging port=8080
 }
+
+// ConfigResolver loads flag values from an external source.
+// Config values sit between defaults and env vars in priority:
+// explicit flag > env > config > default > zero.
+type ConfigServeCmd struct {
+	Port int    `flag:"port" default:"8080" help:"Listen port"`
+	Host string `flag:"host" default:"localhost" help:"Host to bind to"`
+}
+
+func (c *ConfigServeCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "host=%s port=%d\n", c.Host, c.Port) //nolint:errcheck // example output
+	return nil
+}
+
+func ExampleExecute_configResolver() {
+	resolver := cli.ConfigResolver(func(flagName string) (string, bool) {
+		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
+		v, ok := m[flagName]
+		return v, ok
+	})
+
+	cmd := &ConfigServeCmd{}
+	_ = cli.Execute(context.Background(), cmd, nil, //nolint:errcheck // example
+		cli.WithStdout(os.Stdout),
+		cli.WithConfigResolver(resolver),
+	)
+	// Output: host=0.0.0.0 port=9090
+}
+
+// ConfigProvider lets a command supply its own resolver.
+// The command-level resolver takes priority over the global one.
+type ConfigProviderCmd struct {
+	Port int `flag:"port" default:"8080" help:"Listen port"`
+}
+
+func (c *ConfigProviderCmd) Run(_ context.Context, _ []string) error {
+	fmt.Fprintf(os.Stdout, "port=%d\n", c.Port) //nolint:errcheck // example output
+	return nil
+}
+
+func (c *ConfigProviderCmd) ConfigResolver() cli.ConfigResolver {
+	return func(flagName string) (string, bool) {
+		if flagName == "port" {
+			return "3000", true
+		}
+		return "", false
+	}
+}
+
+func ExampleExecute_configProvider() {
+	cmd := &ConfigProviderCmd{}
+	_ = cli.Execute(context.Background(), cmd, nil, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
+	// Output: port=3000
+}

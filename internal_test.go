@@ -223,7 +223,7 @@ func TestDefaultParseFlags(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalFlaggedCmd{}
-			remaining, _, err := defaultParseFlags(cmd, tt.args)
+			remaining, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			tt.assertErr(t, err)
 			if err != nil {
 				return
@@ -241,7 +241,7 @@ func TestDefaultParseFlags(t *testing.T) {
 func TestDefaultParseFlags_EnvVar(t *testing.T) {
 	t.Setenv("PORT", "9999")
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, 9999, cmd.Port)
 }
@@ -249,7 +249,7 @@ func TestDefaultParseFlags_EnvVar(t *testing.T) {
 func TestDefaultParseFlags_ExplicitOverridesEnv(t *testing.T) {
 	t.Setenv("PORT", "9999")
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--port", "3000"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port", "3000"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, 3000, cmd.Port)
 }
@@ -276,7 +276,7 @@ func TestDefaultParseFlags_RequiredFlag(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalRequiredFlagCmd{}
-			_, provided, err := defaultParseFlags(cmd, tt.args)
+			_, provided, err := defaultParseFlags(cmd, tt.args, defaults())
 			if err == nil {
 				err = ValidateFlags(cmd, provided)
 			}
@@ -289,7 +289,7 @@ func TestDefaultParseFlags_RequiredFlagErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalRequiredFlagCmd{}
-	_, provided, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil, defaults())
 	require.NoError(t, err)
 	err = ValidateFlags(cmd, provided)
 	require.ErrorIs(t, err, ErrRequiredFlag)
@@ -300,7 +300,7 @@ func TestDefaultParseFlags_CustomUnmarshaler(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalCustomFlagCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--tag", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--tag", "foo"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, cmd.Tags.vals)
 }
@@ -321,7 +321,7 @@ func TestDefaultParseFlags_InvalidValue(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalFlaggedCmd{}
-			_, _, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			require.Error(t, err)
 		})
 	}
@@ -331,7 +331,7 @@ func TestDefaultParseFlags_UnknownFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--unknown"})
+	_, _, err := defaultParseFlags(cmd, []string{"--unknown"}, defaults())
 	require.ErrorIs(t, err, ErrUnknownFlag)
 }
 
@@ -339,7 +339,7 @@ func TestDefaultParseFlags_MissingValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--port"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port"}, defaults())
 	require.ErrorIs(t, err, ErrFlagRequiresVal)
 }
 
@@ -1077,7 +1077,7 @@ func TestDefaultParseFlags_BoolEquals(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolValueCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--debug=true"})
+	_, _, err := defaultParseFlags(cmd, []string{"--debug=true"}, defaults())
 	require.NoError(t, err)
 	assert.True(t, cmd.Debug)
 }
@@ -1086,7 +1086,7 @@ func TestDefaultParseFlags_BoolInvalidValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolValueCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--debug=notbool"})
+	_, _, err := defaultParseFlags(cmd, []string{"--debug=notbool"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1094,7 +1094,7 @@ func TestDefaultParseFlags_NonStruct(t *testing.T) {
 	t.Parallel()
 
 	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
-	remaining, _, err := defaultParseFlags(cmd, []string{"arg1", "arg2"})
+	remaining, _, err := defaultParseFlags(cmd, []string{"arg1", "arg2"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"arg1", "arg2"}, remaining)
 }
@@ -1109,7 +1109,7 @@ func TestDefaultParseFlags_InvalidDefault(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadDefaultCmd{}
-	_, _, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1123,7 +1123,7 @@ func TestDefaultParseFlags_InvalidEnv(t *testing.T) {
 	t.Setenv("BAD_PORT", "not-a-number")
 
 	cmd := &internalEnvCmd{}
-	_, _, err := defaultParseFlags(cmd, nil)
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1131,7 +1131,7 @@ func TestDefaultParseFlags_EqualsUnknown(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--unknown=value"})
+	_, _, err := defaultParseFlags(cmd, []string{"--unknown=value"}, defaults())
 	require.ErrorIs(t, err, ErrUnknownFlag)
 }
 
@@ -1139,7 +1139,7 @@ func TestDefaultParseFlags_EqualsInvalidValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlaggedCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--port=abc"})
+	_, _, err := defaultParseFlags(cmd, []string{"--port=abc"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1155,7 +1155,7 @@ func TestDefaultParseFlags_UnsupportedType(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalUnsupportedFieldCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--ch", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--ch", "foo"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -1464,7 +1464,7 @@ func TestDefaultParseFlags_ValueReceiverUnmarshaler(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalValueUnmarshalerCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--val", "test"})
+	_, _, err := defaultParseFlags(cmd, []string{"--val", "test"}, defaults())
 	require.NoError(t, err)
 }
 
@@ -1512,7 +1512,7 @@ func TestDefaultParseFlags_Int64(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalInt64Cmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--big", "9999999999"})
+	_, _, err := defaultParseFlags(cmd, []string{"--big", "9999999999"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, int64(9999999999), cmd.Big)
 }
@@ -1560,7 +1560,7 @@ func TestDefaultParseFlags_Slice(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalSliceCmd{}
-			_, _, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			require.NoError(t, err)
 			if tt.wantTags != nil {
 				assert.Equal(t, tt.wantTags, cmd.Tags)
@@ -1636,7 +1636,7 @@ func TestDefaultParseFlags_Map(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalMapCmd{}
-			_, _, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			tt.assertErr(t, err)
 			if err != nil {
 				return
@@ -1682,7 +1682,7 @@ func TestDefaultParseFlags_Negatable(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalNegatableCmd{}
-			_, _, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantVerbose, cmd.Verbose)
 		})
@@ -1737,7 +1737,7 @@ func TestDefaultParseFlags_Counter(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalCounterCmd{}
-			_, _, err := defaultParseFlags(cmd, tt.args)
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantVerbosity, cmd.Verbosity)
 		})
@@ -1801,7 +1801,7 @@ func TestDefaultParseFlags_Enum(t *testing.T) {
 			t.Parallel()
 
 			cmd := &internalEnumCmd{}
-			_, provided, err := defaultParseFlags(cmd, tt.args)
+			_, provided, err := defaultParseFlags(cmd, tt.args, defaults())
 			if err == nil {
 				err = ValidateFlags(cmd, provided)
 			}
@@ -1825,7 +1825,7 @@ func TestDefaultParseFlags_EnumNoDefault(t *testing.T) {
 
 	// No default, no flag provided → zero value, no enum validation.
 	cmd := &internalEnumNoDefaultCmd{}
-	_, provided, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil, defaults())
 	require.NoError(t, err)
 	require.NoError(t, ValidateFlags(cmd, provided))
 	assert.Empty(t, cmd.Format)
@@ -2262,7 +2262,7 @@ func TestDefaultParseFlags_DurationSlice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalDurationSliceCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--timeout", "5s", "--timeout", "10m"})
+	_, _, err := defaultParseFlags(cmd, []string{"--timeout", "5s", "--timeout", "10m"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []time.Duration{5 * time.Second, 10 * time.Minute}, cmd.Timeouts)
 }
@@ -2288,7 +2288,7 @@ func TestDefaultParseFlags_Int64Slice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalInt64SliceCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--id", "100", "--id", "200"})
+	_, _, err := defaultParseFlags(cmd, []string{"--id", "100", "--id", "200"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []int64{100, 200}, cmd.IDs)
 }
@@ -2305,7 +2305,7 @@ func TestDefaultParseFlags_SliceUnsupportedElem(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadSliceCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--item", "foo"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "foo"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2321,7 +2321,7 @@ func TestDefaultParseFlags_MapUnsupportedKey(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadMapKeyCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2337,7 +2337,7 @@ func TestDefaultParseFlags_MapUnsupportedValue(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBadMapValCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"})
+	_, _, err := defaultParseFlags(cmd, []string{"--item", "k=v"}, defaults())
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
@@ -2353,7 +2353,7 @@ func TestDefaultParseFlags_EnumEnv(t *testing.T) {
 	t.Setenv("TEST_FORMAT", "xml")
 
 	cmd := &internalEnumEnvCmd{}
-	_, provided, err := defaultParseFlags(cmd, nil)
+	_, provided, err := defaultParseFlags(cmd, nil, defaults())
 	require.NoError(t, err)
 	err = ValidateFlags(cmd, provided)
 	require.ErrorIs(t, err, ErrInvalidFlagValue)
@@ -2372,7 +2372,7 @@ func TestDefaultParseFlags_BoolSlice(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBoolSliceCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--flag", "true", "--flag", "false"})
+	_, _, err := defaultParseFlags(cmd, []string{"--flag", "true", "--flag", "false"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []bool{true, false}, cmd.Flags)
 }
@@ -2555,4 +2555,160 @@ func TestInheritTagFields_TypeMismatch(t *testing.T) {
 	inheritTagFields(chain)
 	// Types don't match (int vs string), so child stays zero.
 	assert.Empty(t, child.Env)
+}
+
+// --- applyDefaults ---
+
+func TestApplyDefaults(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlaggedCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	err := applyDefaults(v, fields)
+	require.NoError(t, err)
+
+	assert.Equal(t, 8080, cmd.Port)
+	assert.Equal(t, "localhost", cmd.Host)
+	assert.False(t, cmd.Verbose)
+
+	// Defaults do NOT mark provided.
+	for _, fi := range fields {
+		assert.False(t, fi.provided, "default should not mark %s as provided", fi.def.Name)
+	}
+}
+
+// --- applyConfig ---
+
+func TestApplyConfig(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlaggedCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	resolver := ConfigResolver(func(name string) (string, bool) {
+		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
+		val, ok := m[name]
+		return val, ok
+	})
+
+	err := applyConfig(v, fields, resolver)
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port)
+	assert.Equal(t, "0.0.0.0", cmd.Host)
+
+	// Config values should mark provided.
+	for _, fi := range fields {
+		if fi.def.Name == "port" || fi.def.Name == "host" {
+			assert.True(t, fi.provided, "%s should be marked provided", fi.def.Name)
+		}
+	}
+}
+
+func TestApplyConfig_Nil(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlaggedCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	// Nil resolver is a no-op.
+	err := applyConfig(v, fields, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 0, cmd.Port)
+	assert.Equal(t, "", cmd.Host)
+}
+
+func TestApplyConfig_InvalidValue(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlaggedCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	resolver := ConfigResolver(func(name string) (string, bool) {
+		if name == "port" {
+			return "not-a-number", true
+		}
+		return "", false
+	})
+
+	err := applyConfig(v, fields, resolver)
+	require.ErrorIs(t, err, ErrInvalidFlagValue)
+	assert.Contains(t, err.Error(), "from config")
+}
+
+// --- applyEnv ---
+
+func TestApplyEnv(t *testing.T) {
+	t.Setenv("PORT", "7777")
+
+	cmd := &internalFlaggedCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	err := applyEnv(v, fields)
+	require.NoError(t, err)
+	assert.Equal(t, 7777, cmd.Port)
+
+	// Env should mark provided.
+	for _, fi := range fields {
+		if fi.def.Name == "port" {
+			assert.True(t, fi.provided, "env should mark port as provided")
+		}
+	}
+}
+
+// --- resolveConfigResolver ---
+
+type internalConfigProviderCmd struct {
+	internalBareCmd
+}
+
+func (c *internalConfigProviderCmd) ConfigResolver() ConfigResolver {
+	return func(name string) (string, bool) {
+		return "from-command", true
+	}
+}
+
+func TestResolveConfigResolver_CommandLevel(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalConfigProviderCmd{}
+	opts := defaults()
+	opts.configResolver = func(name string) (string, bool) {
+		return "from-global", true
+	}
+
+	resolver := resolveConfigResolver(cmd, opts)
+	require.NotNil(t, resolver)
+	val, ok := resolver("anything")
+	assert.True(t, ok)
+	assert.Equal(t, "from-command", val)
+}
+
+func TestResolveConfigResolver_GlobalOption(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalBareCmd{}
+	opts := defaults()
+	opts.configResolver = func(name string) (string, bool) {
+		return "from-global", true
+	}
+
+	resolver := resolveConfigResolver(cmd, opts)
+	require.NotNil(t, resolver)
+	val, ok := resolver("anything")
+	assert.True(t, ok)
+	assert.Equal(t, "from-global", val)
+}
+
+func TestResolveConfigResolver_None(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalBareCmd{}
+	resolver := resolveConfigResolver(cmd, defaults())
+	assert.Nil(t, resolver)
 }
