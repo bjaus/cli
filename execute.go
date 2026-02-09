@@ -360,6 +360,9 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 		}
 	}
 
+	// Store parsed flag values in context for Get/Lookup access.
+	ctx = storeFlags(ctx, chain)
+
 	// Print deprecation warnings.
 	printDeprecationWarnings(chain, provided, opts)
 

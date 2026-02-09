@@ -3658,6 +3658,88 @@ func TestDiscoverPATH_NonExecutableFile(t *testing.T) {
 	assert.Empty(t, runners)
 }
 
+// --- storeFlags ---
+
+type internalStoreFlagsParent struct {
+	Env     string `flag:"env"`
+	Verbose bool   `flag:"verbose"`
+}
+
+func (c *internalStoreFlagsParent) Run(_ context.Context, _ []string) error { return nil }
+
+type internalStoreFlagsChild struct {
+	Port int `flag:"port"`
+}
+
+func (c *internalStoreFlagsChild) Run(_ context.Context, _ []string) error { return nil }
+
+func TestStoreFlags(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalStoreFlagsParent{Env: "prod", Verbose: true}
+	child := &internalStoreFlagsChild{Port: 9090}
+	chain := []Runner{parent, child}
+
+	ctx := storeFlags(context.Background(), chain)
+
+	env, ok := Lookup[string](ctx, "env")
+	require.True(t, ok)
+	assert.Equal(t, "prod", env)
+
+	verbose, ok := Lookup[bool](ctx, "verbose")
+	require.True(t, ok)
+	assert.True(t, verbose)
+
+	port, ok := Lookup[int](ctx, "port")
+	require.True(t, ok)
+	assert.Equal(t, 9090, port)
+}
+
+func TestStoreFlags_NonStructSkipped(t *testing.T) {
+	t.Parallel()
+
+	fn := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	chain := []Runner{fn}
+
+	ctx := storeFlags(context.Background(), chain)
+
+	// No flags stored, Lookup returns false.
+	_, ok := Lookup[string](ctx, "anything")
+	assert.False(t, ok)
+}
+
+func TestStoreFlags_ChildOverwritesParent(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalStoreFlagsParent{Env: "dev"}
+	child := &struct {
+		Env string `flag:"env"`
+		internalBareCmd
+	}{Env: "prod"}
+	chain := []Runner{parent, child}
+
+	ctx := storeFlags(context.Background(), chain)
+
+	// Child is processed after parent, so child's value wins.
+	assert.Equal(t, "prod", Get[string](ctx, "env"))
+}
+
+func TestStoreFlags_AutoDerivedName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &struct {
+		OutputFormat string `flag:""`
+		internalBareCmd
+	}{OutputFormat: "json"}
+	chain := []Runner{cmd}
+
+	ctx := storeFlags(context.Background(), chain)
+
+	val, ok := Lookup[string](ctx, "output-format")
+	require.True(t, ok)
+	assert.Equal(t, "json", val)
+}
+
 func TestDefaultRenderHelp_WithArgs(t *testing.T) {
 	t.Parallel()
 

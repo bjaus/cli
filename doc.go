@@ -108,6 +108,35 @@
 // Priority for automatic flag inheritance:
 // explicit child flag > child env var > inherited from parent > child default > zero value.
 //
+// # Context Values
+//
+// The framework automatically stores every parsed flag value in the context
+// before [BeforeRunner] hooks run. Subcommands can retrieve any ancestor's
+// flag value without declaring struct fields:
+//
+//	func (s *ServeCmd) Run(ctx context.Context, args []string) error {
+//	    env := cli.Get[string](ctx, "env") // from parent's --env flag
+//	    // ...
+//	}
+//
+// Three functions are provided:
+//
+//   - [Set] — store a named value in the context (returns new context)
+//   - [Get] — retrieve a value by name; returns zero value if missing or type mismatch
+//   - [Lookup] — retrieve a value by name; returns (value, ok) for safe checking
+//
+// User code can also call [Set] in a [BeforeRunner.Before] hook to share
+// arbitrary values (database connections, loggers, etc.) with downstream
+// commands:
+//
+//	func (a *App) Before(ctx context.Context) (context.Context, error) {
+//	    return cli.Set(ctx, "db", a.db), nil
+//	}
+//
+// This complements struct-based inheritance: use inherit tags when the child
+// knows about the flag at compile time, and context values when you want
+// loose coupling or need to share non-flag data.
+//
 // # Config
 //
 // Flag values can be loaded from external configuration sources via a
