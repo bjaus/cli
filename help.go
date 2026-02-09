@@ -209,11 +209,27 @@ func renderFlags(b *strings.Builder, flags []FlagDef) {
 }
 
 func writeFlagLines(b *strings.Builder, flags []FlagDef, maxLeft int) {
+	hasRequired := false
+	for i := range flags {
+		if flags[i].Required {
+			hasRequired = true
+			break
+		}
+	}
+
 	for i := range flags {
 		f := &flags[i]
 		left := flagLeft(f)
 		right := flagRight(f)
-		fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, left, right)
+		if hasRequired {
+			prefix := "  "
+			if f.Required {
+				prefix = "* "
+			}
+			fmt.Fprintf(b, "%s%-*s  %s\n", prefix, maxLeft, left, right)
+		} else {
+			fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, left, right)
+		}
 	}
 }
 

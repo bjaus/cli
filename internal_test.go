@@ -4375,3 +4375,68 @@ func TestExecute_InteractivePrompt_MockTerminal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Charlie", cmd.Name_)
 }
+
+// --- Required Flag Indicator ---
+
+type requiredIndicatorCmd struct {
+	Env    string `flag:"env" required:"true" help:"Target environment"`
+	Format string `flag:"format" default:"table" help:"Output format"`
+}
+
+func (c *requiredIndicatorCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *requiredIndicatorCmd) Name() string                            { return "app" }
+
+func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
+	t.Parallel()
+
+	cmd := &requiredIndicatorCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+
+	// Required flags have * prefix.
+	assert.Contains(t, text, "* ")
+	assert.Contains(t, text, "--env")
+
+	// Non-required flags have space prefix (no asterisk).
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "--format") {
+			assert.True(t, strings.HasPrefix(line, "  "), "non-required flag should have space prefix, got: %q", line)
+		}
+	}
+}
+
+type noRequiredFlagsCmd struct {
+	Port int `flag:"port" default:"8080" help:"Port to listen on"`
+}
+
+func (c *noRequiredFlagsCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *noRequiredFlagsCmd) Name() string                            { return "app" }
+
+func TestDefaultRenderHelp_NoAsteriskWithoutRequired(t *testing.T) {
+	t.Parallel()
+
+	cmd := &noRequiredFlagsCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+
+	// No required flags means no asterisk prefix anywhere in Flags section.
+	lines := strings.Split(text, "\n")
+	inFlags := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Flags:") {
+			inFlags = true
+			continue
+		}
+		if inFlags && strings.TrimSpace(line) == "" {
+			break
+		}
+		if inFlags {
+			assert.False(t, strings.HasPrefix(line, "* "), "unexpected asterisk in: %q", line)
+		}
+	}
+}
