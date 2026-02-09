@@ -2,10 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
-func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
+func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef, sorted bool) string {
 	var b strings.Builder
 
 	info := resolveInfo(cmd)
@@ -16,17 +17,24 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 		b.WriteString("\n\n")
 	}
 
+	// Collect all subcommands (static + discovered). Errors are ignored
+	// in help rendering — we show what we can.
+	allSubs, _ := allSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
+
 	// Usage
 	chainNames := commandChainNames(chain)
 	b.WriteString("Usage:\n")
 
-	if p, ok := cmd.(Parent); ok && len(p.Subcommands()) > 0 {
+	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "  %s [command]\n", chainNames)
 	}
-	if len(flags) > 0 {
-		fmt.Fprintf(&b, "  %s [flags] [args...]\n", chainNames)
+	argDefs := ScanArgs(cmd)
+	argUsage := buildArgUsage(argDefs)
+
+	if hasVisibleFlags(flags) {
+		fmt.Fprintf(&b, "  %s [flags] %s\n", chainNames, argUsage)
 	} else {
-		fmt.Fprintf(&b, "  %s [args...]\n", chainNames)
+		fmt.Fprintf(&b, "  %s %s\n", chainNames, argUsage)
 	}
 
 	// Examples
@@ -41,79 +49,195 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 	}
 
 	// Subcommands (grouped by category)
-	if p, ok := cmd.(Parent); ok {
-		renderSubcommands(&b, p.Subcommands())
+	if len(allSubs) > 0 {
+		renderSubcommands(&b, allSubs, sorted)
 	}
 
-	// Flags
-	if len(flags) > 0 {
-		b.WriteString("\nFlags:\n")
+	// Flags (grouped by category, hidden filtered)
+	renderFlags(&b, flags)
 
-		type flagLine struct {
-			left  string
-			right string
-		}
-		lines := make([]flagLine, 0, len(flags))
-		maxLeft := 0
-
-		for i := range flags {
-			f := &flags[i]
-			var left string
-			switch {
-			case f.Negatable && f.Short != "":
-				left = fmt.Sprintf("-%s, --[no-]%s", f.Short, f.Name)
-			case f.Negatable:
-				left = fmt.Sprintf("    --[no-]%s", f.Name)
-			case f.Short != "":
-				left = fmt.Sprintf("-%s, --%s", f.Short, f.Name)
-			default:
-				left = fmt.Sprintf("    --%s", f.Name)
-			}
-			if !f.IsBool && !f.IsCounter {
-				left += " " + f.TypeName
-			}
-
-			var parts []string
-			parts = append(parts, f.Help)
-			if f.Required {
-				parts = append(parts, "(required)")
-			}
-			if f.IsCounter {
-				parts = append(parts, "(repeatable)")
-			}
-			if f.Enum != "" {
-				parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(f.Enum, ",", "|")))
-			}
-			if f.Default != "" {
-				parts = append(parts, fmt.Sprintf("(default: %s)", f.Default))
-			}
-			if f.Env != "" {
-				parts = append(parts, fmt.Sprintf("(env: %s)", f.Env))
-			}
-
-			right := strings.Join(parts, " ")
-
-			if len(left) > maxLeft {
-				maxLeft = len(left)
-			}
-
-			lines = append(lines, flagLine{left: left, right: right})
-		}
-
-		for _, l := range lines {
-			fmt.Fprintf(&b, "  %-*s  %s\n", maxLeft, l.left, l.right)
-		}
-	}
+	// Arguments
+	renderArgDefs(&b, argDefs)
 
 	// Footer
-	if p, ok := cmd.(Parent); ok && len(p.Subcommands()) > 0 {
+	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "\nUse \"%s [command] --help\" for more information about a command.\n", chainNames)
 	}
 
 	return b.String()
 }
 
-func renderSubcommands(b *strings.Builder, subs []Runner) {
+func buildArgUsage(args []ArgDef) string {
+	if len(args) == 0 {
+		return "[args...]"
+	}
+	parts := make([]string, 0, len(args))
+	for i := range args {
+		a := &args[i]
+		switch {
+		case a.IsSlice:
+			parts = append(parts, fmt.Sprintf("[%s...]", a.Name))
+		case a.Required:
+			parts = append(parts, fmt.Sprintf("<%s>", a.Name))
+		default:
+			parts = append(parts, fmt.Sprintf("[%s]", a.Name))
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+func renderArgDefs(b *strings.Builder, args []ArgDef) {
+	if len(args) == 0 {
+		return
+	}
+
+	b.WriteString("\nArguments:\n")
+
+	maxLeft := 0
+	for i := range args {
+		if len(args[i].Name) > maxLeft {
+			maxLeft = len(args[i].Name)
+		}
+	}
+
+	for i := range args {
+		a := &args[i]
+		var parts []string
+		parts = append(parts, a.Help)
+		if a.Required {
+			parts = append(parts, "(required)")
+		}
+		right := strings.Join(parts, " ")
+		fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, a.Name, right)
+	}
+}
+
+func hasVisibleFlags(flags []FlagDef) bool {
+	for i := range flags {
+		if !flags[i].Hidden {
+			return true
+		}
+	}
+	return false
+}
+
+func renderFlags(b *strings.Builder, flags []FlagDef) {
+	// Filter hidden flags.
+	var visible []FlagDef
+	for i := range flags {
+		if !flags[i].Hidden {
+			visible = append(visible, flags[i])
+		}
+	}
+
+	if len(visible) == 0 {
+		return
+	}
+
+	// Compute max left column width across all visible flags.
+	maxLeft := 0
+	for i := range visible {
+		left := flagLeft(&visible[i])
+		if len(left) > maxLeft {
+			maxLeft = len(left)
+		}
+	}
+
+	// Group by category.
+	var uncategorized []FlagDef
+	categoryMap := make(map[string][]FlagDef)
+	var categoryOrder []string
+
+	for i := range visible {
+		f := &visible[i]
+		if f.Category != "" {
+			if _, exists := categoryMap[f.Category]; !exists {
+				categoryOrder = append(categoryOrder, f.Category)
+			}
+			categoryMap[f.Category] = append(categoryMap[f.Category], *f)
+		} else {
+			uncategorized = append(uncategorized, *f)
+		}
+	}
+
+	// Render uncategorized flags.
+	if len(uncategorized) > 0 {
+		b.WriteString("\nFlags:\n")
+		writeFlagLines(b, uncategorized, maxLeft)
+	}
+
+	// Render categorized groups.
+	for _, cat := range categoryOrder {
+		fmt.Fprintf(b, "\n%s:\n", cat)
+		writeFlagLines(b, categoryMap[cat], maxLeft)
+	}
+}
+
+func writeFlagLines(b *strings.Builder, flags []FlagDef, maxLeft int) {
+	for i := range flags {
+		f := &flags[i]
+		left := flagLeft(f)
+		right := flagRight(f)
+		fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, left, right)
+	}
+}
+
+func flagLeft(f *FlagDef) string {
+	var left string
+	switch {
+	case f.Negatable && f.Short != "":
+		left = fmt.Sprintf("-%s, --[no-]%s", f.Short, f.Name)
+	case f.Negatable:
+		left = fmt.Sprintf("    --[no-]%s", f.Name)
+	case f.Short != "":
+		left = fmt.Sprintf("-%s, --%s", f.Short, f.Name)
+	default:
+		left = fmt.Sprintf("    --%s", f.Name)
+	}
+	if !f.IsBool && !f.IsCounter {
+		if f.Placeholder != "" {
+			left += " " + f.Placeholder
+		} else {
+			left += " " + f.TypeName
+		}
+	}
+	return left
+}
+
+func flagRight(f *FlagDef) string {
+	var parts []string
+	parts = append(parts, f.Help)
+	if f.Deprecated != "" {
+		parts = append(parts, fmt.Sprintf("(DEPRECATED: %s)", f.Deprecated))
+	}
+	if f.Required {
+		parts = append(parts, "(required)")
+	}
+	if f.IsCounter {
+		parts = append(parts, "(repeatable)")
+	}
+	if f.Enum != "" {
+		parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(f.Enum, ",", "|")))
+	}
+	switch {
+	case f.DefaultMask != "":
+		parts = append(parts, fmt.Sprintf("(default: %s)", f.DefaultMask))
+	case f.Default != "":
+		parts = append(parts, fmt.Sprintf("(default: %s)", f.Default))
+	}
+	if f.Env != "" {
+		parts = append(parts, fmt.Sprintf("(env: %s)", f.Env))
+	}
+	return strings.Join(parts, " ")
+}
+
+func sortFlags(flags []FlagDef) {
+	slices.SortFunc(flags, func(a, b FlagDef) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+func renderSubcommands(b *strings.Builder, subs []Runner, sorted bool) {
 	var uncategorized []Runner
 	categoryMap := make(map[string][]Runner)
 	var categoryOrder []string
@@ -137,6 +261,19 @@ func renderSubcommands(b *strings.Builder, subs []Runner) {
 
 	if len(uncategorized) == 0 && len(categoryMap) == 0 {
 		return
+	}
+
+	if sorted {
+		sortRunners := func(rs []Runner) {
+			slices.SortFunc(rs, func(a, b Runner) int {
+				return strings.Compare(resolveInfo(a).name, resolveInfo(b).name)
+			})
+		}
+		sortRunners(uncategorized)
+		for cat := range categoryMap {
+			sortRunners(categoryMap[cat])
+		}
+		slices.Sort(categoryOrder)
 	}
 
 	// Find max name width across all visible commands for alignment.

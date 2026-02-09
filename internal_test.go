@@ -3,7 +3,10 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -581,7 +584,7 @@ func TestDefaultRenderHelp_Basic(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 
 	assert.Contains(t, text, "Start the server")
 	assert.Contains(t, text, "Usage:")
@@ -599,7 +602,7 @@ func TestDefaultRenderHelp_WithSubcommands(t *testing.T) {
 	chain := []Runner{root}
 	flags := ScanFlags(root)
 
-	text := defaultRenderHelp(root, chain, flags)
+	text := defaultRenderHelp(root, chain, flags, false)
 
 	assert.Contains(t, text, "Commands:")
 	assert.Contains(t, text, "serve")
@@ -627,7 +630,7 @@ func TestDefaultRenderHelp_HiddenSubcommands(t *testing.T) {
 	parent := &internalParentWithHidden{child: hidden}
 	chain := []Runner{parent}
 
-	text := defaultRenderHelp(parent, chain, nil)
+	text := defaultRenderHelp(parent, chain, nil, false)
 	assert.NotContains(t, text, "secret")
 }
 
@@ -638,7 +641,7 @@ func TestDefaultRenderHelp_WithExamples(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "Examples:")
 	assert.Contains(t, text, "$ app serve --port 8080")
 }
@@ -650,7 +653,7 @@ func TestDefaultRenderHelp_RequiredFlag(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "(required)")
 }
 
@@ -789,7 +792,7 @@ func TestScanLevel(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			flags, next, found := scanLevel(tt.args, fi, subs, false)
+			flags, next, found := scanLevel(tt.args, fi, subs, false, false)
 			assert.Equal(t, tt.wantFlags, flags)
 			assert.Equal(t, tt.wantNext, next)
 			if tt.wantFoundSub != "" {
@@ -943,7 +946,8 @@ func TestResolveCommand(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			resolved := resolveCommand(tt.root, tt.args, defaults())
+			resolved, err := resolveCommand(tt.root, tt.args, defaults())
+			require.NoError(t, err)
 			assert.Len(t, resolved.chain, tt.wantChainLen)
 			if tt.wantPosit != nil {
 				assert.Equal(t, tt.wantPosit, resolved.positional)
@@ -1337,7 +1341,7 @@ func TestDefaultRenderHelp_NoDescription(t *testing.T) {
 
 	cmd := &internalNoDescCmd{}
 	chain := []Runner{cmd}
-	text := defaultRenderHelp(cmd, chain, nil)
+	text := defaultRenderHelp(cmd, chain, nil, false)
 
 	assert.Contains(t, text, "Usage:")
 	assert.NotContains(t, text, "Flags:")
@@ -1357,7 +1361,7 @@ func TestDefaultRenderHelp_FlagWithEnv(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "(env: PORT)")
 }
 
@@ -1408,7 +1412,7 @@ func TestDefaultRenderHelp_NoShortFlag(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "    --port")
 }
 
@@ -1429,7 +1433,7 @@ func TestDefaultRenderHelp_ExampleNoDescription(t *testing.T) {
 	cmd := &internalExampleNoDescCmd{}
 	chain := []Runner{cmd}
 
-	text := defaultRenderHelp(cmd, chain, nil)
+	text := defaultRenderHelp(cmd, chain, nil, false)
 	assert.Contains(t, text, "$ extest --flag")
 }
 
@@ -1929,7 +1933,7 @@ func TestFindSubcommand_PrefixMatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			result := findSubcommand(subs, tt.name, tt.prefix)
+			result := findSubcommand(subs, tt.name, tt.prefix, false)
 			if tt.wantNil {
 				assert.Nil(t, result)
 			} else {
@@ -1953,7 +1957,7 @@ func TestFindSubcommand_PrefixMatchAliasAmbiguous(t *testing.T) {
 
 	subs := []Runner{&internalAliasedForPrefix{}}
 	// "de" matches prefix of both "deploy" and alias "dep" — ambiguous in our impl.
-	result := findSubcommand(subs, "de", true)
+	result := findSubcommand(subs, "de", true, false)
 	assert.Nil(t, result)
 }
 
@@ -2125,7 +2129,8 @@ func TestResolveCommand_Fallback(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			resolved := resolveCommand(parent, tt.args, defaults())
+			resolved, err := resolveCommand(parent, tt.args, defaults())
+			require.NoError(t, err)
 			assert.Len(t, resolved.chain, tt.wantChainLen)
 			leaf := resolved.chain[len(resolved.chain)-1]
 			assert.Equal(t, tt.wantLeaf, resolveInfo(leaf).name)
@@ -2142,7 +2147,7 @@ func TestDefaultRenderHelp_Negatable(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "--[no-]verbose")
 }
 
@@ -2155,7 +2160,7 @@ func TestDefaultRenderHelp_Enum(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "[json|yaml|text]")
 }
 
@@ -2168,7 +2173,7 @@ func TestDefaultRenderHelp_Counter(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "(repeatable)")
 	assert.NotContains(t, text, "--verbose int")
 }
@@ -2205,7 +2210,7 @@ func TestDefaultRenderHelp_Categories(t *testing.T) {
 		},
 	}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil)
+	text := defaultRenderHelp(parent, chain, nil, false)
 
 	// Uncategorized under "Commands:"
 	assert.Contains(t, text, "Commands:\n")
@@ -2229,7 +2234,7 @@ func TestDefaultRenderHelp_AllCategorized(t *testing.T) {
 		},
 	}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil)
+	text := defaultRenderHelp(parent, chain, nil, false)
 
 	// No "Commands:" section when all are categorized
 	assert.NotContains(t, text, "Commands:\n")
@@ -2244,7 +2249,7 @@ func TestRenderSubcommands_AllHidden(t *testing.T) {
 
 	parent := &internalParentWithHidden{child: &internalHiddenSubCmd{}}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil)
+	text := defaultRenderHelp(parent, chain, nil, false)
 
 	assert.NotContains(t, text, "Commands:")
 	assert.NotContains(t, text, "secret")
@@ -2405,7 +2410,8 @@ func TestResolveCommand_ShortOptionHandlingInScanPhase(t *testing.T) {
 	opts := defaults()
 	opts.shortOptionHandling = true
 
-	resolved := resolveCommand(parent, []string{"-v", "serve"}, opts)
+	resolved, err := resolveCommand(parent, []string{"-v", "serve"}, opts)
+	require.NoError(t, err)
 	assert.Len(t, resolved.chain, 2)
 	assert.Equal(t, "serve", resolveInfo(resolved.chain[1]).name)
 }
@@ -2425,16 +2431,16 @@ func TestFindSubcommand_PrefixMatchAlias(t *testing.T) {
 
 	// "d" matches prefix of "deploy" and alias "dp" — but both are the same command.
 	// In our implementation: first match on "deploy" sets match, second on "dp" sees match != nil → ambiguous.
-	result := findSubcommand(subs, "d", true)
+	result := findSubcommand(subs, "d", true, false)
 	assert.Nil(t, result) // ambiguous between name and alias
 
 	// "sta" uniquely matches "status"
-	result = findSubcommand(subs, "sta", true)
+	result = findSubcommand(subs, "sta", true, false)
 	require.NotNil(t, result)
 	assert.Equal(t, "status", resolveInfo(result).name)
 
 	// "dp" exact match via alias
-	result = findSubcommand(subs, "dp", true)
+	result = findSubcommand(subs, "dp", true, false)
 	require.NotNil(t, result)
 	assert.Equal(t, "deploy", resolveInfo(result).name)
 }
@@ -2451,7 +2457,7 @@ func TestFindSubcommand_PrefixMatchAliasOnly(t *testing.T) {
 
 	subs := []Runner{&internalOnlyAliasPrefix{}}
 	// "d" does NOT prefix-match "xdeploy" but DOES prefix-match alias "dp".
-	result := findSubcommand(subs, "d", true)
+	result := findSubcommand(subs, "d", true, false)
 	require.NotNil(t, result)
 	assert.Equal(t, "xdeploy", resolveInfo(result).name)
 }
@@ -2471,8 +2477,228 @@ func TestDefaultRenderHelp_NegatableNoShort(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags)
+	text := defaultRenderHelp(cmd, chain, flags, false)
 	assert.Contains(t, text, "    --[no-]color")
+}
+
+// --- discover internals ---
+
+func TestIsExecutable(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific executable bit test")
+	}
+
+	dir := t.TempDir()
+
+	execPath := filepath.Join(dir, "myplugin")
+	require.NoError(t, os.WriteFile(execPath, []byte("#!/bin/sh\necho hi"), 0o755)) //nolint:gosec // test needs executable
+
+	noExecPath := filepath.Join(dir, "readme.txt")
+	require.NoError(t, os.WriteFile(noExecPath, []byte("hello"), 0o600))
+
+	assert.True(t, isExecutable(execPath))
+	assert.False(t, isExecutable(noExecPath))
+	assert.False(t, isExecutable(filepath.Join(dir, "nonexistent")))
+}
+
+func TestQueryPluginInfo(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific shell script test")
+	}
+
+	dir := t.TempDir()
+
+	tests := map[string]struct {
+		script string
+		want   *PluginInfo
+	}{
+		"valid json": {
+			script: `#!/bin/sh
+echo '{"name":"deploy","description":"Deploy things","aliases":["d","dep"]}'`,
+			want: &PluginInfo{
+				Name:        "deploy",
+				Description: "Deploy things",
+				Aliases:     []string{"d", "dep"},
+			},
+		},
+		"partial json": {
+			script: `#!/bin/sh
+echo '{"description":"No name set"}'`,
+			want: &PluginInfo{
+				Description: "No name set",
+			},
+		},
+		"invalid json": {
+			script: `#!/bin/sh
+echo 'not json'`,
+			want: nil,
+		},
+		"exits non-zero": {
+			script: `#!/bin/sh
+exit 1`,
+			want: nil,
+		},
+	}
+
+	for name, tt := range tests {
+		path := filepath.Join(dir, "plugin-"+name)
+		require.NoError(t, os.WriteFile(path, []byte(tt.script), 0o755)) //nolint:gosec // test needs executable
+
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			info := queryPluginInfo(path, "--cli-info")
+			if tt.want == nil {
+				assert.Nil(t, info)
+			} else {
+				require.NotNil(t, info)
+				assert.Equal(t, tt.want, info)
+			}
+		})
+	}
+}
+
+// --- allSubcommands ---
+
+type internalDiscoverParent struct {
+	subs       []Runner
+	discovered []Runner
+	discoverFn func() ([]Runner, error)
+}
+
+func (d *internalDiscoverParent) Run(_ context.Context, _ []string) error { return nil }
+func (d *internalDiscoverParent) Name() string                            { return "root" }
+func (d *internalDiscoverParent) Subcommands() []Runner                   { return d.subs }
+
+func (d *internalDiscoverParent) Discover() ([]Runner, error) {
+	if d.discoverFn != nil {
+		return d.discoverFn()
+	}
+	return d.discovered, nil
+}
+
+type internalSimpleCmd struct{ n string }
+
+func (s *internalSimpleCmd) Run(_ context.Context, _ []string) error { return nil }
+func (s *internalSimpleCmd) Name() string                            { return s.n }
+
+func TestAllSubcommands_MergesParentAndDiscoverer(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscoverParent{
+		subs:       []Runner{&internalSimpleCmd{n: "builtin"}},
+		discovered: []Runner{&internalSimpleCmd{n: "plugin"}},
+	}
+
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 2)
+
+	names := []string{resolveInfo(subs[0]).name, resolveInfo(subs[1]).name}
+	assert.Contains(t, names, "builtin")
+	assert.Contains(t, names, "plugin")
+}
+
+func TestAllSubcommands_BuiltinWinsCollision(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscoverParent{
+		subs:       []Runner{&internalSimpleCmd{n: "deploy"}},
+		discovered: []Runner{&internalSimpleCmd{n: "deploy"}},
+	}
+
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	assert.Equal(t, "deploy", resolveInfo(subs[0]).name)
+}
+
+func TestAllSubcommands_DiscoverError(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscoverParent{
+		discoverFn: func() ([]Runner, error) {
+			return nil, assert.AnError
+		},
+	}
+
+	subs, err := allSubcommands(parent)
+	assert.ErrorIs(t, err, assert.AnError)
+	assert.Empty(t, subs)
+}
+
+type internalParentOnlyCmd struct{ subs []Runner }
+
+func (p *internalParentOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
+func (p *internalParentOnlyCmd) Name() string                            { return "root" }
+func (p *internalParentOnlyCmd) Subcommands() []Runner                   { return p.subs }
+
+func TestAllSubcommands_ParentOnly(t *testing.T) {
+	t.Parallel()
+
+	p := &internalParentOnlyCmd{
+		subs: []Runner{&internalSimpleCmd{n: "serve"}},
+	}
+
+	subs, err := allSubcommands(p)
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	assert.Equal(t, "serve", resolveInfo(subs[0]).name)
+}
+
+type internalDiscovererOnlyCmd struct{ discovered []Runner }
+
+func (d *internalDiscovererOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
+func (d *internalDiscovererOnlyCmd) Name() string                            { return "root" }
+
+func (d *internalDiscovererOnlyCmd) Discover() ([]Runner, error) {
+	return d.discovered, nil
+}
+
+func TestAllSubcommands_DiscovererOnly(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalDiscovererOnlyCmd{
+		discovered: []Runner{&internalSimpleCmd{n: "plugin-a"}, &internalSimpleCmd{n: "plugin-b"}},
+	}
+
+	subs, err := allSubcommands(cmd)
+	require.NoError(t, err)
+	require.Len(t, subs, 2)
+}
+
+func TestAllSubcommands_NeitherParentNorDiscoverer(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalSimpleCmd{n: "leaf"}
+	subs, err := allSubcommands(cmd)
+	require.NoError(t, err)
+	assert.Empty(t, subs)
+}
+
+func TestHelp_IncludesDiscoveredCommands(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscoverParent{
+		subs: []Runner{&internalSimpleCmd{n: "serve"}},
+		discovered: []Runner{
+			&ExternalCommand{Cmd: "deploy", Desc: "Deploy things"},
+			&ExternalCommand{Cmd: "migrate", Desc: "Run migrations"},
+		},
+	}
+
+	flags := ScanFlags(parent)
+	help := defaultRenderHelp(parent, []Runner{parent}, flags, false)
+
+	assert.Contains(t, help, "serve")
+	assert.Contains(t, help, "deploy")
+	assert.Contains(t, help, "migrate")
+	assert.Contains(t, help, "Deploy things")
+	assert.Contains(t, help, "Run migrations")
 }
 
 // --- inheritFlags ---
@@ -2649,7 +2875,7 @@ func TestApplyEnv(t *testing.T) {
 	v := reflect.ValueOf(cmd).Elem()
 	fields := buildFieldMap(v.Type())
 
-	err := applyEnv(v, fields)
+	err := applyEnv(v, fields, "")
 	require.NoError(t, err)
 	assert.Equal(t, 7777, cmd.Port)
 
@@ -2711,4 +2937,738 @@ func TestResolveConfigResolver_None(t *testing.T) {
 	cmd := &internalBareCmd{}
 	resolver := resolveConfigResolver(cmd, defaults())
 	assert.Nil(t, resolver)
+}
+
+// --- Hidden flags ---
+
+type internalHiddenFlagCmd struct {
+	Port  int  `flag:"port" default:"8080" help:"Port"`
+	Debug bool `flag:"debug" hidden:"true" help:"Debug mode"`
+}
+
+func (c *internalHiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalHiddenFlagCmd) Name() string                            { return "app" }
+
+func TestScanFlags_Hidden(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalHiddenFlagCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 2)
+
+	portFlag := findFlagByName(flags, "port")
+	require.NotNil(t, portFlag)
+	assert.False(t, portFlag.Hidden)
+
+	debugFlag := findFlagByName(flags, "debug")
+	require.NotNil(t, debugFlag)
+	assert.True(t, debugFlag.Hidden)
+}
+
+func TestDefaultRenderHelp_HiddenFlagFiltered(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalHiddenFlagCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+	assert.Contains(t, text, "--port")
+	assert.NotContains(t, text, "--debug")
+	assert.Contains(t, text, "[flags]")
+}
+
+type internalAllHiddenFlagCmd struct {
+	Debug bool `flag:"debug" hidden:"true"`
+}
+
+func (c *internalAllHiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalAllHiddenFlagCmd) Name() string                            { return "app" }
+
+func TestDefaultRenderHelp_AllFlagsHidden(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalAllHiddenFlagCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+	assert.NotContains(t, text, "Flags:")
+	assert.NotContains(t, text, "--debug")
+	assert.NotContains(t, text, "[flags]")
+	assert.Contains(t, text, "[args...]")
+}
+
+// --- Deprecated flags ---
+
+type internalDeprecatedFlagCmd struct {
+	Port    int `flag:"port" default:"8080" help:"Port"`
+	OldPort int `flag:"old-port" deprecated:"use --port instead" help:"Legacy port"`
+}
+
+func (c *internalDeprecatedFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalDeprecatedFlagCmd) Name() string                            { return "app" }
+
+func TestScanFlags_Deprecated(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalDeprecatedFlagCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 2)
+
+	oldPortFlag := findFlagByName(flags, "old-port")
+	require.NotNil(t, oldPortFlag)
+	assert.Equal(t, "use --port instead", oldPortFlag.Deprecated)
+
+	portFlag := findFlagByName(flags, "port")
+	require.NotNil(t, portFlag)
+	assert.Empty(t, portFlag.Deprecated)
+}
+
+func TestDefaultRenderHelp_DeprecatedFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalDeprecatedFlagCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+	assert.Contains(t, text, "--old-port")
+	assert.Contains(t, text, "(DEPRECATED: use --port instead)")
+}
+
+// --- Flag categories ---
+
+type internalFlagCategoryCmd struct {
+	Host    string `flag:"host" default:"localhost" help:"Host" category:"Server"`
+	Port    int    `flag:"port" default:"8080" help:"Port" category:"Server"`
+	Verbose bool   `flag:"verbose" help:"Verbose output"`
+	Format  string `flag:"format" default:"text" help:"Output format" category:"Output"`
+}
+
+func (c *internalFlagCategoryCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalFlagCategoryCmd) Name() string                            { return "app" }
+
+func TestScanFlags_Category(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlagCategoryCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 4)
+
+	hostFlag := findFlagByName(flags, "host")
+	require.NotNil(t, hostFlag)
+	assert.Equal(t, "Server", hostFlag.Category)
+
+	verboseFlag := findFlagByName(flags, "verbose")
+	require.NotNil(t, verboseFlag)
+	assert.Empty(t, verboseFlag.Category)
+}
+
+func TestDefaultRenderHelp_FlagCategories(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalFlagCategoryCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+
+	// Uncategorized under "Flags:"
+	assert.Contains(t, text, "Flags:\n")
+	assert.Contains(t, text, "--verbose")
+
+	// Categorized groups
+	assert.Contains(t, text, "Server:\n")
+	assert.Contains(t, text, "--host")
+	assert.Contains(t, text, "--port")
+	assert.Contains(t, text, "Output:\n")
+	assert.Contains(t, text, "--format")
+}
+
+type internalAllCatFlagCmd struct {
+	Host string `flag:"host" help:"Host" category:"Server"`
+	Port int    `flag:"port" help:"Port" category:"Server"`
+}
+
+func (c *internalAllCatFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalAllCatFlagCmd) Name() string                            { return "app" }
+
+func TestDefaultRenderHelp_AllFlagsCategorized(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalAllCatFlagCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+	assert.NotContains(t, text, "Flags:\n")
+	assert.Contains(t, text, "Server:\n")
+}
+
+// --- hasVisibleFlags ---
+
+func TestHasVisibleFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		flags []FlagDef
+		want  bool
+	}{
+		"nil":        {flags: nil, want: false},
+		"empty":      {flags: []FlagDef{}, want: false},
+		"all hidden": {flags: []FlagDef{{Hidden: true}}, want: false},
+		"one visible": {flags: []FlagDef{{Hidden: true}, {Name: "port"}}, want: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, hasVisibleFlags(tt.flags))
+		})
+	}
+}
+
+// --- camelToKebab ---
+
+func TestCamelToKebab(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		input string
+		want  string
+	}{
+		"simple":           {input: "Port", want: "port"},
+		"two words":        {input: "OutputFormat", want: "output-format"},
+		"acronym prefix":   {input: "HTTPHost", want: "http-host"},
+		"acronym suffix":   {input: "UserID", want: "user-id"},
+		"single word":      {input: "ID", want: "id"},
+		"three words":      {input: "MaxRetryCount", want: "max-retry-count"},
+		"all caps":         {input: "RPS", want: "rps"},
+		"mixed":            {input: "XMLParser", want: "xml-parser"},
+		"already lowercase": {input: "port", want: "port"},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, camelToKebab(tt.input))
+		})
+	}
+}
+
+// --- Auto flag name derivation ---
+
+type internalAutoNameCmd struct {
+	OutputFormat string `flag:"" help:"Output format"`
+	Port         int    `flag:"port" help:"Port"`
+	HTTPHost     string `flag:"" help:"HTTP host"`
+}
+
+func (c *internalAutoNameCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestScanFlags_AutoName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalAutoNameCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 3)
+
+	assert.Equal(t, "output-format", flags[0].Name)
+	assert.Equal(t, "port", flags[1].Name)
+	assert.Equal(t, "http-host", flags[2].Name)
+}
+
+func TestDefaultParseFlags_AutoName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalAutoNameCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--output-format", "json", "--port", "9090", "--http-host", "0.0.0.0"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.OutputFormat)
+	assert.Equal(t, 9090, cmd.Port)
+	assert.Equal(t, "0.0.0.0", cmd.HTTPHost)
+}
+
+// --- applyEnv with prefix ---
+
+type internalEnvPrefixCmd struct {
+	Port int `flag:"port" env:"PORT"`
+}
+
+func (c *internalEnvPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestApplyEnv_WithPrefix(t *testing.T) {
+	t.Setenv("APP_PORT", "4444")
+
+	cmd := &internalEnvPrefixCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	err := applyEnv(v, fields, "APP_")
+	require.NoError(t, err)
+	assert.Equal(t, 4444, cmd.Port)
+}
+
+func TestApplyEnv_WithoutPrefix(t *testing.T) {
+	t.Setenv("PORT", "5555")
+
+	cmd := &internalEnvPrefixCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	err := applyEnv(v, fields, "")
+	require.NoError(t, err)
+	assert.Equal(t, 5555, cmd.Port)
+}
+
+func TestApplyEnv_PrefixNoMatch(t *testing.T) {
+	t.Setenv("PORT", "5555") // Set without prefix
+
+	cmd := &internalEnvPrefixCmd{}
+	v := reflect.ValueOf(cmd).Elem()
+	fields := buildFieldMap(v.Type())
+
+	// With prefix, APP_PORT is looked up, not PORT
+	err := applyEnv(v, fields, "APP_")
+	require.NoError(t, err)
+	assert.Equal(t, 0, cmd.Port) // not found
+}
+
+// --- ScanArgs ---
+
+type internalArgCmd struct {
+	Source string   `arg:"source" help:"Source file"`
+	Dest   string   `arg:"dest" help:"Destination"`
+	Extra  []string `arg:"extra" help:"Extra files"`
+}
+
+func (c *internalArgCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalArgCmd) Name() string                            { return "copy" }
+
+func TestScanArgs(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalArgCmd{}
+	defs := ScanArgs(cmd)
+	require.Len(t, defs, 3)
+
+	assert.Equal(t, "source", defs[0].Name)
+	assert.True(t, defs[0].Required)
+	assert.False(t, defs[0].IsSlice)
+
+	assert.Equal(t, "dest", defs[1].Name)
+	assert.True(t, defs[1].Required)
+
+	assert.Equal(t, "extra", defs[2].Name)
+	assert.False(t, defs[2].Required) // slice defaults to optional
+	assert.True(t, defs[2].IsSlice)
+}
+
+func TestScanArgs_AutoName(t *testing.T) {
+	t.Parallel()
+
+	type autoArgCmd struct {
+		OutputFile string `arg:"" help:"Output file"`
+	}
+
+	cmd := &struct {
+		autoArgCmd
+		internalBareCmd
+	}{}
+	// We need a proper Runner for ScanArgs.
+	// ScanArgs only reads type info, so we can use the raw struct.
+	defs := ScanArgs(&struct {
+		OutputFile string `arg:"" help:"Output file"`
+		internalBareCmd
+	}{})
+	require.Len(t, defs, 1)
+	assert.Equal(t, "output-file", defs[0].Name)
+	_ = cmd // avoid unused
+}
+
+func TestScanArgs_NonStruct(t *testing.T) {
+	t.Parallel()
+
+	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	defs := ScanArgs(cmd)
+	assert.Nil(t, defs)
+}
+
+// --- populateArgs ---
+
+func TestPopulateArgs(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalArgCmd{}
+	remaining, err := populateArgs(cmd, []string{"a.txt", "b.txt", "c.txt", "d.txt"})
+	require.NoError(t, err)
+	assert.Equal(t, "a.txt", cmd.Source)
+	assert.Equal(t, "b.txt", cmd.Dest)
+	assert.Equal(t, []string{"c.txt", "d.txt"}, cmd.Extra)
+	assert.Empty(t, remaining)
+}
+
+func TestPopulateArgs_MissingRequired(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalArgCmd{}
+	_, err := populateArgs(cmd, []string{"a.txt"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required argument: dest")
+}
+
+type internalOptionalArgCmd struct {
+	Name string `arg:"name" required:"false" help:"Name"`
+}
+
+func (c *internalOptionalArgCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestPopulateArgs_Optional(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalOptionalArgCmd{}
+	remaining, err := populateArgs(cmd, nil)
+	require.NoError(t, err)
+	assert.Empty(t, cmd.Name)
+	assert.Empty(t, remaining)
+}
+
+func TestPopulateArgs_NonStruct(t *testing.T) {
+	t.Parallel()
+
+	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	remaining, err := populateArgs(cmd, []string{"foo"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"foo"}, remaining)
+}
+
+// --- Arg validators ---
+
+func TestExactArgs(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, ExactArgs(2)([]string{"a", "b"}))
+	require.Error(t, ExactArgs(2)([]string{"a"}))
+	require.Error(t, ExactArgs(2)([]string{"a", "b", "c"}))
+}
+
+func TestMinArgs(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, MinArgs(1)([]string{"a", "b"}))
+	require.NoError(t, MinArgs(1)([]string{"a"}))
+	require.Error(t, MinArgs(1)(nil))
+}
+
+func TestMaxArgs(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, MaxArgs(2)([]string{"a"}))
+	require.NoError(t, MaxArgs(2)([]string{"a", "b"}))
+	require.Error(t, MaxArgs(2)([]string{"a", "b", "c"}))
+}
+
+func TestRangeArgs(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, RangeArgs(1, 3)([]string{"a"}))
+	require.NoError(t, RangeArgs(1, 3)([]string{"a", "b", "c"}))
+	require.Error(t, RangeArgs(1, 3)(nil))
+	require.Error(t, RangeArgs(1, 3)([]string{"a", "b", "c", "d"}))
+}
+
+func TestNoArgs(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, NoArgs(nil))
+	require.NoError(t, NoArgs([]string{}))
+	require.Error(t, NoArgs([]string{"a"}))
+}
+
+// --- buildArgUsage ---
+
+func TestBuildArgUsage(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args []ArgDef
+		want string
+	}{
+		"no args":   {args: nil, want: "[args...]"},
+		"required":  {args: []ArgDef{{Name: "file", Required: true}}, want: "<file>"},
+		"optional":  {args: []ArgDef{{Name: "file", Required: false}}, want: "[file]"},
+		"slice":     {args: []ArgDef{{Name: "files", IsSlice: true}}, want: "[files...]"},
+		"mixed": {
+			args: []ArgDef{
+				{Name: "src", Required: true},
+				{Name: "dest", Required: true},
+				{Name: "extra", IsSlice: true},
+			},
+			want: "<src> <dest> [extra...]",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, buildArgUsage(tt.args))
+		})
+	}
+}
+
+// --- Help rendering with args ---
+
+type internalArgHelpCmd struct {
+	Port   int    `flag:"port" default:"8080" help:"Port"`
+	Source string `arg:"source" help:"Source file"`
+	Dest   string `arg:"dest" help:"Destination"`
+}
+
+func (c *internalArgHelpCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalArgHelpCmd) Name() string                            { return "copy" }
+
+// --- Flag group validation ---
+
+type mutexGroupCmd struct {
+	JSON bool `flag:"json" help:"JSON output"`
+	YAML bool `flag:"yaml" help:"YAML output"`
+	Text bool `flag:"text" help:"Text output"`
+}
+
+func (c *mutexGroupCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *mutexGroupCmd) Name() string                            { return "format" }
+func (c *mutexGroupCmd) FlagGroups() []FlagGroup {
+	return []FlagGroup{MutuallyExclusive("json", "yaml", "text")}
+}
+
+type requiredTogetherGroupCmd struct {
+	Username string `flag:"username" help:"Username"`
+	Password string `flag:"password" help:"Password"`
+	Host     string `flag:"host" help:"Host"`
+}
+
+func (c *requiredTogetherGroupCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *requiredTogetherGroupCmd) Name() string                            { return "login" }
+func (c *requiredTogetherGroupCmd) FlagGroups() []FlagGroup {
+	return []FlagGroup{RequiredTogether("username", "password")}
+}
+
+type oneRequiredGroupCmd struct {
+	File  string `flag:"file" help:"Input file"`
+	Stdin bool   `flag:"stdin" help:"Read from stdin"`
+	URL   string `flag:"url" help:"Fetch from URL"`
+}
+
+func (c *oneRequiredGroupCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *oneRequiredGroupCmd) Name() string                            { return "read" }
+func (c *oneRequiredGroupCmd) FlagGroups() []FlagGroup {
+	return []FlagGroup{OneRequired("file", "stdin", "url")}
+}
+
+func TestValidateFlagGroups_MutuallyExclusive_OK(t *testing.T) {
+	t.Parallel()
+	cmd := &mutexGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"json": true})
+	require.NoError(t, err)
+}
+
+func TestValidateFlagGroups_MutuallyExclusive_None(t *testing.T) {
+	t.Parallel()
+	cmd := &mutexGroupCmd{}
+	err := validateFlagGroups(cmd, nil)
+	require.NoError(t, err)
+}
+
+func TestValidateFlagGroups_MutuallyExclusive_Violation(t *testing.T) {
+	t.Parallel()
+	cmd := &mutexGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"json": true, "yaml": true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestValidateFlagGroups_RequiredTogether_OK_All(t *testing.T) {
+	t.Parallel()
+	cmd := &requiredTogetherGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"username": true, "password": true})
+	require.NoError(t, err)
+}
+
+func TestValidateFlagGroups_RequiredTogether_OK_None(t *testing.T) {
+	t.Parallel()
+	cmd := &requiredTogetherGroupCmd{}
+	err := validateFlagGroups(cmd, nil)
+	require.NoError(t, err)
+}
+
+func TestValidateFlagGroups_RequiredTogether_Violation(t *testing.T) {
+	t.Parallel()
+	cmd := &requiredTogetherGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"username": true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be set together")
+}
+
+func TestValidateFlagGroups_OneRequired_OK(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"file": true})
+	require.NoError(t, err)
+}
+
+func TestValidateFlagGroups_OneRequired_None(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredGroupCmd{}
+	err := validateFlagGroups(cmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one of")
+}
+
+func TestValidateFlagGroups_OneRequired_TooMany(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredGroupCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"file": true, "stdin": true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one of")
+}
+
+func TestValidateFlagGroups_NoInterface(t *testing.T) {
+	t.Parallel()
+	cmd := &internalBareCmd{}
+	err := validateFlagGroups(cmd, map[string]bool{"port": true})
+	require.NoError(t, err)
+}
+
+// --- allSubcommands alias coverage ---
+
+type internalAliasedCmd struct {
+	n       string
+	aliases []string
+}
+
+func (c *internalAliasedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalAliasedCmd) Name() string                            { return c.n }
+func (c *internalAliasedCmd) Aliases() []string                       { return c.aliases }
+
+func TestAllSubcommands_BuiltinAliasBlocksDiscovered(t *testing.T) {
+	t.Parallel()
+
+	// Builtin "deploy" has alias "d". Discovered command named "d" should be blocked.
+	parent := &internalDiscoverParent{
+		subs:       []Runner{&internalAliasedCmd{n: "deploy", aliases: []string{"d", "dep"}}},
+		discovered: []Runner{&internalSimpleCmd{n: "d"}},
+	}
+
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	assert.Equal(t, "deploy", resolveInfo(subs[0]).name)
+}
+
+func TestAllSubcommands_DiscoveredAliasesTracked(t *testing.T) {
+	t.Parallel()
+
+	// Discovered "plugin" has alias "p". A second discovered "p" should be blocked.
+	parent := &internalDiscoverParent{
+		discovered: []Runner{
+			&internalAliasedCmd{n: "plugin", aliases: []string{"p"}},
+			&internalSimpleCmd{n: "p"},
+		},
+	}
+
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 1)
+	assert.Equal(t, "plugin", resolveInfo(subs[0]).name)
+}
+
+// --- discoverDir error on unreadable existing directory ---
+
+func TestDiscoverDir_UnreadableDirectory(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific permission test")
+	}
+
+	dir := t.TempDir()
+	unreadable := filepath.Join(dir, "noperm")
+	require.NoError(t, os.Mkdir(unreadable, 0o000))
+	t.Cleanup(func() {
+		_ = os.Chmod(unreadable, 0o750) //nolint:errcheck,gosec // best-effort cleanup
+	})
+
+	seen := make(map[string]bool)
+	runners, err := discoverDir(unreadable, seen, "--cli-info")
+	require.Error(t, err)
+	assert.Nil(t, runners)
+}
+
+// --- discoverPATH edge cases ---
+
+func TestDiscoverPATH_UnreadableEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific permission test")
+	}
+
+	dir := t.TempDir()
+	unreadable := filepath.Join(dir, "noperm")
+	require.NoError(t, os.Mkdir(unreadable, 0o000))
+	t.Cleanup(func() {
+		_ = os.Chmod(unreadable, 0o750) //nolint:errcheck,gosec // best-effort cleanup
+	})
+
+	t.Setenv("PATH", unreadable)
+
+	seen := make(map[string]bool)
+	runners := discoverPATH("myapp", seen, "--cli-info")
+	assert.Empty(t, runners)
+}
+
+func TestDiscoverPATH_DirectoryEntry(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific test")
+	}
+
+	dir := t.TempDir()
+	// Create a directory whose name matches the prefix pattern.
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "myapp-subdir"), 0o750))
+
+	t.Setenv("PATH", dir)
+
+	seen := make(map[string]bool)
+	runners := discoverPATH("myapp", seen, "--cli-info")
+	assert.Empty(t, runners)
+}
+
+func TestDiscoverPATH_NonExecutableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific test")
+	}
+
+	dir := t.TempDir()
+	// Create a non-executable file matching the prefix.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "myapp-tool"), []byte("not executable"), 0o600))
+
+	t.Setenv("PATH", dir)
+
+	seen := make(map[string]bool)
+	runners := discoverPATH("myapp", seen, "--cli-info")
+	assert.Empty(t, runners)
+}
+
+func TestDefaultRenderHelp_WithArgs(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalArgHelpCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+	assert.Contains(t, text, "<source> <dest>")
+	assert.Contains(t, text, "Arguments:\n")
+	assert.Contains(t, text, "source")
+	assert.Contains(t, text, "dest")
+	assert.Contains(t, text, "(required)")
 }

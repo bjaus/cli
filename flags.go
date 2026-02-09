@@ -27,27 +27,58 @@ func ScanFlags(cmd Runner) []FlagDef {
 
 	for i := range n {
 		f := t.Field(i)
-		name := f.Tag.Get("flag")
-		if name == "" {
+		name, hasFlag := f.Tag.Lookup("flag")
+		if !hasFlag {
 			continue
+		}
+		if name == "" {
+			name = camelToKebab(f.Name)
 		}
 
 		defs = append(defs, FlagDef{
-			Name:      name,
-			Short:     f.Tag.Get("short"),
-			Help:      f.Tag.Get("help"),
-			Default:   f.Tag.Get("default"),
-			Env:       f.Tag.Get("env"),
-			Enum:      f.Tag.Get("enum"),
-			Required:  f.Tag.Get("required") == "true",
-			TypeName:  flagTypeName(f.Type),
-			IsBool:    f.Type.Kind() == reflect.Bool,
-			IsCounter: f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
-			Negatable: f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
+			Name:        name,
+			Short:       f.Tag.Get("short"),
+			Help:        f.Tag.Get("help"),
+			Default:     f.Tag.Get("default"),
+			DefaultMask: f.Tag.Get("default-mask"),
+			Env:         f.Tag.Get("env"),
+			Enum:        f.Tag.Get("enum"),
+			Category:    f.Tag.Get("category"),
+			Deprecated:  f.Tag.Get("deprecated"),
+			Placeholder: f.Tag.Get("placeholder"),
+			Required:    f.Tag.Get("required") == "true",
+			Hidden:      f.Tag.Get("hidden") == "true",
+			TypeName:    flagTypeName(f.Type),
+			IsBool:      f.Type.Kind() == reflect.Bool,
+			IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
+			Negatable:   f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
 		})
 	}
 
 	return defs
+}
+
+// camelToKebab converts a CamelCase string to kebab-case.
+// HTTPHost → http-host, OutputFormat → output-format, ID → id.
+func camelToKebab(s string) string {
+	var result []byte
+	for i := range len(s) {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			if i > 0 {
+				prev := s[i-1]
+				if prev >= 'a' && prev <= 'z' {
+					result = append(result, '-')
+				} else if i+1 < len(s) && s[i+1] >= 'a' && s[i+1] <= 'z' {
+					result = append(result, '-')
+				}
+			}
+			result = append(result, c+32) // toLower
+		} else {
+			result = append(result, c)
+		}
+	}
+	return string(result)
 }
 
 func flagTypeName(t reflect.Type) string {
@@ -107,11 +138,11 @@ func defaultParseFlags(cmd Runner, args []string, opts *options) ([]string, map[
 		return nil, nil, err
 	}
 
-	if err := applyEnv(v, fields); err != nil {
+	if err := applyEnv(v, fields, opts.envVarPrefix); err != nil {
 		return nil, nil, err
 	}
 
-	remaining, err := parseExplicitFlags(v, args, fields)
+	remaining, err := parseExplicitFlags(v, args, fields, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -136,23 +167,31 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 
 	for i := range t.NumField() {
 		f := t.Field(i)
-		name := f.Tag.Get("flag")
-		if name == "" {
+		name, hasFlag := f.Tag.Lookup("flag")
+		if !hasFlag {
 			continue
+		}
+		if name == "" {
+			name = camelToKebab(f.Name)
 		}
 
 		fi := &fieldInfo{
 			index: i,
 			def: FlagDef{
-				Name:      name,
-				Short:     f.Tag.Get("short"),
-				Default:   f.Tag.Get("default"),
-				Env:       f.Tag.Get("env"),
-				Enum:      f.Tag.Get("enum"),
-				Required:  f.Tag.Get("required") == "true",
-				IsBool:    f.Type.Kind() == reflect.Bool,
-				IsCounter: f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
-				Negatable: f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
+				Name:        name,
+				Short:       f.Tag.Get("short"),
+				Default:     f.Tag.Get("default"),
+				DefaultMask: f.Tag.Get("default-mask"),
+				Env:         f.Tag.Get("env"),
+				Enum:        f.Tag.Get("enum"),
+				Category:    f.Tag.Get("category"),
+				Deprecated:  f.Tag.Get("deprecated"),
+				Placeholder: f.Tag.Get("placeholder"),
+				Required:    f.Tag.Get("required") == "true",
+				Hidden:      f.Tag.Get("hidden") == "true",
+				IsBool:      f.Type.Kind() == reflect.Bool,
+				IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
+				Negatable:   f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
 			},
 		}
 		fields["--"+name] = fi
@@ -197,13 +236,14 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 	return nil
 }
 
-func applyEnv(v reflect.Value, fields map[string]*fieldInfo) error {
+func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) error {
 	for _, fi := range fields {
 		if fi.def.Env != "" {
-			if envVal, ok := os.LookupEnv(fi.def.Env); ok {
+			envName := envPrefix + fi.def.Env
+			if envVal, ok := os.LookupEnv(envName); ok {
 				field := v.Field(fi.index)
 				if err := setFieldValue(field, envVal); err != nil {
-					return fmt.Errorf("%w: --%s (from %s): %w", ErrInvalidFlagValue, fi.def.Name, fi.def.Env, err)
+					return fmt.Errorf("%w: --%s (from %s): %w", ErrInvalidFlagValue, fi.def.Name, envName, err)
 				}
 				fi.provided = true
 			}
@@ -222,7 +262,26 @@ func resolveConfigResolver(cmd Runner, opts *options) ConfigResolver {
 	return nil
 }
 
-func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*fieldInfo) ([]string, error) {
+func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*fieldInfo, opts *options) ([]string, error) {
+	lookup := func(name string) (*fieldInfo, bool) {
+		fi, ok := fields[name]
+		if ok || opts == nil || opts.flagNormalizer == nil {
+			return fi, ok
+		}
+		// Try normalized form.
+		normalized := name
+		if strings.HasPrefix(name, "--") {
+			normalized = "--" + opts.flagNormalizer(name[2:])
+		} else if strings.HasPrefix(name, "-") && len(name) == 2 {
+			// Short flags are not normalized.
+			return nil, false
+		}
+		fi, ok = fields[normalized]
+		return fi, ok
+	}
+
+	ignoreUnknown := opts != nil && opts.ignoreUnknown
+
 	var remaining []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -237,8 +296,12 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 			if eqIdx := strings.Index(arg, "="); eqIdx > 0 {
 				name := arg[:eqIdx]
 				value := arg[eqIdx+1:]
-				fi, ok := fields[name]
+				fi, ok := lookup(name)
 				if !ok {
+					if ignoreUnknown {
+						remaining = append(remaining, arg)
+						continue
+					}
 					return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, name)
 				}
 				field := v.Field(fi.index)
@@ -250,9 +313,13 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 			}
 		}
 
-		fi, ok := fields[arg]
+		fi, ok := lookup(arg)
 		if !ok {
 			if strings.HasPrefix(arg, "-") {
+				if ignoreUnknown {
+					remaining = append(remaining, arg)
+					continue
+				}
 				return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, arg)
 			}
 			remaining = append(remaining, arg)
@@ -327,6 +394,61 @@ func ValidateFlags(cmd Runner, provided map[string]bool) error {
 		fields[key] = fi
 	}
 	return validateFlags(v, fields)
+}
+
+// MutuallyExclusive creates a flag group where at most one flag may be set.
+func MutuallyExclusive(flags ...string) FlagGroup {
+	return FlagGroup{Kind: GroupMutuallyExclusive, Flags: flags}
+}
+
+// RequiredTogether creates a flag group where if any flag is set, all must be set.
+func RequiredTogether(flags ...string) FlagGroup {
+	return FlagGroup{Kind: GroupRequiredTogether, Flags: flags}
+}
+
+// OneRequired creates a flag group where exactly one flag must be set.
+func OneRequired(flags ...string) FlagGroup {
+	return FlagGroup{Kind: GroupOneRequired, Flags: flags}
+}
+
+// validateFlagGroups checks FlagGrouper constraints using the provided flag set.
+func validateFlagGroups(cmd Runner, provided map[string]bool) error {
+	g, ok := cmd.(FlagGrouper)
+	if !ok {
+		return nil
+	}
+	for _, group := range g.FlagGroups() {
+		var set []string
+		for _, f := range group.Flags {
+			if provided[f] {
+				set = append(set, "--"+f)
+			}
+		}
+
+		switch group.Kind {
+		case GroupMutuallyExclusive:
+			if len(set) > 1 {
+				return fmt.Errorf("flags %s are mutually exclusive", strings.Join(set, ", "))
+			}
+		case GroupRequiredTogether:
+			if len(set) > 0 && len(set) != len(group.Flags) {
+				all := make([]string, len(group.Flags))
+				for i, f := range group.Flags {
+					all[i] = "--" + f
+				}
+				return fmt.Errorf("flags %s must be set together", strings.Join(all, ", "))
+			}
+		case GroupOneRequired:
+			if len(set) != 1 {
+				all := make([]string, len(group.Flags))
+				for i, f := range group.Flags {
+					all[i] = "--" + f
+				}
+				return fmt.Errorf("exactly one of %s is required", strings.Join(all, ", "))
+			}
+		}
+	}
+	return nil
 }
 
 func enumContains(enum, val string) bool {

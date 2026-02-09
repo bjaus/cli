@@ -30,6 +30,7 @@
 //   - [Categorizer] — group subcommands under headings in help output
 //   - [Fallbacker] — provide a fallback subcommand when no name matches
 //   - [Exiter] — control error printing and process exit in [ExecuteAndExit]
+//   - [Discoverer] — provide runtime-discovered commands (plugins)
 //
 // # Lifecycle Interfaces
 //
@@ -57,7 +58,7 @@
 //
 // Struct tag keys:
 //
-//   - flag — the flag name (required to register the field as a flag)
+//   - flag — the flag name (if empty, derived from field name: OutputFormat → output-format)
 //   - short — single-character short form
 //   - default — default value if not provided
 //   - help — description shown in help output
@@ -66,8 +67,14 @@
 //   - required — "true" to require the flag
 //   - counter — "true" to increment an int on each occurrence (-vvv)
 //   - negatable — "true" to add a --no- prefix that sets a bool to false
+//   - hidden — "true" to hide the flag from help output (flag still works)
+//   - deprecated — message shown when the flag is used; prints a warning to stderr
+//   - category — group heading for the flag in help output
 //
 // Priority: explicit flag > env var > config > default > zero value.
+//
+// Use [WithEnvVarPrefix] to scope all env var lookups under a common prefix.
+// For example, WithEnvVarPrefix("APP_") causes `env:"PORT"` to look up APP_PORT.
 //
 // Flags can appear anywhere — before or after subcommand names.
 //
@@ -143,6 +150,94 @@
 // is a matter of decoding into a map and calling [config.FromMap].
 // See the [config] package documentation for copy-paste adapter examples.
 //
+// # Flag Groups
+//
+// Flags can be constrained to enforce relationships using [FlagGrouper]:
+//
+//	func (c *Cmd) FlagGroups() []cli.FlagGroup {
+//	    return []cli.FlagGroup{
+//	        cli.MutuallyExclusive("json", "yaml", "text"),
+//	        cli.RequiredTogether("username", "password"),
+//	        cli.OneRequired("file", "stdin"),
+//	    }
+//	}
+//
+// Three constraint kinds are supported:
+//
+//   - [MutuallyExclusive] — at most one flag in the group may be set
+//   - [RequiredTogether] — if any flag in the group is set, all must be set
+//   - [OneRequired] — exactly one flag in the group must be set
+//
+// Validation runs after flag parsing and inheritance, before [Validator].
+//
+// # Plugins
+//
+// Commands can be extended at runtime with external executables (plugins).
+// A command that implements [Discoverer] provides additional subcommands
+// discovered at runtime, merged with any static subcommands from [Parent].
+// Built-in commands always take priority on name collisions.
+//
+// The [Discover] function scans directories and optionally the system
+// PATH for plugin executables:
+//
+//	func (a *App) Discover() ([]cli.Runner, error) {
+//	    return cli.Discover("myapp",
+//	        cli.WithDirs(cli.DefaultDirs("myapp")...),
+//	        cli.WithPATH(),
+//	    )
+//	}
+//
+// [DefaultDirs] returns conventional plugin directories in priority order:
+//
+//  1. ./<name>/plugins — project-level (highest priority)
+//  2. $HOME/.config/<name>/plugins — user-level
+//  3. /etc/<name>/plugins — system-level (Unix only)
+//
+// These paths are configurable. Use [WithDir] and [WithDirs] to specify
+// custom directories in any order, and [WithPATH] to optionally scan PATH
+// for executables matching "<prefix>-<command>".
+//
+// # Plugin Metadata Protocol
+//
+// When a plugin is discovered, the framework executes it with the --cli-info
+// flag (customizable via [WithInfoFlag]) and expects optional JSON:
+//
+//	{"name":"deploy","description":"Deploy to cloud","aliases":["d"]}
+//
+// If the plugin does not support the flag or returns invalid JSON, it still
+// works — it just has no description or aliases in help output. The only
+// requirement for a plugin is that it be an executable file.
+//
+// This means plugins can be written in any language:
+//
+//	#!/bin/bash
+//	if [ "$1" = "--cli-info" ]; then
+//	    echo '{"name":"deploy","description":"Deploy to cloud environments"}'
+//	    exit 0
+//	fi
+//	echo "deploying to $1..."
+//
+// # Plugin Discovery Modes
+//
+// Directory-based discovery (primary): all executable files in the scanned
+// directories become plugins. The filename is the command name.
+//
+// PATH-based discovery (via [WithPATH]): executables matching "<prefix>-*"
+// on the system PATH are discovered. The prefix and hyphen are stripped to
+// derive the command name (e.g., "myapp-deploy" → "deploy").
+//
+// Priority: directories are scanned first in the order added. PATH results
+// have lower priority than any directory result. First match wins on name
+// collision.
+//
+// # Enumerating All Subcommands
+//
+// [AllSubcommands] returns the merged set of static and discovered
+// subcommands for a command. This is useful for custom [HelpRenderer]
+// implementations, documentation generators, and shell completion scripts:
+//
+//	subs, err := cli.AllSubcommands(cmd)
+//
 // # Extensibility
 //
 // Every major subsystem is replaceable:
@@ -161,4 +256,28 @@
 //	    cli.WithShortOptionHandling(true),
 //	    cli.WithPrefixMatching(true),
 //	)
+//
+// # Documentation Generation
+//
+// The doc subpackage generates documentation from the command tree:
+//
+//	doc.GenMarkdown(root)              // markdown for a single command
+//	doc.GenMarkdownTree(root, "docs/") // markdown files for all commands
+//	doc.GenManPage(root, header)       // man page for a single command
+//	doc.GenManTree(root, "man/", header) // man pages for all commands
+//
+// Hidden commands and flags are excluded from generated documentation.
+//
+// # Shell Completion
+//
+// The completion subpackage generates shell completion scripts:
+//
+//	completion.Bash(root, "myapp")       // bash completion script
+//	completion.Zsh(root, "myapp")        // zsh completion script
+//	completion.Fish(root, "myapp")       // fish completion script
+//	completion.PowerShell(root, "myapp") // PowerShell completion script
+//
+// Scripts are static and based on the command tree structure. Commands
+// implementing [Completer] can provide dynamic completion candidates at
+// runtime.
 package cli

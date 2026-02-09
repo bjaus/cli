@@ -1454,3 +1454,400 @@ func TestExecute_ConfigProvider_OverridesGlobal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 4000, cmd.Port) // command-level wins
 }
+
+// --- Hidden flags ---
+
+type hiddenFlagCmd struct {
+	Port  int  `flag:"port" default:"8080" help:"Port"`
+	Debug bool `flag:"debug" hidden:"true" help:"Debug mode"`
+}
+
+func (c *hiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_HiddenFlagStillWorks(t *testing.T) {
+	t.Parallel()
+
+	cmd := &hiddenFlagCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--debug"})
+	require.NoError(t, err)
+	assert.True(t, cmd.Debug)
+}
+
+func TestExecute_HiddenFlagNotInHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &hiddenFlagCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "--port")
+	assert.NotContains(t, buf.String(), "--debug")
+}
+
+// --- Deprecated flags ---
+
+type deprecatedFlagCmd struct {
+	Port    int `flag:"port" default:"8080" help:"Port"`
+	OldPort int `flag:"old-port" deprecated:"use --port instead" help:"Legacy port"`
+}
+
+func (c *deprecatedFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_DeprecatedFlagWarning(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	cmd := &deprecatedFlagCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--old-port", "9090"}, cli.WithStderr(&stderr))
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.OldPort)
+	assert.Contains(t, stderr.String(), "deprecated")
+	assert.Contains(t, stderr.String(), "use --port instead")
+}
+
+func TestExecute_DeprecatedFlagNoWarningWhenNotUsed(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	cmd := &deprecatedFlagCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--port", "9090"}, cli.WithStderr(&stderr))
+	require.NoError(t, err)
+	assert.Empty(t, stderr.String())
+}
+
+func TestExecute_DeprecatedFlagInHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &deprecatedFlagCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "--old-port")
+	assert.Contains(t, buf.String(), "DEPRECATED")
+}
+
+// --- Flag categories ---
+
+type flagCategoryCmd struct {
+	Host   string `flag:"host" default:"localhost" help:"Host" category:"Server"`
+	Port   int    `flag:"port" default:"8080" help:"Port" category:"Server"`
+	Format string `flag:"format" default:"text" help:"Output format"`
+}
+
+func (c *flagCategoryCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_FlagCategoriesInHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &flagCategoryCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Flags:\n")
+	assert.Contains(t, buf.String(), "Server:\n")
+	assert.Contains(t, buf.String(), "--format")
+	assert.Contains(t, buf.String(), "--host")
+}
+
+// --- Auto flag name derivation ---
+
+type autoNameCmd struct {
+	OutputFormat string `flag:"" help:"Output format"`
+	Port         int    `flag:"port" default:"8080" help:"Port"`
+}
+
+func (c *autoNameCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_AutoFlagName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &autoNameCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--output-format", "json", "--port", "3000"})
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.OutputFormat)
+	assert.Equal(t, 3000, cmd.Port)
+}
+
+func TestExecute_AutoFlagName_InHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &autoNameCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "--output-format")
+	assert.Contains(t, buf.String(), "--port")
+}
+
+// --- Env var prefix ---
+
+type envPrefixCmd struct {
+	Port int    `flag:"port" default:"8080" env:"PORT" help:"Port"`
+	Host string `flag:"host" default:"localhost" env:"HOST" help:"Host"`
+}
+
+func (c *envPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestExecute_EnvVarPrefix(t *testing.T) {
+	t.Setenv("MYAPP_PORT", "4444")
+
+	cmd := &envPrefixCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithEnvVarPrefix("MYAPP_"))
+	require.NoError(t, err)
+	assert.Equal(t, 4444, cmd.Port)
+	assert.Equal(t, "localhost", cmd.Host) // default, no MYAPP_HOST set
+}
+
+func TestExecute_EnvVarPrefix_ExplicitOverrides(t *testing.T) {
+	t.Setenv("MYAPP_PORT", "4444")
+
+	cmd := &envPrefixCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--port", "9090"}, cli.WithEnvVarPrefix("MYAPP_"))
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port) // explicit flag wins
+}
+
+func TestExecute_EnvVarPrefix_InHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &envPrefixCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf), cli.WithEnvVarPrefix("MYAPP_"))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "(env: MYAPP_PORT)")
+	assert.Contains(t, buf.String(), "(env: MYAPP_HOST)")
+}
+
+// --- Positional arg struct fields ---
+
+type argCopyCmd struct {
+	Source string `arg:"source" help:"Source file"`
+	Dest   string `arg:"dest" help:"Destination"`
+	Port   int    `flag:"port" default:"8080" help:"Port"`
+}
+
+func (c *argCopyCmd) Run(_ context.Context, args []string) error { return nil }
+
+func TestExecute_ArgFields_Populated(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argCopyCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"a.txt", "b.txt"})
+	require.NoError(t, err)
+	assert.Equal(t, "a.txt", cmd.Source)
+	assert.Equal(t, "b.txt", cmd.Dest)
+}
+
+func TestExecute_ArgFields_MissingRequired(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argCopyCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"a.txt"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing required argument: dest")
+}
+
+func TestExecute_ArgFields_WithFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argCopyCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--port", "9090", "a.txt", "b.txt"})
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port)
+	assert.Equal(t, "a.txt", cmd.Source)
+	assert.Equal(t, "b.txt", cmd.Dest)
+}
+
+type argSliceCmd struct {
+	Files []string `arg:"files" help:"Files to process"`
+}
+
+func (c *argSliceCmd) Run(_ context.Context, args []string) error { return nil }
+
+func TestExecute_ArgFields_Slice(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argSliceCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"a.txt", "b.txt", "c.txt"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.txt", "b.txt", "c.txt"}, cmd.Files)
+}
+
+func TestExecute_ArgFields_SliceEmpty(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argSliceCmd{}
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.NoError(t, err) // slice args optional by default
+}
+
+// --- ArgsValidator ---
+
+type validatedCmd struct {
+	ran bool
+}
+
+func (c *validatedCmd) Run(_ context.Context, _ []string) error {
+	c.ran = true
+	return nil
+}
+
+func (c *validatedCmd) ValidateArgs(args []string) error {
+	return cli.ExactArgs(2)(args)
+}
+
+func TestExecute_ArgsValidator_Valid(t *testing.T) {
+	t.Parallel()
+
+	cmd := &validatedCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"a", "b"})
+	require.NoError(t, err)
+	assert.True(t, cmd.ran)
+}
+
+func TestExecute_ArgsValidator_Invalid(t *testing.T) {
+	t.Parallel()
+
+	cmd := &validatedCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"a"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected exactly 2")
+	assert.False(t, cmd.ran)
+}
+
+type noArgsCmd struct {
+	ran bool
+}
+
+func (c *noArgsCmd) Run(_ context.Context, _ []string) error {
+	c.ran = true
+	return nil
+}
+
+func (c *noArgsCmd) ValidateArgs(args []string) error {
+	return cli.NoArgs(args)
+}
+
+func TestExecute_NoArgs_Valid(t *testing.T) {
+	t.Parallel()
+
+	cmd := &noArgsCmd{}
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.True(t, cmd.ran)
+}
+
+func TestExecute_NoArgs_Invalid(t *testing.T) {
+	t.Parallel()
+
+	cmd := &noArgsCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"unexpected"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected no arguments")
+}
+
+// --- Flag groups integration tests ---
+
+type mutexFormatCmd struct {
+	JSON bool `flag:"json" help:"JSON output"`
+	YAML bool `flag:"yaml" help:"YAML output"`
+	ran  bool
+}
+
+func (c *mutexFormatCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
+func (c *mutexFormatCmd) Name() string                            { return "fmt" }
+func (c *mutexFormatCmd) FlagGroups() []cli.FlagGroup {
+	return []cli.FlagGroup{cli.MutuallyExclusive("json", "yaml")}
+}
+
+func TestExecute_MutuallyExclusive_OK(t *testing.T) {
+	t.Parallel()
+	cmd := &mutexFormatCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--json"})
+	require.NoError(t, err)
+	assert.True(t, cmd.ran)
+}
+
+func TestExecute_MutuallyExclusive_Violation(t *testing.T) {
+	t.Parallel()
+	cmd := &mutexFormatCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--json", "--yaml"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+type togetherLoginCmd struct {
+	Username string `flag:"username" help:"User"`
+	Password string `flag:"password" help:"Pass"`
+	ran      bool
+}
+
+func (c *togetherLoginCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
+func (c *togetherLoginCmd) Name() string                            { return "login" }
+func (c *togetherLoginCmd) FlagGroups() []cli.FlagGroup {
+	return []cli.FlagGroup{cli.RequiredTogether("username", "password")}
+}
+
+func TestExecute_RequiredTogether_OK(t *testing.T) {
+	t.Parallel()
+	cmd := &togetherLoginCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--username", "bob", "--password", "s3cret"})
+	require.NoError(t, err)
+	assert.True(t, cmd.ran)
+}
+
+func TestExecute_RequiredTogether_Violation(t *testing.T) {
+	t.Parallel()
+	cmd := &togetherLoginCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--username", "bob"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must be set together")
+}
+
+type oneRequiredInputCmd struct {
+	File  string `flag:"file" help:"Input file"`
+	Stdin bool   `flag:"stdin" help:"Read stdin"`
+	ran   bool
+}
+
+func (c *oneRequiredInputCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
+func (c *oneRequiredInputCmd) Name() string                            { return "read" }
+func (c *oneRequiredInputCmd) FlagGroups() []cli.FlagGroup {
+	return []cli.FlagGroup{cli.OneRequired("file", "stdin")}
+}
+
+func TestExecute_OneRequired_OK(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredInputCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--stdin"})
+	require.NoError(t, err)
+	assert.True(t, cmd.ran)
+}
+
+func TestExecute_OneRequired_None(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredInputCmd{}
+	err := cli.Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one of")
+}
+
+func TestExecute_OneRequired_TooMany(t *testing.T) {
+	t.Parallel()
+	cmd := &oneRequiredInputCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--file", "a.txt", "--stdin"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one of")
+}
+
+// --- ScanArgs via external package ---
+
+func TestScanArgs_External(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argCopyCmd{}
+	defs := cli.ScanArgs(cmd)
+	require.Len(t, defs, 2)
+	assert.Equal(t, "source", defs[0].Name)
+	assert.Equal(t, "dest", defs[1].Name)
+}

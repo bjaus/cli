@@ -28,9 +28,14 @@ type options struct {
 	flagParser          FlagParser
 	helpRenderer        HelpRenderer
 	configResolver      ConfigResolver
+	flagNormalizer      func(string) string
+	envVarPrefix        string
 	suggest             bool
 	shortOptionHandling bool
 	prefixMatching      bool
+	caseInsensitive     bool
+	ignoreUnknown       bool
+	sortedHelp          bool
 }
 
 func defaults() *options {
@@ -77,6 +82,41 @@ func WithShortOptionHandling(enabled bool) Option {
 // When enabled, "ser" matches "serve" if no other subcommand starts with "ser".
 func WithPrefixMatching(enabled bool) Option {
 	return func(o *options) { o.prefixMatching = enabled }
+}
+
+// WithEnvVarPrefix sets a prefix prepended to all env var names declared via
+// the env struct tag. For example, WithEnvVarPrefix("APP_") causes a flag
+// tagged with `env:"PORT"` to look up the APP_PORT environment variable.
+func WithEnvVarPrefix(prefix string) Option {
+	return func(o *options) { o.envVarPrefix = prefix }
+}
+
+// WithCaseInsensitive enables case-insensitive subcommand matching.
+// When enabled, "Serve" matches "serve".
+func WithCaseInsensitive(enabled bool) Option {
+	return func(o *options) { o.caseInsensitive = enabled }
+}
+
+// WithIgnoreUnknown causes unknown flags to be treated as positional args
+// instead of returning an error. Useful for wrapper tools that forward
+// flags to child processes.
+func WithIgnoreUnknown(enabled bool) Option {
+	return func(o *options) { o.ignoreUnknown = enabled }
+}
+
+// WithSortedHelp sorts subcommands and flags alphabetically in help output.
+func WithSortedHelp(enabled bool) Option {
+	return func(o *options) { o.sortedHelp = enabled }
+}
+
+// WithFlagNormalization sets a function that normalizes flag names before
+// lookup. For example, to treat underscores as dashes:
+//
+//	cli.WithFlagNormalization(func(s string) string {
+//	    return strings.ReplaceAll(s, "_", "-")
+//	})
+func WithFlagNormalization(fn func(string) string) Option {
+	return func(o *options) { o.flagNormalizer = fn }
 }
 
 // WithConfigResolver sets a global config resolver for flag values.

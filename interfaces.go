@@ -61,6 +61,24 @@ type Fallbacker interface {
 	Fallback() Runner
 }
 
+// Discoverer provides runtime-discovered commands (plugins). Discovered
+// commands are merged with [Parent.Subcommands] — built-in commands take
+// priority on name collisions. A command may implement both [Parent] and
+// Discoverer; it may also implement Discoverer alone (without Parent) to
+// have only dynamically discovered subcommands.
+//
+// Use [Discover] to scan directories and PATH for plugin executables:
+//
+//	func (a *App) Discover() ([]Runner, error) {
+//	    return cli.Discover("myapp",
+//	        cli.WithDirs(cli.DefaultDirs("myapp")...),
+//	        cli.WithPATH(),
+//	    )
+//	}
+type Discoverer interface {
+	Discover() ([]Runner, error)
+}
+
 // Exiter controls process exit behavior. When implemented on the root command,
 // [ExecuteAndExit] delegates to Exit instead of calling [os.Exit] directly.
 // The implementation is responsible for printing the error and exiting the process.
@@ -118,6 +136,56 @@ type ConfigProvider interface {
 	ConfigResolver() ConfigResolver
 }
 
+// --- Arg interfaces (all optional) ---
+
+// ArgDef describes a positional argument for use by custom [HelpRenderer] implementations.
+type ArgDef struct {
+	Name     string
+	Help     string
+	Required bool
+	TypeName string
+	IsSlice  bool
+}
+
+// ArgsValidator validates positional arguments after flag parsing.
+// Checked on the leaf command before [Validator].
+type ArgsValidator interface {
+	ValidateArgs(args []string) error
+}
+
+// Passthrough disables flag parsing for a command. When implemented,
+// all remaining args are passed directly to Run as positional arguments.
+// Useful for wrapper commands like "exec" that forward args to child processes.
+type Passthrough interface {
+	Passthrough() bool
+}
+
+// --- Flag group types and interfaces (all optional) ---
+
+// FlagGroupKind describes the type of constraint a flag group enforces.
+type FlagGroupKind int
+
+const (
+	// GroupMutuallyExclusive means at most one flag in the group may be set.
+	GroupMutuallyExclusive FlagGroupKind = iota
+	// GroupRequiredTogether means if any flag in the group is set, all must be set.
+	GroupRequiredTogether
+	// GroupOneRequired means exactly one flag in the group must be set.
+	GroupOneRequired
+)
+
+// FlagGroup defines a relationship constraint between flags.
+type FlagGroup struct {
+	Kind  FlagGroupKind
+	Flags []string
+}
+
+// FlagGrouper declares flag group constraints on a command.
+// Validation runs after flag parsing and inheritance.
+type FlagGrouper interface {
+	FlagGroups() []FlagGroup
+}
+
 // --- Extensibility interfaces (all optional) ---
 
 // FlagUnmarshaler allows custom types to be used as flag values.
@@ -146,16 +214,21 @@ type HelpRenderer interface {
 
 // FlagDef describes a single flag for use by custom [HelpRenderer] implementations.
 type FlagDef struct {
-	Name      string
-	Short     string
-	Help      string
-	Default   string
-	Env       string
-	Enum      string
-	Required  bool
-	TypeName  string
-	IsBool    bool
-	IsCounter bool
-	Negatable bool
+	Name        string
+	Short       string
+	Help        string
+	Default     string
+	DefaultMask string // displayed instead of Default in help (e.g. "****" for secrets)
+	Env         string
+	Enum        string
+	Category    string
+	Deprecated  string
+	Placeholder string // shown in help as value name (e.g. "PORT" in --port PORT)
+	Required    bool
+	Hidden      bool
+	TypeName    string
+	IsBool      bool
+	IsCounter   bool
+	Negatable   bool
 }
 

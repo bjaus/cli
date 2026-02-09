@@ -46,7 +46,7 @@ func (fi flagIndex) isBool(name string) bool {
 }
 
 // resolveCommand walks the command tree using flags-anywhere logic.
-func resolveCommand(root Runner, args []string, opts *options) *resolvedCommand {
+func resolveCommand(root Runner, args []string, opts *options) (*resolvedCommand, error) {
 	chain := []Runner{root}
 	chainArgs := [][]string{nil}
 	remaining := args
@@ -54,11 +54,11 @@ func resolveCommand(root Runner, args []string, opts *options) *resolvedCommand 
 	for {
 		idx := len(chain) - 1
 		current := chain[idx]
-		p, ok := current.(Parent)
-		if !ok {
-			break
+
+		subs, err := allSubcommands(current)
+		if err != nil {
+			return nil, err
 		}
-		subs := p.Subcommands()
 		if len(subs) == 0 {
 			break
 		}
@@ -69,7 +69,7 @@ func resolveCommand(root Runner, args []string, opts *options) *resolvedCommand 
 			remaining = expandShortOptions(remaining, fi)
 		}
 
-		cmdFlags, next, found := scanLevel(remaining, fi, subs, opts.prefixMatching)
+		cmdFlags, next, found := scanLevel(remaining, fi, subs, opts.prefixMatching, opts.caseInsensitive)
 		chainArgs[idx] = cmdFlags
 
 		if found == nil {
@@ -108,7 +108,7 @@ func resolveCommand(root Runner, args []string, opts *options) *resolvedCommand 
 		chain:      chain,
 		chainArgs:  chainArgs,
 		positional: positional,
-	}
+	}, nil
 }
 
 type subMatch struct {
@@ -119,7 +119,7 @@ type subMatch struct {
 // scanLevel scans args at the current command level, consuming known flags
 // and looking for a subcommand match. Returns consumed flags, unconsumed
 // non-flag args, and a subMatch if a subcommand was found.
-func scanLevel(args []string, fi flagIndex, subs []Runner, prefixMatch bool) ([]string, []string, *subMatch) {
+func scanLevel(args []string, fi flagIndex, subs []Runner, prefixMatch, caseInsensitive bool) ([]string, []string, *subMatch) {
 	var cmdFlags, next []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -138,7 +138,7 @@ func scanLevel(args []string, fi flagIndex, subs []Runner, prefixMatch bool) ([]
 		}
 
 		if !strings.HasPrefix(arg, "-") {
-			sub := findSubcommand(subs, arg, prefixMatch)
+			sub := findSubcommand(subs, arg, prefixMatch, caseInsensitive)
 			if sub != nil {
 				return cmdFlags, nil, &subMatch{sub: sub, remaining: args[i+1:]}
 			}
@@ -211,15 +211,28 @@ func separateLeafArgs(args []string, fi flagIndex) ([]string, []string) {
 	return flags, positional
 }
 
-func findSubcommand(subs []Runner, name string, prefixMatch bool) Runner {
+func findSubcommand(subs []Runner, name string, prefixMatch, caseInsensitive bool) Runner {
+	eq := func(a, b string) bool {
+		if caseInsensitive {
+			return strings.EqualFold(a, b)
+		}
+		return a == b
+	}
+	hasPrefix := func(s, prefix string) bool {
+		if caseInsensitive {
+			return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+		}
+		return strings.HasPrefix(s, prefix)
+	}
+
 	// Exact match first.
 	for _, s := range subs {
 		info := resolveInfo(s)
-		if info.name == name {
+		if eq(info.name, name) {
 			return s
 		}
 		for _, alias := range info.aliases {
-			if alias == name {
+			if eq(alias, name) {
 				return s
 			}
 		}
@@ -233,14 +246,14 @@ func findSubcommand(subs []Runner, name string, prefixMatch bool) Runner {
 	var match Runner
 	for _, s := range subs {
 		info := resolveInfo(s)
-		if strings.HasPrefix(info.name, name) {
+		if hasPrefix(info.name, name) {
 			if match != nil {
 				return nil // ambiguous
 			}
 			match = s
 		}
 		for _, alias := range info.aliases {
-			if strings.HasPrefix(alias, name) {
+			if hasPrefix(alias, name) {
 				if match != nil {
 					return nil
 				}
@@ -294,7 +307,10 @@ func expandShortOptions(args []string, fi flagIndex) []string {
 }
 
 func execute(ctx context.Context, root Runner, args []string, opts *options) error {
-	resolved := resolveCommand(root, args, opts)
+	resolved, err := resolveCommand(root, args, opts)
+	if err != nil {
+		return err
+	}
 
 	chain := resolved.chain
 	leaf := chain[len(chain)-1]
@@ -309,37 +325,30 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 		return renderHelp(leaf, chain, opts)
 	}
 
-	// Parse flags for each command in chain (defaults, env, explicit).
-	provided := make([]map[string]bool, len(chain))
-	for i, cmd := range chain {
-		cmdArgs := resolved.chainArgs[i]
-		if len(cmdArgs) == 0 && len(ScanFlags(cmd)) == 0 {
-			continue
-		}
-
-		remaining, prov, parseErr := parseFlags(cmd, cmdArgs, opts)
-		if parseErr != nil {
-			if opts.suggest {
-				if suggestion := suggestFlag(cmd, parseErr); suggestion != "" {
-					return fmt.Errorf("%w\n\n%s", parseErr, suggestion)
-				}
-			}
-			return parseErr
-		}
-		provided[i] = prov
-
-		if i == len(chain)-1 {
-			resolved.positional = append(remaining, resolved.positional...)
-		}
+	// Check if leaf disables flag parsing (passthrough mode).
+	leafPassthrough := false
+	if pt, ok := leaf.(Passthrough); ok {
+		leafPassthrough = pt.Passthrough()
 	}
 
-	// Inherit matching flag values from parent to child.
-	inheritFlags(chain, provided)
-	inheritTagFields(chain)
+	// Parse and validate flags for all commands in the chain.
+	provided, err := parseFlagChain(resolved, chain, leafPassthrough, opts)
+	if err != nil {
+		return err
+	}
 
-	// Validate flags after inheritance so inherited values satisfy constraints.
-	for i, cmd := range chain {
-		if err := ValidateFlags(cmd, provided[i]); err != nil {
+	// Populate arg-tagged struct fields on the leaf command.
+	if defs := ScanArgs(leaf); len(defs) > 0 {
+		remaining, err := populateArgs(leaf, resolved.positional)
+		if err != nil {
+			return err
+		}
+		resolved.positional = remaining
+	}
+
+	// Validate positional args.
+	if av, ok := leaf.(ArgsValidator); ok {
+		if err := av.ValidateArgs(resolved.positional); err != nil {
 			return err
 		}
 	}
@@ -352,13 +361,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	}
 
 	// Print deprecation warnings.
-	for _, cmd := range chain {
-		if d, ok := cmd.(Deprecater); ok {
-			if msg := d.Deprecated(); msg != "" {
-				fmt.Fprintf(opts.stderr, "Warning: %q is deprecated: %s\n", resolveInfo(cmd).name, msg) //nolint:errcheck // best-effort warning
-			}
-		}
-	}
+	printDeprecationWarnings(chain, provided, opts)
 
 	// Before hooks (parent-first).
 	var afterHooks []Runner
@@ -430,6 +433,50 @@ func findVersioner(chain []Runner) Versioner {
 	return nil
 }
 
+func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough bool, opts *options) ([]map[string]bool, error) {
+	provided := make([]map[string]bool, len(chain))
+	for i, cmd := range chain {
+		if leafPassthrough && i == len(chain)-1 {
+			resolved.positional = append(resolved.chainArgs[i], resolved.positional...)
+			continue
+		}
+
+		cmdArgs := resolved.chainArgs[i]
+		if len(cmdArgs) == 0 && len(ScanFlags(cmd)) == 0 {
+			continue
+		}
+
+		remaining, prov, parseErr := parseFlags(cmd, cmdArgs, opts)
+		if parseErr != nil {
+			if opts.suggest {
+				if suggestion := suggestFlag(cmd, parseErr); suggestion != "" {
+					return nil, fmt.Errorf("%w\n\n%s", parseErr, suggestion)
+				}
+			}
+			return nil, parseErr
+		}
+		provided[i] = prov
+
+		if i == len(chain)-1 {
+			resolved.positional = append(remaining, resolved.positional...)
+		}
+	}
+
+	inheritFlags(chain, provided)
+	inheritTagFields(chain)
+
+	for i, cmd := range chain {
+		if err := ValidateFlags(cmd, provided[i]); err != nil {
+			return nil, err
+		}
+		if err := validateFlagGroups(cmd, provided[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	return provided, nil
+}
+
 func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]bool, error) {
 	if opts.shortOptionHandling {
 		fi := buildFlagIndex(cmd)
@@ -471,15 +518,47 @@ func renderHelp(cmd Runner, chain []Runner, opts *options) error {
 
 	flags := ScanFlags(cmd)
 
+	// Apply env var prefix for help display.
+	if opts.envVarPrefix != "" {
+		for i := range flags {
+			if flags[i].Env != "" {
+				flags[i].Env = opts.envVarPrefix + flags[i].Env
+			}
+		}
+	}
+
+	if opts.sortedHelp {
+		sortFlags(flags)
+	}
+
 	var text string
 	if renderer != nil {
 		text = renderer.RenderHelp(cmd, chain, flags)
 	} else {
-		text = defaultRenderHelp(cmd, chain, flags)
+		text = defaultRenderHelp(cmd, chain, flags, opts.sortedHelp)
 	}
 
 	_, err := fmt.Fprint(opts.stdout, text)
 	return err
+}
+
+func printDeprecationWarnings(chain []Runner, provided []map[string]bool, opts *options) {
+	for i, cmd := range chain {
+		if provided[i] != nil {
+			defs := ScanFlags(cmd)
+			for j := range defs {
+				fd := &defs[j]
+				if fd.Deprecated != "" && provided[i][fd.Name] {
+					fmt.Fprintf(opts.stderr, "Warning: flag --%s is deprecated: %s\n", fd.Name, fd.Deprecated) //nolint:errcheck // best-effort warning
+				}
+			}
+		}
+		if d, ok := cmd.(Deprecater); ok {
+			if msg := d.Deprecated(); msg != "" {
+				fmt.Fprintf(opts.stderr, "Warning: %q is deprecated: %s\n", resolveInfo(cmd).name, msg) //nolint:errcheck // best-effort warning
+			}
+		}
+	}
 }
 
 func suggestFlag(cmd Runner, parseErr error) string {
