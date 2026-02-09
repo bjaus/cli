@@ -6,9 +6,46 @@ import (
 )
 
 type contextStoreKey struct{}
+type leafKey struct{}
 
 type contextStore struct {
 	values map[string]any
+}
+
+// Leaf returns the leaf (target) command from the context. The framework
+// stores the leaf before [BeforeRunner] hooks run, so parent commands can
+// inspect the leaf to make decisions based on consumer-defined interfaces.
+// Returns nil if called on a context that did not originate from [Execute].
+//
+// A common use case is centralized auth: define marker interfaces in your
+// application and check them in a root [BeforeRunner]:
+//
+//	type Authenticated interface{ Authenticate() }
+//	type Authorized interface{ Permissions() []string }
+//
+//	func (r *Root) Before(ctx context.Context) (context.Context, error) {
+//	    leaf := cli.Leaf(ctx)
+//	    if _, ok := leaf.(Authenticated); !ok {
+//	        return ctx, nil // no auth required
+//	    }
+//	    token, err := auth.Login(ctx)
+//	    if err != nil {
+//	        return ctx, err
+//	    }
+//	    ctx = auth.WithToken(ctx, token)
+//	    if az, ok := leaf.(Authorized); ok {
+//	        if err := auth.Check(token, az.Permissions()); err != nil {
+//	            return ctx, err
+//	        }
+//	    }
+//	    return ctx, nil
+//	}
+func Leaf(ctx context.Context) Runner {
+	r, ok := ctx.Value(leafKey{}).(Runner)
+	if !ok {
+		return nil
+	}
+	return r
 }
 
 // Set stores a named value in the context. The returned context contains

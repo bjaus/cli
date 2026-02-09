@@ -4408,6 +4408,175 @@ func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
 	}
 }
 
+// --- Leaf context accessor ---
+
+type leafParentCmd struct {
+	capturedLeaf Runner
+}
+
+func (c *leafParentCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *leafParentCmd) Name() string                            { return "app" }
+func (c *leafParentCmd) Before(ctx context.Context) (context.Context, error) {
+	c.capturedLeaf = Leaf(ctx)
+	return ctx, nil
+}
+func (c *leafParentCmd) Subcommands() []Runner {
+	return []Runner{&leafChildCmd{}}
+}
+
+type leafChildCmd struct{}
+
+func (c *leafChildCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *leafChildCmd) Name() string                            { return "child" }
+
+func TestLeaf_AvailableInBefore(t *testing.T) {
+	t.Parallel()
+
+	parent := &leafParentCmd{}
+	err := Execute(context.Background(), parent, []string{"child"})
+	require.NoError(t, err)
+	require.NotNil(t, parent.capturedLeaf)
+	assert.Equal(t, "child", resolveInfo(parent.capturedLeaf).name)
+}
+
+func TestLeaf_IsLeafNotParent(t *testing.T) {
+	t.Parallel()
+
+	// When there are no subcommands, the leaf is the root itself.
+	parent := &leafParentCmd{}
+	err := Execute(context.Background(), parent, nil)
+	require.NoError(t, err)
+	require.NotNil(t, parent.capturedLeaf)
+	assert.Equal(t, "app", resolveInfo(parent.capturedLeaf).name)
+}
+
+func TestLeaf_NilWithoutContext(t *testing.T) {
+	t.Parallel()
+
+	// Calling Leaf on a bare context returns nil.
+	leaf := Leaf(context.Background())
+	assert.Nil(t, leaf)
+}
+
+type leafCaptureCmd struct {
+	captured Runner
+}
+
+func (c *leafCaptureCmd) Run(ctx context.Context, _ []string) error {
+	c.captured = Leaf(ctx)
+	return nil
+}
+func (c *leafCaptureCmd) Name() string { return "child" }
+
+func TestLeaf_AvailableInRun(t *testing.T) {
+	t.Parallel()
+
+	child := &leafCaptureCmd{}
+	parent := &leafRunParent{child: child}
+
+	err := Execute(context.Background(), parent, []string{"child"})
+	require.NoError(t, err)
+	require.NotNil(t, child.captured)
+	assert.Equal(t, "child", resolveInfo(child.captured).name)
+}
+
+type leafRunParent struct {
+	child Runner
+}
+
+func (c *leafRunParent) Run(_ context.Context, _ []string) error { return nil }
+func (c *leafRunParent) Name() string                            { return "app" }
+func (c *leafRunParent) Subcommands() []Runner {
+	return []Runner{c.child}
+}
+
+// --- Leaf for auth pattern ---
+
+type authenticated interface {
+	Authenticate()
+}
+
+type authorized interface {
+	Permissions() []string
+}
+
+type authRootCmd struct {
+	needsAuth bool
+	needsRBAC bool
+	perms     []string
+}
+
+func (c *authRootCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *authRootCmd) Name() string                            { return "myctl" }
+func (c *authRootCmd) Before(ctx context.Context) (context.Context, error) {
+	leaf := Leaf(ctx)
+	_, c.needsAuth = leaf.(authenticated)
+	if az, ok := leaf.(authorized); ok {
+		c.needsRBAC = true
+		c.perms = az.Permissions()
+	}
+	return ctx, nil
+}
+func (c *authRootCmd) Subcommands() []Runner {
+	return []Runner{&unauthedCmd{}, &authedCmd{}, &rbacCmd{}}
+}
+
+type unauthedCmd struct{}
+
+func (c *unauthedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *unauthedCmd) Name() string                            { return "status" }
+
+type authedCmd struct{}
+
+func (c *authedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *authedCmd) Name() string                            { return "list" }
+func (c *authedCmd) Authenticate()                           {}
+
+type rbacCmd struct{}
+
+func (c *rbacCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *rbacCmd) Name() string                            { return "deploy" }
+func (c *rbacCmd) Authenticate()                           {}
+func (c *rbacCmd) Permissions() []string                   { return []string{"deploy:write"} }
+
+func TestLeaf_AuthPattern(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args      []string
+		wantAuth  bool
+		wantRBAC  bool
+		wantPerms []string
+	}{
+		"unauthed": {
+			args: []string{"status"},
+		},
+		"auth only": {
+			args:     []string{"list"},
+			wantAuth: true,
+		},
+		"auth + RBAC": {
+			args:      []string{"deploy"},
+			wantAuth:  true,
+			wantRBAC:  true,
+			wantPerms: []string{"deploy:write"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			root := &authRootCmd{}
+			err := Execute(context.Background(), root, tt.args)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantAuth, root.needsAuth)
+			assert.Equal(t, tt.wantRBAC, root.needsRBAC)
+			assert.Equal(t, tt.wantPerms, root.perms)
+		})
+	}
+}
+
 type noRequiredFlagsCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port to listen on"`
 }

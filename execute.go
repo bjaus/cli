@@ -366,6 +366,9 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	// Print deprecation warnings.
 	printDeprecationWarnings(chain, provided, opts)
 
+	// Store the leaf command in context so parent Before hooks can inspect it.
+	ctx = context.WithValue(ctx, leafKey{}, leaf)
+
 	// Before hooks (parent-first).
 	var afterHooks []Runner
 	for _, cmd := range chain {
