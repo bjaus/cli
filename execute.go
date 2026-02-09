@@ -520,29 +520,63 @@ func renderHelp(cmd Runner, chain []Runner, opts *options) error {
 	}
 
 	flags := ScanFlags(cmd)
+	globalFlags := collectGlobalFlags(chain, flags)
 
 	// Apply env var prefix for help display.
-	if opts.envVarPrefix != "" {
-		for i := range flags {
-			if flags[i].Env != "" {
-				flags[i].Env = opts.envVarPrefix + flags[i].Env
+	applyEnvVarPrefix := func(defs []FlagDef) {
+		if opts.envVarPrefix == "" {
+			return
+		}
+		for i := range defs {
+			if defs[i].Env != "" {
+				defs[i].Env = opts.envVarPrefix + defs[i].Env
 			}
 		}
 	}
+	applyEnvVarPrefix(flags)
+	applyEnvVarPrefix(globalFlags)
 
 	if opts.sortedHelp {
 		sortFlags(flags)
+		sortFlags(globalFlags)
 	}
 
 	var text string
 	if renderer != nil {
 		text = renderer.RenderHelp(cmd, chain, flags)
 	} else {
-		text = defaultRenderHelp(cmd, chain, flags, opts.sortedHelp)
+		text = defaultRenderHelp(cmd, chain, flags, globalFlags, opts.sortedHelp)
 	}
 
 	_, err := fmt.Fprint(opts.stdout, text)
 	return err
+}
+
+// collectGlobalFlags gathers visible flags from parent commands in the chain,
+// deduplicating against the leaf command's flags.
+func collectGlobalFlags(chain []Runner, leafFlags []FlagDef) []FlagDef {
+	if len(chain) <= 1 {
+		return nil
+	}
+
+	seen := make(map[string]bool, len(leafFlags))
+	for i := range leafFlags {
+		seen[leafFlags[i].Name] = true
+	}
+
+	var global []FlagDef
+	for _, parent := range chain[:len(chain)-1] {
+		parentFlags := ScanFlags(parent)
+		for i := range parentFlags {
+			f := &parentFlags[i]
+			if f.Hidden || seen[f.Name] {
+				continue
+			}
+			seen[f.Name] = true
+			global = append(global, *f)
+		}
+	}
+	return global
 }
 
 func printDeprecationWarnings(chain []Runner, provided []map[string]bool, opts *options) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef, sorted bool) string {
+func defaultRenderHelp(cmd Runner, chain []Runner, flags, globalFlags []FlagDef, sorted bool) string {
 	var b strings.Builder
 
 	info := resolveInfo(cmd)
@@ -31,7 +31,7 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef, sorted bool)
 	argDefs := ScanArgs(cmd)
 	argUsage := buildArgUsage(argDefs)
 
-	if hasVisibleFlags(flags) {
+	if hasVisibleFlags(flags) || hasVisibleFlags(globalFlags) {
 		fmt.Fprintf(&b, "  %s [flags] %s\n", chainNames, argUsage)
 	} else {
 		fmt.Fprintf(&b, "  %s %s\n", chainNames, argUsage)
@@ -68,12 +68,38 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef, sorted bool)
 		}
 	}
 
+	// Global flags (from parent commands)
+	renderGlobalFlags(&b, globalFlags)
+
 	// Footer
 	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "\nUse \"%s [command] --help\" for more information about a command.\n", chainNames)
 	}
 
 	return b.String()
+}
+
+func renderGlobalFlags(b *strings.Builder, flags []FlagDef) {
+	var visible []FlagDef
+	for i := range flags {
+		if !flags[i].Hidden {
+			visible = append(visible, flags[i])
+		}
+	}
+	if len(visible) == 0 {
+		return
+	}
+
+	maxLeft := 0
+	for i := range visible {
+		left := flagLeft(&visible[i])
+		if len(left) > maxLeft {
+			maxLeft = len(left)
+		}
+	}
+
+	b.WriteString("\nGlobal Flags:\n")
+	writeFlagLines(b, visible, maxLeft)
 }
 
 func buildArgUsage(args []ArgDef) string {

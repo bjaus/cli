@@ -587,7 +587,7 @@ func TestDefaultRenderHelp_Basic(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 
 	assert.Contains(t, text, "Start the server")
 	assert.Contains(t, text, "Usage:")
@@ -605,7 +605,7 @@ func TestDefaultRenderHelp_WithSubcommands(t *testing.T) {
 	chain := []Runner{root}
 	flags := ScanFlags(root)
 
-	text := defaultRenderHelp(root, chain, flags, false)
+	text := defaultRenderHelp(root, chain, flags, nil, false)
 
 	assert.Contains(t, text, "Commands:")
 	assert.Contains(t, text, "serve")
@@ -633,7 +633,7 @@ func TestDefaultRenderHelp_HiddenSubcommands(t *testing.T) {
 	parent := &internalParentWithHidden{child: hidden}
 	chain := []Runner{parent}
 
-	text := defaultRenderHelp(parent, chain, nil, false)
+	text := defaultRenderHelp(parent, chain, nil, nil, false)
 	assert.NotContains(t, text, "secret")
 }
 
@@ -644,7 +644,7 @@ func TestDefaultRenderHelp_WithExamples(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "Examples:")
 	assert.Contains(t, text, "$ app serve --port 8080")
 }
@@ -656,7 +656,7 @@ func TestDefaultRenderHelp_RequiredFlag(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "(required)")
 }
 
@@ -1344,7 +1344,7 @@ func TestDefaultRenderHelp_NoDescription(t *testing.T) {
 
 	cmd := &internalNoDescCmd{}
 	chain := []Runner{cmd}
-	text := defaultRenderHelp(cmd, chain, nil, false)
+	text := defaultRenderHelp(cmd, chain, nil, nil, false)
 
 	assert.Contains(t, text, "Usage:")
 	assert.NotContains(t, text, "Flags:")
@@ -1364,7 +1364,7 @@ func TestDefaultRenderHelp_FlagWithEnv(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "(env: PORT)")
 }
 
@@ -1415,7 +1415,7 @@ func TestDefaultRenderHelp_NoShortFlag(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "    --port")
 }
 
@@ -1436,7 +1436,7 @@ func TestDefaultRenderHelp_ExampleNoDescription(t *testing.T) {
 	cmd := &internalExampleNoDescCmd{}
 	chain := []Runner{cmd}
 
-	text := defaultRenderHelp(cmd, chain, nil, false)
+	text := defaultRenderHelp(cmd, chain, nil, nil, false)
 	assert.Contains(t, text, "$ extest --flag")
 }
 
@@ -2150,7 +2150,7 @@ func TestDefaultRenderHelp_Negatable(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "--[no-]verbose")
 }
 
@@ -2163,7 +2163,7 @@ func TestDefaultRenderHelp_Enum(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "[json|yaml|text]")
 }
 
@@ -2176,7 +2176,7 @@ func TestDefaultRenderHelp_Counter(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "(repeatable)")
 	assert.NotContains(t, text, "--verbose int")
 }
@@ -2213,7 +2213,7 @@ func TestDefaultRenderHelp_Categories(t *testing.T) {
 		},
 	}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil, false)
+	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	// Uncategorized under "Commands:"
 	assert.Contains(t, text, "Commands:\n")
@@ -2237,7 +2237,7 @@ func TestDefaultRenderHelp_AllCategorized(t *testing.T) {
 		},
 	}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil, false)
+	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	// No "Commands:" section when all are categorized
 	assert.NotContains(t, text, "Commands:\n")
@@ -2252,7 +2252,7 @@ func TestRenderSubcommands_AllHidden(t *testing.T) {
 
 	parent := &internalParentWithHidden{child: &internalHiddenSubCmd{}}
 	chain := []Runner{parent}
-	text := defaultRenderHelp(parent, chain, nil, false)
+	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	assert.NotContains(t, text, "Commands:")
 	assert.NotContains(t, text, "secret")
@@ -2480,7 +2480,7 @@ func TestDefaultRenderHelp_NegatableNoShort(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "    --[no-]color")
 }
 
@@ -2695,7 +2695,7 @@ func TestHelp_IncludesDiscoveredCommands(t *testing.T) {
 	}
 
 	flags := ScanFlags(parent)
-	help := defaultRenderHelp(parent, []Runner{parent}, flags, false)
+	help := defaultRenderHelp(parent, []Runner{parent}, flags, nil, false)
 
 	assert.Contains(t, help, "serve")
 	assert.Contains(t, help, "deploy")
@@ -2975,7 +2975,7 @@ func TestDefaultRenderHelp_HiddenFlagFiltered(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "--port")
 	assert.NotContains(t, text, "--debug")
 	assert.Contains(t, text, "[flags]")
@@ -2995,7 +2995,7 @@ func TestDefaultRenderHelp_AllFlagsHidden(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.NotContains(t, text, "Flags:")
 	assert.NotContains(t, text, "--debug")
 	assert.NotContains(t, text, "[flags]")
@@ -3035,7 +3035,7 @@ func TestDefaultRenderHelp_DeprecatedFlag(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "--old-port")
 	assert.Contains(t, text, "(DEPRECATED: use --port instead)")
 }
@@ -3075,7 +3075,7 @@ func TestDefaultRenderHelp_FlagCategories(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 
 	// Uncategorized under "Flags:"
 	assert.Contains(t, text, "Flags:\n")
@@ -3104,7 +3104,7 @@ func TestDefaultRenderHelp_AllFlagsCategorized(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.NotContains(t, text, "Flags:\n")
 	assert.Contains(t, text, "Server:\n")
 }
@@ -3773,7 +3773,7 @@ func TestDefaultRenderHelp_HelpSections(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 
 	assert.Contains(t, text, "Required Tokens:\n")
 	assert.Contains(t, text, "  JIRA_TOKEN    Jira API token (env: JIRA_TOKEN)")
@@ -3795,7 +3795,7 @@ func TestDefaultRenderHelp_NoSections(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 
 	// No "Required Tokens" or other custom sections.
 	assert.NotContains(t, text, "Required Tokens:")
@@ -3808,7 +3808,7 @@ func TestDefaultRenderHelp_WithArgs(t *testing.T) {
 	chain := []Runner{cmd}
 	flags := ScanFlags(cmd)
 
-	text := defaultRenderHelp(cmd, chain, flags, false)
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
 	assert.Contains(t, text, "<source> <dest>")
 	assert.Contains(t, text, "Arguments:\n")
 	assert.Contains(t, text, "source")
@@ -4001,4 +4001,162 @@ func TestExitCode(t *testing.T) {
 			assert.Equal(t, tt.wantCode, exitCode(tt.err))
 		})
 	}
+}
+
+// --- Global Flags in Help ---
+
+type globalFlagParent struct {
+	Env    string `flag:"env" short:"e" required:"true" help:"Target environment" enum:"dev,qa,prod"`
+	Format string `flag:"format" short:"f" default:"table" help:"Output format"`
+	Secret string `flag:"secret" hidden:"true" help:"Hidden flag"`
+}
+
+func (c *globalFlagParent) Run(_ context.Context, _ []string) error { return nil }
+func (c *globalFlagParent) Name() string                            { return "app" }
+func (c *globalFlagParent) Subcommands() []Runner                   { return []Runner{&globalFlagChild{}} }
+
+type globalFlagChild struct {
+	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
+	Format string `flag:"format" help:"Override format"` // overlaps with parent
+}
+
+func (c *globalFlagChild) Run(_ context.Context, _ []string) error { return nil }
+func (c *globalFlagChild) Name() string                            { return "serve" }
+
+func TestCollectGlobalFlags(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		chain     []Runner
+		leafFlags []FlagDef
+		wantNames []string
+	}{
+		"parent flags shown": {
+			chain:     []Runner{&globalFlagParent{}, &globalFlagChild{}},
+			leafFlags: ScanFlags(&globalFlagChild{}),
+			wantNames: []string{"env"}, // format is deduplicated, secret is hidden
+		},
+		"single command no globals": {
+			chain:     []Runner{&globalFlagParent{}},
+			leafFlags: ScanFlags(&globalFlagParent{}),
+			wantNames: nil,
+		},
+		"all parent flags hidden": {
+			chain: []Runner{
+				&struct {
+					Runner
+					Secret string `flag:"secret" hidden:"true"`
+				}{Runner: &globalFlagChild{}},
+				&globalFlagChild{},
+			},
+			leafFlags: ScanFlags(&globalFlagChild{}),
+			wantNames: nil,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			global := collectGlobalFlags(tt.chain, tt.leafFlags)
+			var names []string
+			for _, f := range global {
+				if !f.Hidden {
+					names = append(names, f.Name)
+				}
+			}
+			assert.Equal(t, tt.wantNames, names)
+		})
+	}
+}
+
+func TestDefaultRenderHelp_GlobalFlags(t *testing.T) {
+	t.Parallel()
+
+	parent := &globalFlagParent{}
+	child := &globalFlagChild{}
+	chain := []Runner{parent, child}
+	leafFlags := ScanFlags(child)
+	globalFlags := collectGlobalFlags(chain, leafFlags)
+
+	text := defaultRenderHelp(child, chain, leafFlags, globalFlags, false)
+
+	// Leaf flags in "Flags:" section.
+	assert.Contains(t, text, "Flags:\n")
+	assert.Contains(t, text, "--port")
+
+	// Parent flags in "Global Flags:" section.
+	assert.Contains(t, text, "Global Flags:\n")
+	assert.Contains(t, text, "--env")
+
+	// Overlapping "format" only in leaf Flags, not Global Flags.
+	lines := strings.Split(text, "\n")
+	inGlobal := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Global Flags:") {
+			inGlobal = true
+			continue
+		}
+		if inGlobal && strings.TrimSpace(line) == "" {
+			break
+		}
+		if inGlobal {
+			assert.NotContains(t, line, "--format")
+		}
+	}
+
+	// Hidden parent flag not shown.
+	assert.NotContains(t, text, "--secret")
+}
+
+func TestDefaultRenderHelp_NoGlobalFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &globalFlagChild{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+	assert.NotContains(t, text, "Global Flags:")
+}
+
+type multiLevelGrandparent struct {
+	Region string `flag:"region" help:"AWS region"`
+}
+
+func (c *multiLevelGrandparent) Run(_ context.Context, _ []string) error { return nil }
+func (c *multiLevelGrandparent) Name() string                            { return "app" }
+
+type multiLevelParent struct {
+	Env    string `flag:"env" help:"Environment"`
+	Region string `flag:"region" help:"Override region"` // overlap with grandparent
+}
+
+func (c *multiLevelParent) Run(_ context.Context, _ []string) error { return nil }
+func (c *multiLevelParent) Name() string                            { return "deploy" }
+
+type multiLevelChild struct {
+	Port int `flag:"port" help:"Port"`
+}
+
+func (c *multiLevelChild) Run(_ context.Context, _ []string) error { return nil }
+func (c *multiLevelChild) Name() string                            { return "run" }
+
+func TestDefaultRenderHelp_MultiLevelGlobalFlags(t *testing.T) {
+	t.Parallel()
+
+	gp := &multiLevelGrandparent{}
+	p := &multiLevelParent{}
+	child := &multiLevelChild{}
+	chain := []Runner{gp, p, child}
+	leafFlags := ScanFlags(child)
+	globalFlags := collectGlobalFlags(chain, leafFlags)
+
+	text := defaultRenderHelp(child, chain, leafFlags, globalFlags, false)
+
+	assert.Contains(t, text, "Global Flags:\n")
+	// Region from grandparent should be deduplicated by parent's region.
+	// Only one --region should appear.
+	assert.Equal(t, 1, strings.Count(text, "--region"))
+	assert.Contains(t, text, "--env")
 }
