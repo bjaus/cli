@@ -43,3 +43,14 @@ func Exit(message string, code int) error {
 func Exitf(code int, format string, args ...any) error {
 	return &exitError{message: fmt.Sprintf(format, args...), code: code}
 }
+
+// isFlagOrCommandError returns true if err wraps one of the sentinel flag
+// parsing errors, indicating the user made a usage mistake that could be
+// helped by viewing --help.
+func isFlagOrCommandError(err error) bool {
+	return errors.Is(err, ErrUnknownFlag) ||
+		errors.Is(err, ErrRequiredFlag) ||
+		errors.Is(err, ErrFlagRequiresVal) ||
+		errors.Is(err, ErrInvalidFlagValue) ||
+		errors.Is(err, ErrUnsupportedType)
+}

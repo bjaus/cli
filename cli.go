@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -154,19 +155,51 @@ func Execute(ctx context.Context, root Runner, args []string, opts ...Option) er
 
 // ExecuteAndExit calls [Execute] and exits the process. If root implements
 // [Exiter], its Exit method is called with the error and controls the exit
-// entirely. Otherwise, if the error implements [ExitCoder], its exit code
-// is used; non-nil errors default to exit code 1.
+// entirely. Otherwise, the error is printed to stderr. For flag and command
+// errors (unknown flag, missing required flag, etc.) a usage hint is appended.
+// If the error implements [ExitCoder], its exit code is used; non-nil errors
+// default to exit code 1.
 func ExecuteAndExit(ctx context.Context, root Runner, args []string, opts ...Option) {
-	err := Execute(ctx, root, args, opts...)
+	o := defaults()
+	for _, opt := range opts {
+		opt(o)
+	}
+	var stop context.CancelFunc
+	if o.signalHandling {
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	}
+
+	err := execute(ctx, root, args, o)
+	if stop != nil {
+		stop()
+	}
 	if err == nil {
 		os.Exit(0)
 	}
+
 	if e, ok := root.(Exiter); ok {
 		e.Exit(err)
 		return
 	}
-	if ec, ok := err.(ExitCoder); ok {
-		os.Exit(ec.ExitCode())
+
+	formatError(o.stderr, root, err)
+	os.Exit(exitCode(err))
+}
+
+// formatError writes the error message and optional usage hint to w.
+func formatError(w io.Writer, root Runner, err error) {
+	fmt.Fprintf(w, "Error: %s\n", err) //nolint:errcheck
+
+	if _, isExit := err.(ExitCoder); !isExit && isFlagOrCommandError(err) {
+		name := resolveInfo(root).name
+		fmt.Fprintf(w, "Run '%s --help' for usage.\n", name) //nolint:errcheck
 	}
-	os.Exit(1)
+}
+
+// exitCode returns the process exit code for an error.
+func exitCode(err error) int {
+	if ec, ok := err.(ExitCoder); ok {
+		return ec.ExitCode()
+	}
+	return 1
 }

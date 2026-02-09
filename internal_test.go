@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -3862,4 +3864,141 @@ func TestSignalHandling_Disabled(t *testing.T) {
 	err := Execute(context.Background(), cmd, nil)
 	require.NoError(t, err)
 	assert.NoError(t, cmd.ctxErr)
+}
+
+// --- Error Formatting ---
+
+func TestIsFlagOrCommandError(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err  error
+		want bool
+	}{
+		"unknown flag": {
+			err:  fmt.Errorf("%w: --foo", ErrUnknownFlag),
+			want: true,
+		},
+		"required flag": {
+			err:  fmt.Errorf("%w: --name", ErrRequiredFlag),
+			want: true,
+		},
+		"flag requires value": {
+			err:  fmt.Errorf("%w: --port", ErrFlagRequiresVal),
+			want: true,
+		},
+		"invalid flag value": {
+			err:  fmt.Errorf("%w: --port: not a number", ErrInvalidFlagValue),
+			want: true,
+		},
+		"unsupported type": {
+			err:  fmt.Errorf("%w: complex128", ErrUnsupportedType),
+			want: true,
+		},
+		"generic error": {
+			err:  fmt.Errorf("something went wrong"),
+			want: false,
+		},
+		"exit error": {
+			err:  Exit("done", 1),
+			want: false,
+		},
+		"nil error": {
+			err:  nil,
+			want: false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, isFlagOrCommandError(tt.err))
+		})
+	}
+}
+
+type namedRoot struct {
+	Name_ string `flag:"name" required:"true"`
+}
+
+func (c *namedRoot) Run(_ context.Context, _ []string) error { return nil }
+func (c *namedRoot) Name() string                            { return "myapp" }
+
+func TestFormatError(t *testing.T) {
+	t.Parallel()
+
+	root := &namedRoot{}
+
+	tests := map[string]struct {
+		err        error
+		wantError  string
+		wantHint   bool
+	}{
+		"flag error includes hint": {
+			err:       fmt.Errorf("%w: --name", ErrRequiredFlag),
+			wantError: "Error: required flag not provided: --name\n",
+			wantHint:  true,
+		},
+		"unknown flag includes hint": {
+			err:       fmt.Errorf("%w: --foo", ErrUnknownFlag),
+			wantError: "Error: unknown flag: --foo\n",
+			wantHint:  true,
+		},
+		"generic error no hint": {
+			err:       errors.New("something failed"),
+			wantError: "Error: something failed\n",
+			wantHint:  false,
+		},
+		"exit coder no hint": {
+			err:       Exit("shutting down", 2),
+			wantError: "Error: shutting down\n",
+			wantHint:  false,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			formatError(&buf, root, tt.err)
+
+			output := buf.String()
+			assert.Contains(t, output, tt.wantError)
+			if tt.wantHint {
+				assert.Contains(t, output, "Run 'myapp --help' for usage.\n")
+			} else {
+				assert.NotContains(t, output, "--help")
+			}
+		})
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		err      error
+		wantCode int
+	}{
+		"exit coder": {
+			err:      Exit("done", 42),
+			wantCode: 42,
+		},
+		"generic error": {
+			err:      errors.New("oops"),
+			wantCode: 1,
+		},
+		"zero exit": {
+			err:      Exit("ok", 0),
+			wantCode: 0,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.wantCode, exitCode(tt.err))
+		})
+	}
 }
