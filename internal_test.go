@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -3738,6 +3739,64 @@ func TestStoreFlags_AutoDerivedName(t *testing.T) {
 	val, ok := Lookup[string](ctx, "output-format")
 	require.True(t, ok)
 	assert.Equal(t, "json", val)
+}
+
+// --- HelpSectioner ---
+
+type internalSectionedCmd struct {
+	Port int `flag:"port" default:"8080" help:"Port"`
+}
+
+func (c *internalSectionedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalSectionedCmd) Name() string                            { return "jira" }
+func (c *internalSectionedCmd) Description() string                     { return "Interact with Jira" }
+
+func (c *internalSectionedCmd) HelpSections() []HelpSection {
+	return []HelpSection{
+		{
+			Header: "Required Tokens",
+			Body:   "  JIRA_TOKEN    Jira API token (env: JIRA_TOKEN)",
+		},
+		{
+			Header: "See Also",
+			Body:   "  https://docs.example.com/jira",
+		},
+	}
+}
+
+func TestDefaultRenderHelp_HelpSections(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalSectionedCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+
+	assert.Contains(t, text, "Required Tokens:\n")
+	assert.Contains(t, text, "  JIRA_TOKEN    Jira API token (env: JIRA_TOKEN)")
+	assert.Contains(t, text, "See Also:\n")
+	assert.Contains(t, text, "  https://docs.example.com/jira")
+
+	// Sections appear before footer.
+	tokensIdx := strings.Index(text, "Required Tokens:")
+	footerIdx := strings.Index(text, "Use ")
+	if footerIdx >= 0 {
+		assert.Greater(t, footerIdx, tokensIdx)
+	}
+}
+
+func TestDefaultRenderHelp_NoSections(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalBareCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, false)
+
+	// No "Required Tokens" or other custom sections.
+	assert.NotContains(t, text, "Required Tokens:")
 }
 
 func TestDefaultRenderHelp_WithArgs(t *testing.T) {

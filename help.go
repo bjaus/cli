@@ -59,6 +59,15 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef, sorted bool)
 	// Arguments
 	renderArgDefs(&b, argDefs)
 
+	// Custom sections
+	if s, ok := cmd.(HelpSectioner); ok {
+		for _, section := range s.HelpSections() {
+			fmt.Fprintf(&b, "\n%s:\n", section.Header)
+			b.WriteString(section.Body)
+			b.WriteByte('\n')
+		}
+	}
+
 	// Footer
 	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "\nUse \"%s [command] --help\" for more information about a command.\n", chainNames)

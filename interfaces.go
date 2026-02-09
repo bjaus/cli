@@ -193,6 +193,30 @@ type FlagUnmarshaler interface {
 	UnmarshalFlag(value string) error
 }
 
+// HelpSection is a custom section appended to the default help output.
+// The Header is rendered as a section title (like "Flags:" or "Commands:"),
+// and Body is rendered as-is beneath it. Use this to add context-specific
+// information (required tokens, environment setup, etc.) without replacing
+// the entire help renderer.
+type HelpSection struct {
+	Header string
+	Body   string
+}
+
+// HelpSectioner declares additional sections to append to the default help
+// output. Sections appear after Arguments and before the footer. The
+// framework does not interpret the section content — it is rendered as-is.
+//
+//	func (j *JiraCmd) HelpSections() []cli.HelpSection {
+//	    return []cli.HelpSection{{
+//	        Header: "Required Tokens",
+//	        Body:   "  JIRA_TOKEN    Jira API token (env: JIRA_TOKEN)",
+//	    }}
+//	}
+type HelpSectioner interface {
+	HelpSections() []HelpSection
+}
+
 // Helper overrides help text for a single command.
 type Helper interface {
 	Help() string
