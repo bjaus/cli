@@ -22,9 +22,10 @@ func ScanFlags(cmd Runner) []FlagDef {
 	}
 
 	t := v.Type()
-	var defs []FlagDef //nolint:prealloc // only flag-tagged fields are appended
+	n := t.NumField()
+	defs := make([]FlagDef, 0, n)
 
-	for i := range t.NumField() {
+	for i := range n {
 		f := t.Field(i)
 		name := f.Tag.Get("flag")
 		if name == "" {

@@ -89,13 +89,18 @@ func Execute(ctx context.Context, root Runner, args []string, opts ...Option) er
 	return execute(ctx, root, args, o)
 }
 
-// ExecuteAndExit calls [Execute] and exits the process. If the returned error
-// implements [ExitCoder], its exit code is used; otherwise non-nil errors
-// exit with code 1.
+// ExecuteAndExit calls [Execute] and exits the process. If root implements
+// [Exiter], its Exit method is called with the error and controls the exit
+// entirely. Otherwise, if the error implements [ExitCoder], its exit code
+// is used; non-nil errors default to exit code 1.
 func ExecuteAndExit(ctx context.Context, root Runner, args []string, opts ...Option) {
 	err := Execute(ctx, root, args, opts...)
 	if err == nil {
 		os.Exit(0)
+	}
+	if e, ok := root.(Exiter); ok {
+		e.Exit(err)
+		return
 	}
 	if ec, ok := err.(ExitCoder); ok {
 		os.Exit(ec.ExitCode())

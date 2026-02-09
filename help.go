@@ -53,7 +53,7 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string {
 			left  string
 			right string
 		}
-		var lines []flagLine
+		lines := make([]flagLine, 0, len(flags))
 		maxLeft := 0
 
 		for i := range flags {

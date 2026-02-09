@@ -29,6 +29,7 @@
 //   - [Deprecater] — mark a command as deprecated with a warning message
 //   - [Categorizer] — group subcommands under headings in help output
 //   - [Fallbacker] — provide a fallback subcommand when no name matches
+//   - [Exiter] — control error printing and process exit in [ExecuteAndExit]
 //
 // # Lifecycle Interfaces
 //

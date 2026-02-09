@@ -54,7 +54,7 @@ func TestScanFlags_NoFlags(t *testing.T) {
 
 	cmd := &bareCmd{}
 	defs := cli.ScanFlags(cmd)
-	assert.Nil(t, defs)
+	assert.Empty(t, defs)
 }
 
 func TestScanFlags_RequiredField(t *testing.T) {

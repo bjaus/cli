@@ -61,6 +61,13 @@ type Fallbacker interface {
 	Fallback() Runner
 }
 
+// Exiter controls process exit behavior. When implemented on the root command,
+// [ExecuteAndExit] delegates to Exit instead of calling [os.Exit] directly.
+// The implementation is responsible for printing the error and exiting the process.
+type Exiter interface {
+	Exit(err error)
+}
+
 // --- Lifecycle interfaces (all optional) ---
 
 // BeforeRunner runs setup logic before Run. Called parent-first through the

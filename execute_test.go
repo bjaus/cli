@@ -451,12 +451,14 @@ func TestExecuteAndExit(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		envMode  string
-		wantCode int
+		envMode    string
+		wantCode   int
+		wantStderr string
 	}{
 		"success exits 0":        {envMode: "success", wantCode: 0},
 		"exit coder exits code":  {envMode: "exitcoder", wantCode: 42},
 		"generic error exits 1":  {envMode: "error", wantCode: 1},
+		"exiter is called": {envMode: "exiter", wantCode: 1, wantStderr: "handled: boom"},
 	}
 
 	for name, tt := range tests {
@@ -465,6 +467,9 @@ func TestExecuteAndExit(t *testing.T) {
 
 			cmd := exec.CommandContext(context.Background(), os.Args[0], "-test.run=TestExecuteAndExitHelper") //nolint:gosec // test subprocess
 			cmd.Env = append(os.Environ(), "EXEC_AND_EXIT_MODE="+tt.envMode)
+
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
 
 			err := cmd.Run()
 			if tt.wantCode == 0 {
@@ -475,8 +480,23 @@ func TestExecuteAndExit(t *testing.T) {
 			var exitErr *exec.ExitError
 			require.ErrorAs(t, err, &exitErr)
 			assert.Equal(t, tt.wantCode, exitErr.ExitCode())
+			if tt.wantStderr != "" {
+				assert.Contains(t, stderr.String(), tt.wantStderr)
+			}
 		})
 	}
+}
+
+// exiterCmd implements Exiter to control exit behavior.
+type exiterCmd struct {
+	runErr error
+}
+
+func (c *exiterCmd) Run(_ context.Context, _ []string) error { return c.runErr }
+
+func (c *exiterCmd) Exit(err error) {
+	fmt.Fprintf(os.Stderr, "handled: %s\n", err)
+	os.Exit(1)
 }
 
 // TestExecuteAndExitHelper is a helper for the subprocess test. It is not run
@@ -497,6 +517,8 @@ func TestExecuteAndExitHelper(t *testing.T) {
 	case "error":
 		cli.ExecuteAndExit(context.Background(),
 			cli.RunFunc(func(_ context.Context, _ []string) error { return errors.New("boom") }), nil)
+	case "exiter":
+		cli.ExecuteAndExit(context.Background(), &exiterCmd{runErr: errors.New("boom")}, nil)
 	}
 }
 
