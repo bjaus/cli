@@ -41,6 +41,6 @@ func TestCustomHelpRenderer(t *testing.T) {
 
 type testRenderer struct{}
 
-func (r *testRenderer) RenderHelp(_ cli.Runner, _ []cli.Runner, _ []cli.FlagDef) string {
+func (r *testRenderer) RenderHelp(_ cli.Runner, _ []cli.Runner, _ []cli.FlagDef, _ []cli.ArgDef, _ []cli.FlagDef) string {
 	return "rendered by test"
 }

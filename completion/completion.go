@@ -1,9 +1,9 @@
 // Package completion generates shell completion scripts from a [cli.Runner]
 // command tree.
 //
-// Supported shells: bash, zsh, fish, and PowerShell. Each generator walks the
-// command tree and produces a self-contained script that users source in their
-// shell configuration.
+// Supported shells: bash, zsh, fish, and PowerShell. Each generator produces
+// a script that calls the binary at runtime via the __complete protocol,
+// providing dynamic completions based on the current command tree.
 //
 // # Usage
 //
@@ -12,26 +12,9 @@
 //	script := completion.Fish(root, "myapp")
 //	script := completion.PowerShell(root, "myapp")
 //
-// A common pattern is to add a hidden "completion" subcommand:
-//
-//	type CompletionCmd struct {
-//	    Shell string `arg:"shell" help:"Shell type (bash, zsh, fish, powershell)"`
-//	}
-//
-//	func (c *CompletionCmd) Run(ctx context.Context, args []string) error {
-//	    // root is the top-level command
-//	    switch c.Shell {
-//	    case "bash":
-//	        fmt.Println(completion.Bash(root, "myapp"))
-//	    case "zsh":
-//	        fmt.Println(completion.Zsh(root, "myapp"))
-//	    case "fish":
-//	        fmt.Println(completion.Fish(root, "myapp"))
-//	    case "powershell":
-//	        fmt.Println(completion.PowerShell(root, "myapp"))
-//	    }
-//	    return nil
-//	}
+// The root parameter is kept for API compatibility. The generated scripts call
+// the binary at runtime, so completions are always up to date with the current
+// command tree, including plugins from [cli.Discoverer].
 package completion
 
 import (
@@ -41,389 +24,127 @@ import (
 	"github.com/bjaus/cli"
 )
 
-// Bash generates a bash completion script for the command tree.
-func Bash(root cli.Runner, appName string) string {
+// Bash generates a bash completion script that calls the binary at runtime.
+func Bash(_ cli.Runner, appName string) string {
 	var b strings.Builder
+	safe := bashSafe(appName)
 
 	fmt.Fprintf(&b, "# bash completion for %s\n\n", appName)
-	fmt.Fprintf(&b, "_%s_completions() {\n", bashSafe(appName))
-	b.WriteString("    local cur prev commands flags\n")
-	b.WriteString("    COMPREPLY=()\n")
-	b.WriteString("    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n")
-	b.WriteString("    prev=\"${COMP_WORDS[COMP_CWORD-1]}\"\n\n")
+	fmt.Fprintf(&b, "_%s_completions() {\n", safe)
+	b.WriteString("    local IFS=$'\\n'\n")
+	b.WriteString("    local cur\n")
+	b.WriteString("    cur=\"${COMP_WORDS[COMP_CWORD]}\"\n\n")
 
-	bashWriteCommand(&b, root, appName, []string{appName}, 1)
+	// Call the binary with __complete and capture output.
+	fmt.Fprintf(&b, "    local out\n")
+	fmt.Fprintf(&b, "    out=$(%s __complete \"${COMP_WORDS[@]:1}\" 2>/dev/null)\n", appName)
+	b.WriteString("    if [[ $? -ne 0 ]]; then\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
+
+	// Parse directive from last line.
+	b.WriteString("    local directive\n")
+	b.WriteString("    directive=$(echo \"$out\" | tail -n1)\n")
+	b.WriteString("    out=$(echo \"$out\" | head -n-1)\n\n")
+
+	// Strip tab-separated descriptions for compgen.
+	b.WriteString("    local candidates\n")
+	b.WriteString("    candidates=$(echo \"$out\" | while IFS=$'\\t' read -r comp _desc; do echo \"$comp\"; done)\n\n")
+
+	// Generate COMPREPLY.
+	b.WriteString("    COMPREPLY=( $(compgen -W \"${candidates}\" -- \"${cur}\") )\n\n")
+
+	// Handle directives.
+	b.WriteString("    case \"$directive\" in\n")
+	b.WriteString("    :2) ;; # NoSpace: noop, compgen handles it\n")
+	b.WriteString("    :4) compopt +o default ;; # NoFileComp\n")
+	b.WriteString("    esac\n")
 
 	b.WriteString("}\n\n")
-	fmt.Fprintf(&b, "complete -F _%s_completions %s\n", bashSafe(appName), appName)
+	fmt.Fprintf(&b, "complete -o default -F _%s_completions %s\n", safe, appName)
 
 	return b.String()
 }
 
-// Zsh generates a zsh completion script for the command tree.
-func Zsh(root cli.Runner, appName string) string {
+// Zsh generates a zsh completion script that calls the binary at runtime.
+func Zsh(_ cli.Runner, appName string) string {
 	var b strings.Builder
+	safe := bashSafe(appName)
 
 	fmt.Fprintf(&b, "#compdef %s\n\n", appName)
 
-	// Write subcommand functions first.
-	zshWriteSubFunctions(&b, root, appName, bashSafe(appName))
+	fmt.Fprintf(&b, "_%s() {\n", safe)
+	b.WriteString("    local -a completions\n")
+	b.WriteString("    local directive\n\n")
 
-	// Write main function.
-	fmt.Fprintf(&b, "_%s() {\n", bashSafe(appName))
-	b.WriteString("    local -a commands flags\n\n")
+	// Call the binary with __complete.
+	fmt.Fprintf(&b, "    local out\n")
+	fmt.Fprintf(&b, "    out=$(\"${words[1]}\" __complete \"${words[@]:1}\" 2>/dev/null)\n")
+	b.WriteString("    if [[ $? -ne 0 ]]; then\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
 
-	zshWriteCommand(&b, root, appName, 1)
+	// Parse directive from last line.
+	b.WriteString("    directive=${out##*$'\\n'}\n")
+	b.WriteString("    out=${out%$'\\n'*}\n\n")
+
+	// Parse candidates: each line is "candidate\\tdescription".
+	b.WriteString("    while IFS=$'\\t' read -r comp desc; do\n")
+	b.WriteString("        if [[ -n \"$comp\" ]]; then\n")
+	b.WriteString("            if [[ -n \"$desc\" ]]; then\n")
+	b.WriteString("                completions+=(\"${comp}:${desc}\")\n")
+	b.WriteString("            else\n")
+	b.WriteString("                completions+=(\"${comp}\")\n")
+	b.WriteString("            fi\n")
+	b.WriteString("        fi\n")
+	b.WriteString("    done <<< \"$out\"\n\n")
+
+	b.WriteString("    _describe 'completion' completions\n")
 
 	b.WriteString("}\n\n")
-	fmt.Fprintf(&b, "_%s\n", bashSafe(appName))
+	fmt.Fprintf(&b, "_%s\n", safe)
 
 	return b.String()
 }
 
-// Fish generates a fish completion script for the command tree.
-func Fish(root cli.Runner, appName string) string {
+// Fish generates a fish completion script that calls the binary at runtime.
+func Fish(_ cli.Runner, appName string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# fish completion for %s\n\n", appName)
-	fishWriteCommand(&b, root, appName, nil)
+	fmt.Fprintf(&b, "complete -c %s -f -a '(%s __complete (commandline -cop) 2>/dev/null | string match -v \":*\")'\n", appName, appName)
 
 	return b.String()
 }
 
-// PowerShell generates a PowerShell completion script for the command tree.
-func PowerShell(root cli.Runner, appName string) string {
+// PowerShell generates a PowerShell completion script that calls the binary at runtime.
+func PowerShell(_ cli.Runner, appName string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# PowerShell completion for %s\n\n", appName)
 	fmt.Fprintf(&b, "Register-ArgumentCompleter -CommandName %s -ScriptBlock {\n", appName)
 	b.WriteString("    param($commandName, $wordToComplete, $cursorPosition)\n\n")
-	b.WriteString("    $commands = @{\n")
 
-	psWriteCommands(&b, root, []string{})
+	// Call the binary with __complete.
+	fmt.Fprintf(&b, "    $words = $wordToComplete -split '\\s+' | Select-Object -Skip 1\n")
+	fmt.Fprintf(&b, "    $out = & %s __complete @words 2>$null\n", appName)
+	b.WriteString("    if ($LASTEXITCODE -ne 0) { return }\n\n")
 
-	b.WriteString("    }\n\n")
-	b.WriteString("    $words = $wordToComplete -split '\\s+'\n")
-	b.WriteString("    $path = ($words | Select-Object -Skip 1) -join ' '\n\n")
-	b.WriteString("    foreach ($key in $commands.Keys) {\n")
-	b.WriteString("        if ($key -like \"$path*\") {\n")
-	b.WriteString("            $commands[$key] | ForEach-Object {\n")
-	b.WriteString("                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)\n")
-	b.WriteString("            }\n")
-	b.WriteString("        }\n")
+	// Parse output: last line is directive, rest are candidates.
+	b.WriteString("    $lines = $out -split \"`n\"\n")
+	b.WriteString("    $directive = $lines[-1]\n")
+	b.WriteString("    $candidates = $lines[0..($lines.Count - 2)]\n\n")
+
+	// Create CompletionResult for each candidate.
+	b.WriteString("    foreach ($line in $candidates) {\n")
+	b.WriteString("        $parts = $line -split \"`t\", 2\n")
+	b.WriteString("        $comp = $parts[0]\n")
+	b.WriteString("        $desc = if ($parts.Count -gt 1) { $parts[1] } else { $comp }\n")
+	b.WriteString("        [System.Management.Automation.CompletionResult]::new($comp, $comp, 'ParameterValue', $desc)\n")
 	b.WriteString("    }\n")
 	b.WriteString("}\n")
 
 	return b.String()
-}
-
-// --- bash helpers ---
-
-func bashWriteCommand(b *strings.Builder, cmd cli.Runner, path string, words []string, depth int) {
-	indent := strings.Repeat("    ", depth)
-
-	// Determine what completions are available at this level.
-	completions := make([]string, 0)
-
-	subs := safeAllSubcommands(cmd)
-	for _, sub := range visibleSubs(subs) {
-		name := cmdName(sub)
-		completions = append(completions, name)
-		if a, ok := sub.(cli.Aliaser); ok {
-			completions = append(completions, a.Aliases()...)
-		}
-	}
-
-	flags := completableFlags(cli.ScanFlags(cmd))
-	for i := range flags {
-		f := &flags[i]
-		completions = append(completions, "--"+f.Name)
-		if f.Short != "" {
-			completions = append(completions, "-"+f.Short)
-		}
-		for _, alt := range f.Alt {
-			completions = append(completions, "--"+alt)
-		}
-		if f.Negate {
-			completions = append(completions, "--no-"+f.Name)
-		}
-	}
-
-	// Generate a conditional block based on the word position.
-	if depth == 1 {
-		fmt.Fprintf(b, "%scommands=%q\n", indent, strings.Join(completions, " "))
-		b.WriteString(indent + "COMPREPLY=( $(compgen -W \"${commands}\" -- \"${cur}\") )\n")
-	} else {
-		condition := bashCondition(words[1:])
-		fmt.Fprintf(b, "%sif %s; then\n", indent, condition)
-		fmt.Fprintf(b, "%s    COMPREPLY=( $(compgen -W %q -- \"${cur}\") )\n", indent, strings.Join(completions, " "))
-		fmt.Fprintf(b, "%s    return\n", indent)
-		fmt.Fprintf(b, "%sfi\n", indent)
-	}
-
-	// Recurse into subcommands.
-	for _, sub := range visibleSubs(subs) {
-		name := cmdName(sub)
-		subWords := append(append([]string{}, words...), name)
-		bashWriteCommand(b, sub, path+" "+name, subWords, depth)
-	}
-}
-
-func bashCondition(words []string) string {
-	parts := make([]string, len(words))
-	for i, w := range words {
-		parts[i] = fmt.Sprintf("\"${COMP_WORDS[%d]}\" == %q", i+1, w)
-	}
-	return "[[ " + strings.Join(parts, " && ") + " ]]"
-}
-
-// --- zsh helpers ---
-
-// zshWriteSubFunctions recursively generates _<app>_<subcmd>() functions for subcommands.
-func zshWriteSubFunctions(b *strings.Builder, cmd cli.Runner, appName string, funcPrefix string) {
-	subs := safeAllSubcommands(cmd)
-	for _, sub := range visibleSubs(subs) {
-		name := cmdName(sub)
-		funcName := funcPrefix + "_" + bashSafe(name)
-
-		// Write this subcommand's function.
-		fmt.Fprintf(b, "_%s() {\n", funcName)
-		b.WriteString("    local -a commands flags\n\n")
-		zshWriteCommand(b, sub, appName, 1)
-		b.WriteString("}\n\n")
-
-		// Recurse for nested subcommands.
-		zshWriteSubFunctions(b, sub, appName, funcName)
-	}
-}
-
-func zshWriteCommand(b *strings.Builder, cmd cli.Runner, appName string, depth int) {
-	indent := strings.Repeat("    ", depth)
-
-	// Flags
-	flags := completableFlags(cli.ScanFlags(cmd))
-	if len(flags) > 0 {
-		fmt.Fprintf(b, "%sflags=(\n", indent)
-		for i := range flags {
-			f := &flags[i]
-			desc := strings.ReplaceAll(f.Help, "'", "'\\''")
-			fmt.Fprintf(b, "%s    '--%s[%s]'\n", indent, f.Name, desc)
-			if f.Short != "" {
-				fmt.Fprintf(b, "%s    '-%s[%s]'\n", indent, f.Short, desc)
-			}
-			for _, alt := range f.Alt {
-				fmt.Fprintf(b, "%s    '--%s[%s]'\n", indent, alt, desc)
-			}
-			if f.Negate {
-				fmt.Fprintf(b, "%s    '--no-%s[Disable %s]'\n", indent, f.Name, f.Name)
-			}
-		}
-		fmt.Fprintf(b, "%s)\n", indent)
-	}
-
-	// Subcommands
-	subs := safeAllSubcommands(cmd)
-	visSubs := visibleSubs(subs)
-	if len(visSubs) > 0 {
-		fmt.Fprintf(b, "%scommands=(\n", indent)
-		for _, sub := range visSubs {
-			name := cmdName(sub)
-			desc := ""
-			if d, ok := sub.(cli.Describer); ok {
-				desc = strings.ReplaceAll(d.Description(), "'", "'\\''")
-			}
-			fmt.Fprintf(b, "%s    '%s:%s'\n", indent, name, desc)
-			if a, ok := sub.(cli.Aliaser); ok {
-				for _, alias := range a.Aliases() {
-					fmt.Fprintf(b, "%s    '%s:%s'\n", indent, alias, desc)
-				}
-			}
-		}
-		fmt.Fprintf(b, "%s)\n", indent)
-		fmt.Fprintf(b, "%s_describe 'command' commands\n", indent)
-
-		// Dispatch to subcommand functions.
-		safeName := bashSafe(appName)
-		fmt.Fprintf(b, "%scase $words[2] in\n", indent)
-		for _, sub := range visSubs {
-			name := cmdName(sub)
-			funcName := safeName + "_" + bashSafe(name)
-			names := []string{name}
-			if a, ok := sub.(cli.Aliaser); ok {
-				names = append(names, a.Aliases()...)
-			}
-			fmt.Fprintf(b, "%s    %s)\n", indent, strings.Join(names, "|"))
-			fmt.Fprintf(b, "%s        _%s\n", indent, funcName)
-			fmt.Fprintf(b, "%s        ;;\n", indent)
-		}
-		fmt.Fprintf(b, "%sesac\n", indent)
-	}
-
-	if len(flags) > 0 {
-		fmt.Fprintf(b, "%s_arguments -s $flags\n", indent)
-	}
-}
-
-// --- fish helpers ---
-
-func fishWriteCommand(b *strings.Builder, cmd cli.Runner, appName string, parentCmds []string) {
-	condition := fishCondition(appName, parentCmds)
-
-	// Flags
-	flags := completableFlags(cli.ScanFlags(cmd))
-	for i := range flags {
-		f := &flags[i]
-		desc := strings.ReplaceAll(f.Help, "'", "\\'")
-
-		// Determine type hint: -f for bool/counter, -r for value flags.
-		typeHint := " -r"
-		if f.IsBool || f.IsCounter {
-			typeHint = " -f"
-		}
-
-		// Base flag line.
-		if f.Short != "" {
-			fmt.Fprintf(b, "complete -c %s %s -s %s -l %s%s -d '%s'", appName, condition, f.Short, f.Name, typeHint, desc)
-		} else {
-			fmt.Fprintf(b, "complete -c %s %s -l %s%s -d '%s'", appName, condition, f.Name, typeHint, desc)
-		}
-		// Enum values.
-		if f.Enum != "" {
-			vals := strings.ReplaceAll(f.Enum, ",", " ")
-			fmt.Fprintf(b, " -a '%s'", vals)
-		}
-		b.WriteString("\n")
-
-		// Alt flag names (separate complete lines).
-		for _, alt := range f.Alt {
-			fmt.Fprintf(b, "complete -c %s %s -l %s%s -d '%s'", appName, condition, alt, typeHint, desc)
-			if f.Enum != "" {
-				vals := strings.ReplaceAll(f.Enum, ",", " ")
-				fmt.Fprintf(b, " -a '%s'", vals)
-			}
-			b.WriteString("\n")
-		}
-
-		// Negate flag.
-		if f.Negate {
-			fmt.Fprintf(b, "complete -c %s %s -l no-%s -f -d 'Disable %s'\n", appName, condition, f.Name, f.Name)
-		}
-	}
-
-	// Subcommands
-	subs := safeAllSubcommands(cmd)
-	for _, sub := range subs {
-		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-			continue
-		}
-		name := cmdName(sub)
-		desc := ""
-		if d, ok := sub.(cli.Describer); ok {
-			desc = strings.ReplaceAll(d.Description(), "'", "\\'")
-		}
-		fmt.Fprintf(b, "complete -c %s %s -a %s -d '%s'\n", appName, condition, name, desc)
-		if a, ok := sub.(cli.Aliaser); ok {
-			for _, alias := range a.Aliases() {
-				fmt.Fprintf(b, "complete -c %s %s -a %s -d '%s'\n", appName, condition, alias, desc)
-			}
-		}
-		fishWriteCommand(b, sub, appName, append(parentCmds, name))
-	}
-}
-
-func fishCondition(_ string, parentCmds []string) string {
-	if len(parentCmds) == 0 {
-		return "-n '__fish_use_subcommand'"
-	}
-	cmds := strings.Join(parentCmds, "; and __fish_seen_subcommand_from ")
-	return fmt.Sprintf("-n '__fish_seen_subcommand_from %s'", cmds)
-}
-
-// --- powershell helpers ---
-
-func psWriteCommands(b *strings.Builder, cmd cli.Runner, parentPath []string) {
-	completions := make([]string, 0)
-
-	subs := safeAllSubcommands(cmd)
-	for _, sub := range subs {
-		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-			continue
-		}
-		completions = append(completions, cmdName(sub))
-		if a, ok := sub.(cli.Aliaser); ok {
-			completions = append(completions, a.Aliases()...)
-		}
-	}
-
-	psFlags := completableFlags(cli.ScanFlags(cmd))
-	for i := range psFlags {
-		f := &psFlags[i]
-		completions = append(completions, "--"+f.Name)
-		if f.Short != "" {
-			completions = append(completions, "-"+f.Short)
-		}
-		for _, alt := range f.Alt {
-			completions = append(completions, "--"+alt)
-		}
-		if f.Negate {
-			completions = append(completions, "--no-"+f.Name)
-		}
-	}
-
-	key := strings.Join(parentPath, " ")
-	quoted := make([]string, len(completions))
-	for i, c := range completions {
-		quoted[i] = fmt.Sprintf("'%s'", c)
-	}
-	fmt.Fprintf(b, "        '%s' = @(%s)\n", key, strings.Join(quoted, ", "))
-
-	// Recurse
-	for _, sub := range subs {
-		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-			continue
-		}
-		name := cmdName(sub)
-		psWriteCommands(b, sub, append(parentPath, name))
-	}
-}
-
-// --- shared helpers ---
-
-func cmdName(cmd cli.Runner) string {
-	if n, ok := cmd.(cli.Namer); ok {
-		return n.Name()
-	}
-	return ""
-}
-
-func visibleSubs(subs []cli.Runner) []cli.Runner {
-	out := make([]cli.Runner, 0, len(subs))
-	for _, s := range subs {
-		if h, ok := s.(cli.Hider); ok && h.Hidden() {
-			continue
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
-// completableFlags returns flags that should appear in completion results.
-// It excludes hidden and deprecated flags.
-func completableFlags(flags []cli.FlagDef) []cli.FlagDef {
-	out := make([]cli.FlagDef, 0, len(flags))
-	for i := range flags {
-		if flags[i].Hidden || flags[i].Deprecated != "" {
-			continue
-		}
-		out = append(out, flags[i])
-	}
-	return out
-}
-
-// safeAllSubcommands returns all subcommands, silently ignoring discovery errors.
-func safeAllSubcommands(cmd cli.Runner) []cli.Runner {
-	subs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort discovery for completion
-	return subs
 }
 
 func bashSafe(s string) string {

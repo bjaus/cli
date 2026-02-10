@@ -14,7 +14,7 @@ import (
 func TestCommand_Structure(t *testing.T) {
 	t.Parallel()
 
-	root := newRoot()
+	root := &rootCmd{}
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
@@ -47,7 +47,7 @@ func TestCommand_Structure(t *testing.T) {
 func TestCommand_Hidden(t *testing.T) {
 	t.Parallel()
 
-	root := newRoot()
+	root := &rootCmd{}
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
@@ -59,7 +59,7 @@ func TestCommand_Hidden(t *testing.T) {
 func TestCommand_ShowsHelp(t *testing.T) {
 	t.Parallel()
 
-	root := newRoot()
+	root := &rootCmd{}
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
@@ -70,7 +70,7 @@ func TestCommand_ShowsHelp(t *testing.T) {
 func TestCommand_UsesWriter(t *testing.T) {
 	t.Parallel()
 
-	root := newRoot()
+	root := &rootCmd{}
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
@@ -91,7 +91,7 @@ func TestCommand_UsesWriter(t *testing.T) {
 func TestCommand_ShellOutput(t *testing.T) {
 	t.Parallel()
 
-	root := newRoot()
+	root := &rootCmd{}
 
 	shells := []string{"bash", "zsh", "fish", "powershell"}
 	for _, shell := range shells {
