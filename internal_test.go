@@ -2780,9 +2780,9 @@ func TestApplyConfig(t *testing.T) {
 	v := reflect.ValueOf(cmd).Elem()
 	fields := buildFieldMap(v.Type())
 
-	resolver := ConfigResolver(func(name string) (string, bool) {
+	resolver := ConfigResolver(func(key ConfigKey) (string, bool) {
 		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
-		val, ok := m[name]
+		val, ok := m[key.Name]
 		return val, ok
 	})
 
@@ -2820,8 +2820,8 @@ func TestApplyConfig_InvalidValue(t *testing.T) {
 	v := reflect.ValueOf(cmd).Elem()
 	fields := buildFieldMap(v.Type())
 
-	resolver := ConfigResolver(func(name string) (string, bool) {
-		if name == "port" {
+	resolver := ConfigResolver(func(key ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "not-a-number", true
 		}
 		return "", false
@@ -2860,7 +2860,7 @@ type internalConfigProviderCmd struct {
 }
 
 func (c *internalConfigProviderCmd) ConfigResolver() ConfigResolver {
-	return func(name string) (string, bool) {
+	return func(key ConfigKey) (string, bool) {
 		return "from-command", true
 	}
 }
@@ -2870,13 +2870,13 @@ func TestResolveConfigResolver_CommandLevel(t *testing.T) {
 
 	cmd := &internalConfigProviderCmd{}
 	opts := defaults()
-	opts.configResolver = func(name string) (string, bool) {
+	opts.configResolver = func(key ConfigKey) (string, bool) {
 		return "from-global", true
 	}
 
 	resolver := resolveConfigResolver(cmd, opts)
 	require.NotNil(t, resolver)
-	val, ok := resolver("anything")
+	val, ok := resolver(ConfigKey{Name: "anything", Parts: []string{"anything"}})
 	assert.True(t, ok)
 	assert.Equal(t, "from-command", val)
 }
@@ -2886,13 +2886,13 @@ func TestResolveConfigResolver_GlobalOption(t *testing.T) {
 
 	cmd := &internalBareCmd{}
 	opts := defaults()
-	opts.configResolver = func(name string) (string, bool) {
+	opts.configResolver = func(key ConfigKey) (string, bool) {
 		return "from-global", true
 	}
 
 	resolver := resolveConfigResolver(cmd, opts)
 	require.NotNil(t, resolver)
-	val, ok := resolver("anything")
+	val, ok := resolver(ConfigKey{Name: "anything", Parts: []string{"anything"}})
 	assert.True(t, ok)
 	assert.Equal(t, "from-global", val)
 }
@@ -2903,6 +2903,94 @@ func TestResolveConfigResolver_None(t *testing.T) {
 	cmd := &internalBareCmd{}
 	resolver := resolveConfigResolver(cmd, defaults())
 	assert.Nil(t, resolver)
+}
+
+// --- ConfigKey.Parts ---
+
+func TestConfigKey_Parts_Unprefixed(t *testing.T) {
+	t.Parallel()
+
+	type cmd struct {
+		Port int    `flag:"port"`
+		Host string `flag:"host"`
+	}
+	fields := buildFieldMap(reflect.TypeOf(cmd{}))
+	fi := fields["--port"]
+	require.NotNil(t, fi)
+	assert.Equal(t, []string{"port"}, fi.parts)
+
+	fi = fields["--host"]
+	require.NotNil(t, fi)
+	assert.Equal(t, []string{"host"}, fi.parts)
+}
+
+func TestConfigKey_Parts_SinglePrefix(t *testing.T) {
+	t.Parallel()
+
+	type dbFlags struct {
+		Host string `flag:"host"`
+		Port int    `flag:"port"`
+	}
+	type cmd struct {
+		DB dbFlags `prefix:"db-"`
+	}
+	fields := buildFieldMap(reflect.TypeOf(cmd{}))
+	fi := fields["--db-host"]
+	require.NotNil(t, fi)
+	assert.Equal(t, []string{"db", "host"}, fi.parts)
+
+	fi = fields["--db-port"]
+	require.NotNil(t, fi)
+	assert.Equal(t, []string{"db", "port"}, fi.parts)
+}
+
+func TestConfigKey_Parts_NestedPrefix(t *testing.T) {
+	t.Parallel()
+
+	type innerFlags struct {
+		Host string `flag:"host"`
+	}
+	type outerFlags struct {
+		Inner innerFlags `prefix:"b-"`
+	}
+	type cmd struct {
+		Outer outerFlags `prefix:"a-"`
+	}
+	fields := buildFieldMap(reflect.TypeOf(cmd{}))
+	fi := fields["--a-b-host"]
+	require.NotNil(t, fi)
+	assert.Equal(t, []string{"a", "b", "host"}, fi.parts)
+}
+
+func TestConfigKey_Parts_UsedInResolver(t *testing.T) {
+	t.Parallel()
+
+	type dbFlags struct {
+		Host string `flag:"host" default:"localhost"`
+	}
+	type cmd struct {
+		DB dbFlags `prefix:"db-"`
+		internalBareCmd
+	}
+
+	// Resolver uses parts for nested lookup.
+	nested := map[string]map[string]string{
+		"db": {"host": "remotehost"},
+	}
+	resolver := func(key ConfigKey) (string, bool) {
+		if len(key.Parts) == 2 {
+			if section, ok := nested[key.Parts[0]]; ok {
+				v, found := section[key.Parts[1]]
+				return v, found
+			}
+		}
+		return "", false
+	}
+
+	c := &cmd{}
+	err := Execute(context.Background(), c, nil, WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, "remotehost", c.DB.Host)
 }
 
 // --- Hidden flags ---
@@ -4561,8 +4649,8 @@ func TestEnvOnly_ConfigResolver(t *testing.T) {
 	t.Parallel()
 
 	cmd := &envOnlyCmd{}
-	resolver := func(name string) (string, bool) {
-		if name == "token" {
+	resolver := func(key ConfigKey) (string, bool) {
+		if key.Name == "token" {
 			return "from-config", true
 		}
 		return "", false
@@ -5278,8 +5366,8 @@ func TestSep_Config(t *testing.T) {
 	t.Parallel()
 
 	cmd := &sepCmd{}
-	resolver := func(name string) (string, bool) {
-		if name == "tag" {
+	resolver := func(key ConfigKey) (string, bool) {
+		if key.Name == "tag" {
 			return "x,y", true
 		}
 		return "", false

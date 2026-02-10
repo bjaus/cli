@@ -192,9 +192,11 @@
 // Flag values can be loaded from external configuration sources via a
 // [ConfigResolver]. A resolver is a single function:
 //
-//	type ConfigResolver func(flagName string) (value string, found bool)
+//	type ConfigResolver func(key ConfigKey) (value string, found bool)
 //
-// Given a flag name, it returns the string value and whether it was found.
+// Given a [ConfigKey], it returns the string value and whether it was found.
+// The key provides both the full flag name ([ConfigKey.Name]) and decomposed
+// parts ([ConfigKey.Parts]) for resolvers backed by nested formats.
 // The framework handles all type conversion, validation, required checks,
 // and enum enforcement — the resolver only needs to return strings.
 //

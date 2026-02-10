@@ -545,9 +545,9 @@ func (c *ConfigServeCmd) Run(_ context.Context, _ []string) error {
 }
 
 func ExampleExecute_configResolver() {
-	resolver := cli.ConfigResolver(func(flagName string) (string, bool) {
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
 		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
-		v, ok := m[flagName]
+		v, ok := m[key.Name]
 		return v, ok
 	})
 
@@ -571,8 +571,8 @@ func (c *ConfigProviderCmd) Run(_ context.Context, _ []string) error {
 }
 
 func (c *ConfigProviderCmd) ConfigResolver() cli.ConfigResolver {
-	return func(flagName string) (string, bool) {
-		if flagName == "port" {
+	return func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "3000", true
 		}
 		return "", false

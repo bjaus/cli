@@ -128,10 +128,21 @@ type Suggester interface {
 
 // --- Config interfaces (all optional) ---
 
+// ConfigKey identifies a flag for config resolution. Name is the full
+// prefixed flag name (e.g. "db-host"). Parts decomposes the name into
+// prefix segments and base name (e.g. ["db", "host"]), useful for
+// resolvers backed by nested configuration formats (YAML, TOML).
+// For unprefixed flags, Parts contains a single element equal to Name.
+type ConfigKey struct {
+	Name  string
+	Parts []string
+}
+
 // ConfigResolver resolves flag values from an external source such as a
-// config file. Given a flag name, it returns the string value and whether
-// the flag was found. The framework handles type conversion.
-type ConfigResolver func(flagName string) (value string, found bool)
+// config file. Given a [ConfigKey], it returns the string value and whether
+// the flag was found. The framework handles type conversion. Use
+// [ConfigKey.Name] for flat lookups or [ConfigKey.Parts] for nested lookups.
+type ConfigResolver func(key ConfigKey) (value string, found bool)
 
 // ConfigProvider is implemented by commands that supply their own resolver.
 // Checked before the global resolver set via [WithConfigResolver].

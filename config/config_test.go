@@ -4,10 +4,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bjaus/cli"
 	"github.com/bjaus/cli/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func key(name string) cli.ConfigKey {
+	return cli.ConfigKey{Name: name, Parts: []string{name}}
+}
 
 func TestFromMap(t *testing.T) {
 	t.Parallel()
@@ -15,15 +20,15 @@ func TestFromMap(t *testing.T) {
 	m := map[string]string{"port": "8080", "host": "localhost"}
 	resolver := config.FromMap(m)
 
-	val, ok := resolver("port")
+	val, ok := resolver(key("port"))
 	assert.True(t, ok)
 	assert.Equal(t, "8080", val)
 
-	val, ok = resolver("host")
+	val, ok = resolver(key("host"))
 	assert.True(t, ok)
 	assert.Equal(t, "localhost", val)
 
-	_, ok = resolver("missing")
+	_, ok = resolver(key("missing"))
 	assert.False(t, ok)
 }
 
@@ -37,11 +42,11 @@ func TestFromJSON(t *testing.T) {
 		resolver, err := config.FromJSON(r)
 		require.NoError(t, err)
 
-		val, ok := resolver("port")
+		val, ok := resolver(key("port"))
 		assert.True(t, ok)
 		assert.Equal(t, "9090", val)
 
-		_, ok = resolver("missing")
+		_, ok = resolver(key("missing"))
 		assert.False(t, ok)
 	})
 
@@ -63,16 +68,16 @@ func TestChain(t *testing.T) {
 	chained := config.Chain(first, second)
 
 	// First match wins.
-	val, ok := chained("port")
+	val, ok := chained(key("port"))
 	assert.True(t, ok)
 	assert.Equal(t, "1111", val)
 
 	// Falls through to second.
-	val, ok = chained("host")
+	val, ok = chained(key("host"))
 	assert.True(t, ok)
 	assert.Equal(t, "second", val)
 
 	// No match.
-	_, ok = chained("missing")
+	_, ok = chained(key("missing"))
 	assert.False(t, ok)
 }

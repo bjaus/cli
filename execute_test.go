@@ -1285,9 +1285,9 @@ func (c *configCmd) Run(_ context.Context, _ []string) error { return nil }
 func TestExecute_ConfigResolver_Applied(t *testing.T) {
 	t.Parallel()
 
-	resolver := cli.ConfigResolver(func(name string) (string, bool) {
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
 		m := map[string]string{"port": "9090", "host": "0.0.0.0"}
-		v, ok := m[name]
+		v, ok := m[key.Name]
 		return v, ok
 	})
 
@@ -1307,8 +1307,8 @@ func (c *envConfigCmd) Run(_ context.Context, _ []string) error { return nil }
 func TestExecute_EnvOverridesConfig(t *testing.T) {
 	t.Setenv("CFG_PORT", "5555")
 
-	resolver := cli.ConfigResolver(func(name string) (string, bool) {
-		if name == "port" {
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "9090", true
 		}
 		return "", false
@@ -1323,8 +1323,8 @@ func TestExecute_EnvOverridesConfig(t *testing.T) {
 func TestExecute_ExplicitFlagOverridesConfig(t *testing.T) {
 	t.Parallel()
 
-	resolver := cli.ConfigResolver(func(name string) (string, bool) {
-		if name == "port" {
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "9090", true
 		}
 		return "", false
@@ -1345,8 +1345,8 @@ func (c *reqConfigCmd) Run(_ context.Context, _ []string) error { return nil }
 func TestExecute_ConfigSatisfiesRequired(t *testing.T) {
 	t.Parallel()
 
-	resolver := cli.ConfigResolver(func(name string) (string, bool) {
-		if name == "name" {
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "name" {
 			return "alice", true
 		}
 		return "", false
@@ -1369,8 +1369,8 @@ func TestExecute_ConfigValidatedAgainstEnum(t *testing.T) {
 	// Valid enum value from config.
 	cmd := &enumConfigCmd{}
 	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(
-		cli.ConfigResolver(func(name string) (string, bool) {
-			if name == "format" {
+		cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+			if key.Name == "format" {
 				return "json", true
 			}
 			return "", false
@@ -1382,8 +1382,8 @@ func TestExecute_ConfigValidatedAgainstEnum(t *testing.T) {
 	// Invalid enum value from config.
 	cmd2 := &enumConfigCmd{}
 	err = cli.Execute(context.Background(), cmd2, nil, cli.WithConfigResolver(
-		cli.ConfigResolver(func(name string) (string, bool) {
-			if name == "format" {
+		cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+			if key.Name == "format" {
 				return "xml", true
 			}
 			return "", false
@@ -1400,8 +1400,8 @@ type configProviderCmd struct {
 func (c *configProviderCmd) Run(_ context.Context, _ []string) error { return nil }
 
 func (c *configProviderCmd) ConfigResolver() cli.ConfigResolver {
-	return func(name string) (string, bool) {
-		if name == "port" {
+	return func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "4000", true
 		}
 		return "", false
@@ -1411,8 +1411,8 @@ func (c *configProviderCmd) ConfigResolver() cli.ConfigResolver {
 func TestExecute_ConfigProvider_OverridesGlobal(t *testing.T) {
 	t.Parallel()
 
-	global := cli.ConfigResolver(func(name string) (string, bool) {
-		if name == "port" {
+	global := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
 			return "9090", true
 		}
 		return "", false

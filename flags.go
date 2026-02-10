@@ -139,6 +139,7 @@ func flagTypeName(t reflect.Type) string {
 type fieldInfo struct {
 	index    []int // field path for nested structs (e.g. [0, 2] for embedded.Field)
 	def      FlagDef
+	parts    []string // decomposed flag name: prefix segments + base (e.g. ["db", "host"])
 	provided bool
 	envOnly  bool // standalone env field — not a CLI flag, only env/config/default
 }
@@ -239,11 +240,11 @@ func collectProvided(fields map[string]*fieldInfo) map[string]bool {
 
 func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 	fields := make(map[string]*fieldInfo)
-	buildFieldMapRecurse(t, fields, nil, "")
+	buildFieldMapRecurse(t, fields, nil, "", nil)
 	return fields
 }
 
-func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPath []int, prefix string) {
+func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPath []int, prefix string, parts []string) {
 	for i := range t.NumField() {
 		f := t.Field(i)
 		currentPath := append(append([]int{}, indexPath...), i)
@@ -251,7 +252,8 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 		// Named struct with prefix tag: recurse with prefix.
 		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
 			if pfx := f.Tag.Get("prefix"); pfx != "" {
-				buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx)
+				part := strings.TrimRight(pfx, "-._/")
+				buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx, append(parts, part))
 				continue
 			}
 			// Fall through: may be a custom type with flag tag (e.g. FlagUnmarshaler).
@@ -259,7 +261,7 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 
 		// Anonymous embedded struct (non-pointer): promote fields.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			buildFieldMapRecurse(f.Type, fields, currentPath, prefix)
+			buildFieldMapRecurse(f.Type, fields, currentPath, prefix, parts)
 			continue
 		}
 
@@ -281,6 +283,7 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 		}
 
 		fullName := prefix + name
+		fieldParts := append(append([]string{}, parts...), name)
 
 		var aliases []string
 		if raw := f.Tag.Get("alt"); raw != "" {
@@ -301,6 +304,7 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 
 		fi := &fieldInfo{
 			index:   currentPath,
+			parts:   fieldParts,
 			envOnly: envOnly,
 			def: FlagDef{
 				Name:        fullName,
@@ -360,7 +364,7 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 		return nil
 	}
 	for _, fi := range fields {
-		val, found := resolver(fi.def.Name)
+		val, found := resolver(ConfigKey{Name: fi.def.Name, Parts: fi.parts})
 		if !found {
 			continue
 		}

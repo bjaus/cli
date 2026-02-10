@@ -69,8 +69,8 @@
 //
 //	// Consul KV adapter
 //	func FromConsul(client *consul.Client, prefix string) cli.ConfigResolver {
-//	    return func(flagName string) (string, bool) {
-//	        pair, _, err := client.KV().Get(prefix+"/"+flagName, nil)
+//	    return func(key cli.ConfigKey) (string, bool) {
+//	        pair, _, err := client.KV().Get(prefix+"/"+key.Name, nil)
 //	        if err != nil || pair == nil { return "", false }
 //	        return string(pair.Value), true
 //	    }
@@ -97,8 +97,8 @@ import (
 
 // FromMap returns a [cli.ConfigResolver] backed by a string map.
 func FromMap(m map[string]string) cli.ConfigResolver {
-	return func(flagName string) (string, bool) {
-		v, ok := m[flagName]
+	return func(key cli.ConfigKey) (string, bool) {
+		v, ok := m[key.Name]
 		return v, ok
 	}
 }
@@ -116,9 +116,9 @@ func FromJSON(r io.Reader) (cli.ConfigResolver, error) {
 // Chain returns a [cli.ConfigResolver] that tries each resolver in order,
 // returning the value from the first resolver that reports found.
 func Chain(resolvers ...cli.ConfigResolver) cli.ConfigResolver {
-	return func(flagName string) (string, bool) {
+	return func(key cli.ConfigKey) (string, bool) {
 		for _, r := range resolvers {
-			if v, ok := r(flagName); ok {
+			if v, ok := r(key); ok {
 				return v, true
 			}
 		}
