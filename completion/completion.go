@@ -65,6 +65,11 @@ func Zsh(root cli.Runner, appName string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "#compdef %s\n\n", appName)
+
+	// Write subcommand functions first.
+	zshWriteSubFunctions(&b, root, appName, bashSafe(appName))
+
+	// Write main function.
 	fmt.Fprintf(&b, "_%s() {\n", bashSafe(appName))
 	b.WriteString("    local -a commands flags\n\n")
 
@@ -120,18 +125,16 @@ func bashWriteCommand(b *strings.Builder, cmd cli.Runner, path string, words []s
 	// Determine what completions are available at this level.
 	completions := make([]string, 0)
 
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			if n, ok := sub.(cli.Namer); ok {
-				completions = append(completions, n.Name())
-			}
+	subs := safeAllSubcommands(cmd)
+	for _, sub := range visibleSubs(subs) {
+		name := cmdName(sub)
+		completions = append(completions, name)
+		if a, ok := sub.(cli.Aliaser); ok {
+			completions = append(completions, a.Aliases()...)
 		}
 	}
 
-	flags := visibleFlags(cli.ScanFlags(cmd))
+	flags := completableFlags(cli.ScanFlags(cmd))
 	for i := range flags {
 		f := &flags[i]
 		completions = append(completions, "--"+f.Name)
@@ -140,6 +143,9 @@ func bashWriteCommand(b *strings.Builder, cmd cli.Runner, path string, words []s
 		}
 		for _, alt := range f.Alt {
 			completions = append(completions, "--"+alt)
+		}
+		if f.Negate {
+			completions = append(completions, "--no-"+f.Name)
 		}
 	}
 
@@ -156,15 +162,10 @@ func bashWriteCommand(b *strings.Builder, cmd cli.Runner, path string, words []s
 	}
 
 	// Recurse into subcommands.
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			name := cmdName(sub)
-			subWords := append(append([]string{}, words...), name)
-			bashWriteCommand(b, sub, path+" "+name, subWords, depth)
-		}
+	for _, sub := range visibleSubs(subs) {
+		name := cmdName(sub)
+		subWords := append(append([]string{}, words...), name)
+		bashWriteCommand(b, sub, path+" "+name, subWords, depth)
 	}
 }
 
@@ -178,11 +179,29 @@ func bashCondition(words []string) string {
 
 // --- zsh helpers ---
 
-func zshWriteCommand(b *strings.Builder, cmd cli.Runner, _ string, depth int) {
+// zshWriteSubFunctions recursively generates _<app>_<subcmd>() functions for subcommands.
+func zshWriteSubFunctions(b *strings.Builder, cmd cli.Runner, appName string, funcPrefix string) {
+	subs := safeAllSubcommands(cmd)
+	for _, sub := range visibleSubs(subs) {
+		name := cmdName(sub)
+		funcName := funcPrefix + "_" + bashSafe(name)
+
+		// Write this subcommand's function.
+		fmt.Fprintf(b, "_%s() {\n", funcName)
+		b.WriteString("    local -a commands flags\n\n")
+		zshWriteCommand(b, sub, appName, 1)
+		b.WriteString("}\n\n")
+
+		// Recurse for nested subcommands.
+		zshWriteSubFunctions(b, sub, appName, funcName)
+	}
+}
+
+func zshWriteCommand(b *strings.Builder, cmd cli.Runner, appName string, depth int) {
 	indent := strings.Repeat("    ", depth)
 
 	// Flags
-	flags := visibleFlags(cli.ScanFlags(cmd))
+	flags := completableFlags(cli.ScanFlags(cmd))
 	if len(flags) > 0 {
 		fmt.Fprintf(b, "%sflags=(\n", indent)
 		for i := range flags {
@@ -192,26 +211,52 @@ func zshWriteCommand(b *strings.Builder, cmd cli.Runner, _ string, depth int) {
 			if f.Short != "" {
 				fmt.Fprintf(b, "%s    '-%s[%s]'\n", indent, f.Short, desc)
 			}
+			for _, alt := range f.Alt {
+				fmt.Fprintf(b, "%s    '--%s[%s]'\n", indent, alt, desc)
+			}
+			if f.Negate {
+				fmt.Fprintf(b, "%s    '--no-%s[Disable %s]'\n", indent, f.Name, f.Name)
+			}
 		}
 		fmt.Fprintf(b, "%s)\n", indent)
 	}
 
 	// Subcommands
-	if p, ok := cmd.(cli.Parent); ok {
-		subs := visibleSubs(p.Subcommands())
-		if len(subs) > 0 {
-			fmt.Fprintf(b, "%scommands=(\n", indent)
-			for _, sub := range subs {
-				name := cmdName(sub)
-				desc := ""
-				if d, ok := sub.(cli.Describer); ok {
-					desc = strings.ReplaceAll(d.Description(), "'", "'\\''")
-				}
-				fmt.Fprintf(b, "%s    '%s:%s'\n", indent, name, desc)
+	subs := safeAllSubcommands(cmd)
+	visSubs := visibleSubs(subs)
+	if len(visSubs) > 0 {
+		fmt.Fprintf(b, "%scommands=(\n", indent)
+		for _, sub := range visSubs {
+			name := cmdName(sub)
+			desc := ""
+			if d, ok := sub.(cli.Describer); ok {
+				desc = strings.ReplaceAll(d.Description(), "'", "'\\''")
 			}
-			fmt.Fprintf(b, "%s)\n", indent)
-			fmt.Fprintf(b, "%s_describe 'command' commands\n", indent)
+			fmt.Fprintf(b, "%s    '%s:%s'\n", indent, name, desc)
+			if a, ok := sub.(cli.Aliaser); ok {
+				for _, alias := range a.Aliases() {
+					fmt.Fprintf(b, "%s    '%s:%s'\n", indent, alias, desc)
+				}
+			}
 		}
+		fmt.Fprintf(b, "%s)\n", indent)
+		fmt.Fprintf(b, "%s_describe 'command' commands\n", indent)
+
+		// Dispatch to subcommand functions.
+		safeName := bashSafe(appName)
+		fmt.Fprintf(b, "%scase $words[2] in\n", indent)
+		for _, sub := range visSubs {
+			name := cmdName(sub)
+			funcName := safeName + "_" + bashSafe(name)
+			names := []string{name}
+			if a, ok := sub.(cli.Aliaser); ok {
+				names = append(names, a.Aliases()...)
+			}
+			fmt.Fprintf(b, "%s    %s)\n", indent, strings.Join(names, "|"))
+			fmt.Fprintf(b, "%s        _%s\n", indent, funcName)
+			fmt.Fprintf(b, "%s        ;;\n", indent)
+		}
+		fmt.Fprintf(b, "%sesac\n", indent)
 	}
 
 	if len(flags) > 0 {
@@ -225,31 +270,64 @@ func fishWriteCommand(b *strings.Builder, cmd cli.Runner, appName string, parent
 	condition := fishCondition(appName, parentCmds)
 
 	// Flags
-	flags := visibleFlags(cli.ScanFlags(cmd))
+	flags := completableFlags(cli.ScanFlags(cmd))
 	for i := range flags {
 		f := &flags[i]
 		desc := strings.ReplaceAll(f.Help, "'", "\\'")
+
+		// Determine type hint: -f for bool/counter, -r for value flags.
+		typeHint := " -r"
+		if f.IsBool || f.IsCounter {
+			typeHint = " -f"
+		}
+
+		// Base flag line.
 		if f.Short != "" {
-			fmt.Fprintf(b, "complete -c %s %s -s %s -l %s -d '%s'\n", appName, condition, f.Short, f.Name, desc)
+			fmt.Fprintf(b, "complete -c %s %s -s %s -l %s%s -d '%s'", appName, condition, f.Short, f.Name, typeHint, desc)
 		} else {
-			fmt.Fprintf(b, "complete -c %s %s -l %s -d '%s'\n", appName, condition, f.Name, desc)
+			fmt.Fprintf(b, "complete -c %s %s -l %s%s -d '%s'", appName, condition, f.Name, typeHint, desc)
+		}
+		// Enum values.
+		if f.Enum != "" {
+			vals := strings.ReplaceAll(f.Enum, ",", " ")
+			fmt.Fprintf(b, " -a '%s'", vals)
+		}
+		b.WriteString("\n")
+
+		// Alt flag names (separate complete lines).
+		for _, alt := range f.Alt {
+			fmt.Fprintf(b, "complete -c %s %s -l %s%s -d '%s'", appName, condition, alt, typeHint, desc)
+			if f.Enum != "" {
+				vals := strings.ReplaceAll(f.Enum, ",", " ")
+				fmt.Fprintf(b, " -a '%s'", vals)
+			}
+			b.WriteString("\n")
+		}
+
+		// Negate flag.
+		if f.Negate {
+			fmt.Fprintf(b, "complete -c %s %s -l no-%s -f -d 'Disable %s'\n", appName, condition, f.Name, f.Name)
 		}
 	}
 
 	// Subcommands
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			name := cmdName(sub)
-			desc := ""
-			if d, ok := sub.(cli.Describer); ok {
-				desc = strings.ReplaceAll(d.Description(), "'", "\\'")
-			}
-			fmt.Fprintf(b, "complete -c %s %s -a %s -d '%s'\n", appName, condition, name, desc)
-			fishWriteCommand(b, sub, appName, append(parentCmds, name))
+	subs := safeAllSubcommands(cmd)
+	for _, sub := range subs {
+		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
+			continue
 		}
+		name := cmdName(sub)
+		desc := ""
+		if d, ok := sub.(cli.Describer); ok {
+			desc = strings.ReplaceAll(d.Description(), "'", "\\'")
+		}
+		fmt.Fprintf(b, "complete -c %s %s -a %s -d '%s'\n", appName, condition, name, desc)
+		if a, ok := sub.(cli.Aliaser); ok {
+			for _, alias := range a.Aliases() {
+				fmt.Fprintf(b, "complete -c %s %s -a %s -d '%s'\n", appName, condition, alias, desc)
+			}
+		}
+		fishWriteCommand(b, sub, appName, append(parentCmds, name))
 	}
 }
 
@@ -266,16 +344,18 @@ func fishCondition(_ string, parentCmds []string) string {
 func psWriteCommands(b *strings.Builder, cmd cli.Runner, parentPath []string) {
 	completions := make([]string, 0)
 
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			completions = append(completions, cmdName(sub))
+	subs := safeAllSubcommands(cmd)
+	for _, sub := range subs {
+		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
+			continue
+		}
+		completions = append(completions, cmdName(sub))
+		if a, ok := sub.(cli.Aliaser); ok {
+			completions = append(completions, a.Aliases()...)
 		}
 	}
 
-	psFlags := visibleFlags(cli.ScanFlags(cmd))
+	psFlags := completableFlags(cli.ScanFlags(cmd))
 	for i := range psFlags {
 		f := &psFlags[i]
 		completions = append(completions, "--"+f.Name)
@@ -284,6 +364,9 @@ func psWriteCommands(b *strings.Builder, cmd cli.Runner, parentPath []string) {
 		}
 		for _, alt := range f.Alt {
 			completions = append(completions, "--"+alt)
+		}
+		if f.Negate {
+			completions = append(completions, "--no-"+f.Name)
 		}
 	}
 
@@ -295,14 +378,12 @@ func psWriteCommands(b *strings.Builder, cmd cli.Runner, parentPath []string) {
 	fmt.Fprintf(b, "        '%s' = @(%s)\n", key, strings.Join(quoted, ", "))
 
 	// Recurse
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			name := cmdName(sub)
-			psWriteCommands(b, sub, append(parentPath, name))
+	for _, sub := range subs {
+		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
+			continue
 		}
+		name := cmdName(sub)
+		psWriteCommands(b, sub, append(parentPath, name))
 	}
 }
 
@@ -326,14 +407,23 @@ func visibleSubs(subs []cli.Runner) []cli.Runner {
 	return out
 }
 
-func visibleFlags(flags []cli.FlagDef) []cli.FlagDef {
-	var out []cli.FlagDef
+// completableFlags returns flags that should appear in completion results.
+// It excludes hidden and deprecated flags.
+func completableFlags(flags []cli.FlagDef) []cli.FlagDef {
+	out := make([]cli.FlagDef, 0, len(flags))
 	for i := range flags {
-		if !flags[i].Hidden {
-			out = append(out, flags[i])
+		if flags[i].Hidden || flags[i].Deprecated != "" {
+			continue
 		}
+		out = append(out, flags[i])
 	}
 	return out
+}
+
+// safeAllSubcommands returns all subcommands, silently ignoring discovery errors.
+func safeAllSubcommands(cmd cli.Runner) []cli.Runner {
+	subs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort discovery for completion
+	return subs
 }
 
 func bashSafe(s string) string {
