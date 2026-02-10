@@ -279,6 +279,9 @@ func flagRight(f *FlagDef) string {
 	if f.IsCounter {
 		parts = append(parts, "(repeatable)")
 	}
+	if f.Sep != "" {
+		parts = append(parts, fmt.Sprintf("(separator: %q)", f.Sep))
+	}
 	if f.Enum != "" {
 		parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(f.Enum, ",", "|")))
 	}

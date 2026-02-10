@@ -5110,3 +5110,108 @@ func TestScanArgs_EnhancedFields(t *testing.T) {
 	assert.Equal(t, "dev", defs[0].Default)
 	assert.Equal(t, "DEPLOY_TARGET", defs[1].Env)
 }
+
+// --- sep tag ---
+
+type sepCmd struct {
+	Tags []string `flag:"tag" sep:"," help:"Tags"`
+}
+
+func (c *sepCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *sepCmd) Name() string                            { return "app" }
+
+func TestSep_CommaSeparated(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	err := Execute(context.Background(), cmd, []string{"--tag", "a,b,c"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, cmd.Tags)
+}
+
+func TestSep_Repeated(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	err := Execute(context.Background(), cmd, []string{"--tag", "a", "--tag", "b"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b"}, cmd.Tags)
+}
+
+func TestSep_Mixed(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	err := Execute(context.Background(), cmd, []string{"--tag", "a,b", "--tag", "c"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, cmd.Tags)
+}
+
+func TestSep_Env(t *testing.T) {
+	t.Setenv("TAG", "a,b,c")
+
+	cmd := &struct {
+		Tags []string `flag:"tag" sep:"," env:"TAG"`
+		internalBareCmd
+	}{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, cmd.Tags)
+}
+
+func TestSep_Config(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	resolver := func(name string) (string, bool) {
+		if name == "tag" {
+			return "x,y", true
+		}
+		return "", false
+	}
+	err := Execute(context.Background(), cmd, nil, WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"x", "y"}, cmd.Tags)
+}
+
+func TestSep_TrimWhitespace(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	err := Execute(context.Background(), cmd, []string{"--tag", "a, b, c"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, cmd.Tags)
+}
+
+type sepPipeCmd struct {
+	Items []string `flag:"item" sep:"|" help:"Items"`
+}
+
+func (c *sepPipeCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestSep_PipeSeparator(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepPipeCmd{}
+	err := Execute(context.Background(), cmd, []string{"--item", "a|b|c"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c"}, cmd.Items)
+}
+
+func TestSep_InHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	flags := ScanFlags(cmd)
+	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	assert.Contains(t, text, `(separator: ",")`)
+}
+
+func TestScanFlags_Sep(t *testing.T) {
+	t.Parallel()
+
+	cmd := &sepCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, ",", defs[0].Sep)
+}

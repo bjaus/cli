@@ -260,6 +260,7 @@ type FlagDef struct {
 	Mask        string // displayed instead of Default in help (e.g. "****" for secrets)
 	Env         string
 	Enum        string
+	Sep         string // separator for splitting values into slice elements (e.g. ",")
 	Category    string
 	Deprecated  string
 	Placeholder string // shown in help as value name (e.g. "PORT" in --port PORT)

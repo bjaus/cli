@@ -43,6 +43,7 @@ func ScanFlags(cmd Runner) []FlagDef {
 			Mask:        f.Tag.Get("mask"),
 			Env:         f.Tag.Get("env"),
 			Enum:        f.Tag.Get("enum"),
+			Sep:         f.Tag.Get("sep"),
 			Category:    f.Tag.Get("category"),
 			Deprecated:  f.Tag.Get("deprecated"),
 			Placeholder: f.Tag.Get("placeholder"),
@@ -223,6 +224,7 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 				Mask:        f.Tag.Get("mask"),
 				Env:         envTag,
 				Enum:        f.Tag.Get("enum"),
+				Sep:         f.Tag.Get("sep"),
 				Category:    f.Tag.Get("category"),
 				Deprecated:  f.Tag.Get("deprecated"),
 				Placeholder: f.Tag.Get("placeholder"),
@@ -277,7 +279,7 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 			continue
 		}
 		field := v.Field(fi.index)
-		if err := setFieldValue(field, val); err != nil {
+		if err := setFieldValueSep(field, val, fi.def.Sep); err != nil {
 			prefix := "--"
 			if fi.envOnly {
 				prefix = ""
@@ -295,7 +297,7 @@ func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) e
 			envName := envPrefix + fi.def.Env
 			if envVal, ok := os.LookupEnv(envName); ok {
 				field := v.Field(fi.index)
-				if err := setFieldValue(field, envVal); err != nil {
+				if err := setFieldValueSep(field, envVal, fi.def.Sep); err != nil {
 					prefix := "--"
 					if fi.envOnly {
 						prefix = ""
@@ -362,7 +364,7 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 					return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, name)
 				}
 				field := v.Field(fi.index)
-				if err := setFieldValue(field, value); err != nil {
+				if err := setFieldValueSep(field, value, fi.def.Sep); err != nil {
 					return nil, fmt.Errorf("%w: %s: %w", ErrInvalidFlagValue, name, err)
 				}
 				fi.provided = true
@@ -402,7 +404,7 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 			return nil, fmt.Errorf("%w: %s", ErrFlagRequiresVal, arg)
 		}
 		i++
-		if err := setFieldValue(field, args[i]); err != nil {
+		if err := setFieldValueSep(field, args[i], fi.def.Sep); err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", ErrInvalidFlagValue, arg, err)
 		}
 		fi.provided = true
@@ -521,6 +523,21 @@ func enumContains(enum, val string) bool {
 		}
 	}
 	return false
+}
+
+// setFieldValueSep sets a field value, splitting on sep for slice fields.
+// If sep is empty, behaves like setFieldValue.
+func setFieldValueSep(field reflect.Value, value, sep string) error {
+	if sep != "" && field.Kind() == reflect.Slice {
+		for _, part := range strings.Split(value, sep) {
+			part = strings.TrimSpace(part)
+			if err := setFieldValue(field, part); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return setFieldValue(field, value)
 }
 
 func setFieldValue(field reflect.Value, value string) error {
