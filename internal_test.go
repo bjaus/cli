@@ -1173,7 +1173,7 @@ type internalCmdLevelRenderer struct {
 	internalBareCmd
 }
 
-func (c *internalCmdLevelRenderer) RenderHelp(_ Runner, _ []Runner, _ []FlagDef) string {
+func (c *internalCmdLevelRenderer) RenderHelp(_ Runner, _ []Runner, _ []FlagDef, _ []ArgDef, _ []FlagDef) string {
 	return "cmd-level help"
 }
 
@@ -3706,7 +3706,7 @@ func TestStoreFlags_AutoDerivedName(t *testing.T) {
 	assert.Equal(t, "json", val)
 }
 
-// --- HelpSectioner ---
+// --- HelpAppender / HelpPrepender ---
 
 type internalSectionedCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port"`
@@ -3716,7 +3716,7 @@ func (c *internalSectionedCmd) Run(_ context.Context, _ []string) error { return
 func (c *internalSectionedCmd) Name() string                            { return "jira" }
 func (c *internalSectionedCmd) Description() string                     { return "Interact with Jira" }
 
-func (c *internalSectionedCmd) HelpSections() []HelpSection {
+func (c *internalSectionedCmd) AppendHelp() []HelpSection {
 	return []HelpSection{
 		{
 			Header: "Required Tokens",
@@ -3729,7 +3729,7 @@ func (c *internalSectionedCmd) HelpSections() []HelpSection {
 	}
 }
 
-func TestDefaultRenderHelp_HelpSections(t *testing.T) {
+func TestDefaultRenderHelp_AppendHelp(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalSectionedCmd{}
@@ -3743,12 +3743,79 @@ func TestDefaultRenderHelp_HelpSections(t *testing.T) {
 	assert.Contains(t, text, "See Also:\n")
 	assert.Contains(t, text, "  https://docs.example.com/jira")
 
-	// Sections appear before footer.
+	// Appended sections appear before footer.
 	tokensIdx := strings.Index(text, "Required Tokens:")
 	footerIdx := strings.Index(text, "Use ")
 	if footerIdx >= 0 {
 		assert.Greater(t, footerIdx, tokensIdx)
 	}
+}
+
+type internalPrependCmd struct {
+	Port int `flag:"port" default:"8080" help:"Port"`
+}
+
+func (c *internalPrependCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalPrependCmd) Name() string                            { return "vpn-tool" }
+func (c *internalPrependCmd) Description() string                     { return "VPN management" }
+
+func (c *internalPrependCmd) PrependHelp() []HelpSection {
+	return []HelpSection{{
+		Header: "Notice",
+		Body:   "  This command requires VPN access.",
+	}}
+}
+
+func TestDefaultRenderHelp_PrependHelp(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalPrependCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+
+	assert.Contains(t, text, "Notice:\n")
+	assert.Contains(t, text, "  This command requires VPN access.")
+
+	// Prepended sections appear before Usage.
+	noticeIdx := strings.Index(text, "Notice:")
+	usageIdx := strings.Index(text, "Usage:")
+	assert.Greater(t, usageIdx, noticeIdx)
+}
+
+type internalBothSectionsCmd struct {
+	internalBareCmd
+}
+
+func (c *internalBothSectionsCmd) PrependHelp() []HelpSection {
+	return []HelpSection{{Header: "Before", Body: "  prepend content"}}
+}
+
+func (c *internalBothSectionsCmd) AppendHelp() []HelpSection {
+	return []HelpSection{{Header: "After", Body: "  append content"}}
+}
+
+func TestDefaultRenderHelp_PrependAndAppend(t *testing.T) {
+	t.Parallel()
+
+	cmd := &internalBothSectionsCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+
+	assert.Contains(t, text, "Before:\n")
+	assert.Contains(t, text, "  prepend content")
+	assert.Contains(t, text, "After:\n")
+	assert.Contains(t, text, "  append content")
+
+	// Prepend before Usage, Append after Usage.
+	beforeIdx := strings.Index(text, "Before:")
+	usageIdx := strings.Index(text, "Usage:")
+	afterIdx := strings.Index(text, "After:")
+	assert.Greater(t, usageIdx, beforeIdx)
+	assert.Greater(t, afterIdx, usageIdx)
 }
 
 func TestDefaultRenderHelp_NoSections(t *testing.T) {

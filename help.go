@@ -21,6 +21,15 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags, globalFlags []FlagDef,
 	// in help rendering — we show what we can.
 	allSubs, _ := allSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 
+	// Prepend sections (before Usage)
+	if p, ok := cmd.(HelpPrepender); ok {
+		for _, section := range p.PrependHelp() {
+			fmt.Fprintf(&b, "%s:\n", section.Header)
+			b.WriteString(section.Body)
+			b.WriteString("\n\n")
+		}
+	}
+
 	// Usage
 	chainNames := commandChainNames(chain)
 	b.WriteString("Usage:\n")
@@ -59,9 +68,9 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags, globalFlags []FlagDef,
 	// Arguments
 	renderArgDefs(&b, argDefs)
 
-	// Custom sections
-	if s, ok := cmd.(HelpSectioner); ok {
-		for _, section := range s.HelpSections() {
+	// Append sections (after Arguments, before Global Flags)
+	if a, ok := cmd.(HelpAppender); ok {
+		for _, section := range a.AppendHelp() {
 			fmt.Fprintf(&b, "\n%s:\n", section.Header)
 			b.WriteString(section.Body)
 			b.WriteByte('\n')

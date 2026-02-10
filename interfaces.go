@@ -211,28 +211,40 @@ type FlagUnmarshaler interface {
 	UnmarshalFlag(value string) error
 }
 
-// HelpSection is a custom section appended to the default help output.
+// HelpSection is a custom section rendered in the default help output.
 // The Header is rendered as a section title (like "Flags:" or "Commands:"),
-// and Body is rendered as-is beneath it. Use this to add context-specific
-// information (required tokens, environment setup, etc.) without replacing
-// the entire help renderer.
+// and Body is rendered as-is beneath it. Use this with [HelpAppender] or
+// [HelpPrepender] to add context-specific information (required tokens,
+// environment setup, etc.) without replacing the entire help renderer.
 type HelpSection struct {
 	Header string
 	Body   string
 }
 
-// HelpSectioner declares additional sections to append to the default help
-// output. Sections appear after Arguments and before the footer. The
-// framework does not interpret the section content — it is rendered as-is.
+// HelpAppender declares sections appended after the main help content
+// (after Arguments, before Global Flags). Sections are rendered in order.
 //
-//	func (j *JiraCmd) HelpSections() []cli.HelpSection {
+//	func (j *JiraCmd) AppendHelp() []cli.HelpSection {
 //	    return []cli.HelpSection{{
 //	        Header: "Required Tokens",
 //	        Body:   "  JIRA_TOKEN    Jira API token (env: JIRA_TOKEN)",
 //	    }}
 //	}
-type HelpSectioner interface {
-	HelpSections() []HelpSection
+type HelpAppender interface {
+	AppendHelp() []HelpSection
+}
+
+// HelpPrepender declares sections prepended before the main help content
+// (before Usage). Sections are rendered in order.
+//
+//	func (j *JiraCmd) PrependHelp() []cli.HelpSection {
+//	    return []cli.HelpSection{{
+//	        Header: "Notice",
+//	        Body:   "  This command requires VPN access.",
+//	    }}
+//	}
+type HelpPrepender interface {
+	PrependHelp() []HelpSection
 }
 
 // Helper overrides help text for a single command.

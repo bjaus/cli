@@ -324,7 +324,7 @@
 //   - [FlagParser] — replace the flag parsing engine per-command or globally
 //   - [HelpRenderer] — replace help rendering per-command or globally
 //   - [Helper] — override help text for a single command
-//   - [HelpSectioner] — append custom sections to the default help output
+//   - [HelpAppender] / [HelpPrepender] — add custom sections to the default help output
 //   - [Middlewarer] — wrap the run function with middleware
 //   - [Suggester] — custom "did you mean?" per-command
 //
