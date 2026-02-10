@@ -86,14 +86,14 @@ func promptForFlags(cmd Runner, provided map[string]bool, opts *options) (map[st
 func flagFieldIndex(t reflect.Type, flagName string) int {
 	for i := range t.NumField() {
 		f := t.Field(i)
-		name := f.Tag.Get("flag")
-		if name == "-" {
-			continue // env/config-only field, not a CLI flag
+		name, hasFlag := f.Tag.Lookup("flag")
+		if !hasFlag {
+			continue
 		}
 		if name == "" {
 			name = camelToKebab(f.Name)
 		}
-		if _, hasFlag := f.Tag.Lookup("flag"); hasFlag && name == flagName {
+		if name == flagName {
 			return i
 		}
 	}

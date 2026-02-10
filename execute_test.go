@@ -1207,30 +1207,30 @@ func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 	assert.Equal(t, "", child.Env)
 }
 
-// --- Inherit tag tests ---
+// --- Hidden flag inheritance tests (replaces inherit tag) ---
 
-type inheritTagParent struct {
+type hiddenInheritParent struct {
 	Env   string `flag:"env" help:"Target environment"`
 	child cli.Runner
 }
 
-func (p *inheritTagParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *inheritTagParent) Name() string                            { return "app" }
-func (p *inheritTagParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *hiddenInheritParent) Run(_ context.Context, _ []string) error { return nil }
+func (p *hiddenInheritParent) Name() string                            { return "app" }
+func (p *hiddenInheritParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
 
-type inheritTagChild struct {
-	Env  string `inherit:"env"`
+type hiddenInheritChild struct {
+	Env  string `flag:"env" hidden:"true"`
 	Port int    `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *inheritTagChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *inheritTagChild) Name() string                            { return "serve" }
+func (c *hiddenInheritChild) Run(_ context.Context, _ []string) error { return nil }
+func (c *hiddenInheritChild) Name() string                            { return "serve" }
 
-func TestExecute_InheritTag_Basic(t *testing.T) {
+func TestExecute_HiddenInherit_Basic(t *testing.T) {
 	t.Parallel()
 
-	child := &inheritTagChild{}
-	parent := &inheritTagParent{child: child}
+	child := &hiddenInheritChild{}
+	parent := &hiddenInheritParent{child: child}
 
 	err := cli.Execute(context.Background(), parent, []string{"--env", "staging", "serve"})
 	require.NoError(t, err)
@@ -1238,70 +1238,39 @@ func TestExecute_InheritTag_Basic(t *testing.T) {
 	assert.Equal(t, 8080, child.Port)
 }
 
-// Nearest ancestor wins for inherit tag.
-type inheritTagMiddle struct {
+// Nearest ancestor wins for hidden flag inheritance.
+type hiddenInheritMiddle struct {
 	Env   string `flag:"env" help:"Middle env"`
 	child cli.Runner
 }
 
-func (m *inheritTagMiddle) Run(_ context.Context, _ []string) error { return nil }
-func (m *inheritTagMiddle) Name() string                            { return "middle" }
-func (m *inheritTagMiddle) Subcommands() []cli.Runner               { return []cli.Runner{m.child} }
+func (m *hiddenInheritMiddle) Run(_ context.Context, _ []string) error { return nil }
+func (m *hiddenInheritMiddle) Name() string                            { return "middle" }
+func (m *hiddenInheritMiddle) Subcommands() []cli.Runner               { return []cli.Runner{m.child} }
 
-func TestExecute_InheritTag_NearestAncestorWins(t *testing.T) {
+func TestExecute_HiddenInherit_NearestAncestorWins(t *testing.T) {
 	t.Parallel()
 
-	child := &inheritTagChild{}
-	middle := &inheritTagMiddle{child: child}
-	gp := &inheritTagParent{child: middle}
+	child := &hiddenInheritChild{}
+	middle := &hiddenInheritMiddle{child: child}
+	gp := &hiddenInheritParent{child: middle}
 
 	err := cli.Execute(context.Background(), gp, []string{"--env", "from-gp", "middle", "--env", "from-middle", "serve"})
 	require.NoError(t, err)
 	assert.Equal(t, "from-middle", child.Env)
 }
 
-func TestExecute_InheritTag_NotInHelp(t *testing.T) {
+func TestExecute_HiddenInherit_NotInHelp(t *testing.T) {
 	t.Parallel()
 
-	child := &inheritTagChild{}
+	child := &hiddenInheritChild{}
 	defs := cli.ScanFlags(child)
-	// ScanFlags only returns flag-tagged fields, not inherit-tagged fields.
+	// Hidden flags are returned by ScanFlags but filtered by help rendering.
 	for _, d := range defs {
-		assert.NotEqual(t, "env", d.Name)
+		if d.Name == "env" {
+			assert.True(t, d.Hidden)
+		}
 	}
-	assert.Len(t, defs, 1) // only "port"
-}
-
-func TestExecute_InheritTag_DoesNotRegisterFlag(t *testing.T) {
-	t.Parallel()
-
-	// inherit:"env" does not register --env as a child flag.
-	// Verify via ScanFlags that the inherit field is invisible.
-	child := &inheritTagChild{}
-	defs := cli.ScanFlags(child)
-	for _, d := range defs {
-		assert.NotEqual(t, "env", d.Name, "inherit field should not appear in ScanFlags")
-	}
-}
-
-type inheritTagNoEnvParent struct {
-	child cli.Runner
-}
-
-func (p *inheritTagNoEnvParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *inheritTagNoEnvParent) Name() string                            { return "app" }
-func (p *inheritTagNoEnvParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
-
-func TestExecute_InheritTag_NoAncestorMatch(t *testing.T) {
-	t.Parallel()
-
-	// Parent has no --env flag, child has inherit:"env" — stays zero.
-	child := &inheritTagChild{}
-	parent := &inheritTagNoEnvParent{child: child}
-
-	err := cli.Execute(context.Background(), parent, []string{"serve"})
-	require.NoError(t, err)
-	assert.Equal(t, "", child.Env)
 }
 
 // --- Config resolver tests ---

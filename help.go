@@ -271,8 +271,8 @@ func flagRight(f *FlagDef) string {
 		parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(f.Enum, ",", "|")))
 	}
 	switch {
-	case f.DefaultMask != "":
-		parts = append(parts, fmt.Sprintf("(default: %s)", f.DefaultMask))
+	case f.Mask != "":
+		parts = append(parts, fmt.Sprintf("(default: %s)", f.Mask))
 	case f.Default != "":
 		parts = append(parts, fmt.Sprintf("(default: %s)", f.Default))
 	}

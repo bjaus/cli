@@ -448,7 +448,7 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 		}
 
 		cmdArgs := resolved.chainArgs[i]
-		if len(cmdArgs) == 0 && !hasFlagFields(cmd) {
+		if len(cmdArgs) == 0 && !hasProcessableFields(cmd) {
 			continue
 		}
 
@@ -469,7 +469,6 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 	}
 
 	inheritFlags(chain, provided)
-	inheritTagFields(chain)
 
 	// Prompt for missing required flags on the leaf command.
 	leafIdx := len(chain) - 1

@@ -12,6 +12,7 @@ var (
 	ErrRequiredFlag     = errors.New("required flag not provided")
 	ErrUnsupportedType  = errors.New("unsupported flag type")
 	ErrInvalidFlagValue = errors.New("invalid flag value")
+	ErrInvalidTag       = errors.New("invalid struct tag")
 )
 
 // ErrShowHelp can be returned from [Runner.Run] to make the framework render

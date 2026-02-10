@@ -31,9 +31,6 @@ func ScanFlags(cmd Runner) []FlagDef {
 		if !hasFlag {
 			continue
 		}
-		if name == "-" {
-			continue // env/config-only field, not a CLI flag
-		}
 		if name == "" {
 			name = camelToKebab(f.Name)
 		}
@@ -43,7 +40,7 @@ func ScanFlags(cmd Runner) []FlagDef {
 			Short:       f.Tag.Get("short"),
 			Help:        f.Tag.Get("help"),
 			Default:     f.Tag.Get("default"),
-			DefaultMask: f.Tag.Get("default-mask"),
+			Mask:        f.Tag.Get("mask"),
 			Env:         f.Tag.Get("env"),
 			Enum:        f.Tag.Get("enum"),
 			Category:    f.Tag.Get("category"),
@@ -115,13 +112,13 @@ type fieldInfo struct {
 	index    int
 	def      FlagDef
 	provided bool
-	envOnly  bool // flag:"-" — not a CLI flag, only env/config/default
+	envOnly  bool // standalone env field — not a CLI flag, only env/config/default
 }
 
-// hasFlagFields reports whether cmd has any flag-tagged struct fields,
-// including env-only fields (flag:"-"). This is used by parseFlagChain
-// to decide whether to call defaultParseFlags.
-func hasFlagFields(cmd Runner) bool {
+// hasProcessableFields reports whether cmd has any flag-tagged or standalone
+// env-tagged struct fields. This is used by parseFlagChain to decide whether
+// to call defaultParseFlags.
+func hasProcessableFields(cmd Runner) bool {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -131,7 +128,11 @@ func hasFlagFields(cmd Runner) bool {
 	}
 	t := v.Type()
 	for i := range t.NumField() {
-		if _, ok := t.Field(i).Tag.Lookup("flag"); ok {
+		f := t.Field(i)
+		if _, ok := f.Tag.Lookup("flag"); ok {
+			return true
+		}
+		if f.Tag.Get("env") != "" {
 			return true
 		}
 	}
@@ -149,6 +150,10 @@ func defaultParseFlags(cmd Runner, args []string, opts *options) ([]string, map[
 	}
 	if v.Kind() != reflect.Struct {
 		return args, nil, nil
+	}
+
+	if err := validateStructTags(v.Type()); err != nil {
+		return nil, nil, err
 	}
 
 	fields := buildFieldMap(v.Type())
@@ -192,14 +197,19 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 	for i := range t.NumField() {
 		f := t.Field(i)
 		name, hasFlag := f.Tag.Lookup("flag")
-		if !hasFlag {
+
+		// Standalone env: has env tag but no flag or arg tag.
+		envTag := f.Tag.Get("env")
+		_, hasArg := f.Tag.Lookup("arg")
+		envOnly := !hasFlag && !hasArg && envTag != ""
+
+		if !hasFlag && !envOnly {
 			continue
 		}
 
-		envOnly := name == "-"
-		if envOnly {
+		if hasFlag && name == "" {
 			name = camelToKebab(f.Name)
-		} else if name == "" {
+		} else if envOnly {
 			name = camelToKebab(f.Name)
 		}
 
@@ -210,8 +220,8 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 				Name:        name,
 				Short:       f.Tag.Get("short"),
 				Default:     f.Tag.Get("default"),
-				DefaultMask: f.Tag.Get("default-mask"),
-				Env:         f.Tag.Get("env"),
+				Mask:        f.Tag.Get("mask"),
+				Env:         envTag,
 				Enum:        f.Tag.Get("enum"),
 				Category:    f.Tag.Get("category"),
 				Deprecated:  f.Tag.Get("deprecated"),
@@ -641,7 +651,7 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 		for j := range ct.NumField() {
 			cf := ct.Field(j)
 			name := cf.Tag.Get("flag")
-			if name == "" || name == "-" {
+			if name == "" {
 				continue
 			}
 			if provided[i][name] {
@@ -679,50 +689,88 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 	}
 }
 
-// inheritTagFields copies values from ancestor flag fields into child fields
-// tagged with `inherit:"flagname"`. The child field does not register a CLI
-// flag — it silently receives the nearest ancestor's matching flag value.
-func inheritTagFields(chain []Runner) {
-	for i := 1; i < len(chain); i++ {
-		cv := reflect.ValueOf(chain[i])
-		if cv.Kind() == reflect.Ptr {
-			cv = cv.Elem()
+// validateStructTags checks for invalid or conflicting struct tag combinations.
+func validateStructTags(t reflect.Type) error {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		_, hasFlag := f.Tag.Lookup("flag")
+		_, hasArg := f.Tag.Lookup("arg")
+		envTag := f.Tag.Get("env")
+		_, hasDefault := f.Tag.Lookup("default")
+		hasRequired := f.Tag.Get("required") == "true"
+		_, hasEnum := f.Tag.Lookup("enum")
+		_, hasHelp := f.Tag.Lookup("help")
+		_, hasMask := f.Tag.Lookup("mask")
+
+		hasSource := hasFlag || hasArg || envTag != ""
+
+		// Removed tag migration errors.
+		if f.Tag.Get("inherit") != "" {
+			name := f.Tag.Get("inherit")
+			return fmt.Errorf("%w: field %s: inherit tag removed; use flag:%q hidden:\"true\" for automatic inheritance", ErrInvalidTag, f.Name, name)
 		}
-		if cv.Kind() != reflect.Struct {
-			continue
+		if f.Tag.Get("default-mask") != "" {
+			return fmt.Errorf("%w: field %s: default-mask renamed to mask", ErrInvalidTag, f.Name)
+		}
+		if hasFlag && f.Tag.Get("flag") == "-" {
+			return fmt.Errorf(`%w: field %s: flag:"-" removed; use env:"VAR" without flag tag`, ErrInvalidTag, f.Name)
 		}
 
-		ct := cv.Type()
-		for j := range ct.NumField() {
-			cf := ct.Field(j)
-			inheritName := cf.Tag.Get("inherit")
-			if inheritName == "" {
-				continue
-			}
+		// Mutually exclusive source tags.
+		if hasFlag && hasArg {
+			return fmt.Errorf("%w: field %s: flag and arg are mutually exclusive", ErrInvalidTag, f.Name)
+		}
 
-			// Walk ancestors from nearest to farthest.
-			for a := i - 1; a >= 0; a-- {
-				pv := reflect.ValueOf(chain[a])
-				if pv.Kind() == reflect.Ptr {
-					pv = pv.Elem()
-				}
-				if pv.Kind() != reflect.Struct {
-					continue
-				}
-				pt := pv.Type()
-				for k := range pt.NumField() {
-					pf := pt.Field(k)
-					if pf.Tag.Get("flag") != inheritName {
-						continue
-					}
-					if pf.Type != cf.Type {
-						continue
-					}
-					cv.Field(j).Set(pv.Field(k))
-					goto nextInheritField
-				}
+		// Contradictory constraints.
+		if hasRequired && hasDefault {
+			return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
+		}
+
+		// Tags that require flag.
+		flagOnlyTags := map[string]string{
+			"short":       f.Tag.Get("short"),
+			"counter":     f.Tag.Get("counter"),
+			"negatable":   f.Tag.Get("negatable"),
+			"aliases":     f.Tag.Get("aliases"),
+			"sep":         f.Tag.Get("sep"),
+			"placeholder":  f.Tag.Get("placeholder"),
+			"hidden":      f.Tag.Get("hidden"),
+			"deprecated":  f.Tag.Get("deprecated"),
+			"category":    f.Tag.Get("category"),
+		}
+		for tag, val := range flagOnlyTags {
+			if val != "" && !hasFlag {
+				return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
 			}
-		nextInheritField:
+		}
+
+		// Type-specific constraints.
+		if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 {
+			return fmt.Errorf("%w: field %s: counter requires int type", ErrInvalidTag, f.Name)
+		}
+		if f.Tag.Get("negatable") == "true" && f.Type.Kind() != reflect.Bool {
+			return fmt.Errorf("%w: field %s: negatable requires bool type", ErrInvalidTag, f.Name)
+		}
+		if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {
+			return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
+		}
+
+		// Orphan detection: CLI-related tags without a source.
+		orphanTags := []struct {
+			name string
+			set  bool
+		}{
+			{"default", hasDefault},
+			{"required", hasRequired},
+			{"enum", hasEnum},
+			{"help", hasHelp},
+			{"mask", hasMask},
+		}
+		for _, ot := range orphanTags {
+			if ot.set && !hasSource {
+				return fmt.Errorf("%w: field %s: %s requires flag, arg, or env tag", ErrInvalidTag, f.Name, ot.name)
+			}
 		}
 	}
+	return nil
 }

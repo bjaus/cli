@@ -502,30 +502,31 @@ func ExampleExecute_flagInheritance() {
 	// Output: env=prod port=8080
 }
 
-// Inherit tag: the child gets the parent's flag value without registering
-// its own CLI flag. Does not appear in help, does not accept CLI args.
-type InheritTagApp struct {
+// Hidden flag inheritance: the child gets the parent's flag value via a hidden
+// flag with the same name. It does not appear in help but still participates
+// in automatic flag inheritance.
+type HiddenInheritApp struct {
 	Env string `flag:"env" help:"Target environment"`
 }
 
-func (a *InheritTagApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *InheritTagApp) Name() string                            { return "app" }
-func (a *InheritTagApp) Subcommands() []cli.Runner               { return []cli.Runner{&InheritTagServe{}} }
+func (a *HiddenInheritApp) Run(_ context.Context, _ []string) error { return nil }
+func (a *HiddenInheritApp) Name() string                            { return "app" }
+func (a *HiddenInheritApp) Subcommands() []cli.Runner               { return []cli.Runner{&HiddenInheritServe{}} }
 
-type InheritTagServe struct {
-	Env  string `inherit:"env"`
+type HiddenInheritServe struct {
+	Env  string `flag:"env" hidden:"true"`
 	Port int    `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (s *InheritTagServe) Name() string { return "serve" }
-func (s *InheritTagServe) Run(_ context.Context, _ []string) error {
+func (s *HiddenInheritServe) Name() string { return "serve" }
+func (s *HiddenInheritServe) Run(_ context.Context, _ []string) error {
 	fmt.Fprintf(os.Stdout, "env=%s port=%d\n", s.Env, s.Port) //nolint:errcheck // example output
 	return nil
 }
 
-func ExampleExecute_inheritTag() {
-	app := &InheritTagApp{}
-	// --env is set on the parent; child's Env field receives it via inherit tag.
+func ExampleExecute_hiddenInherit() {
+	app := &HiddenInheritApp{}
+	// --env is set on the parent; child's hidden --env receives it via auto-inheritance.
 	_ = cli.Execute(context.Background(), app, []string{"--env", "staging", "serve"}, cli.WithStdout(os.Stdout)) //nolint:errcheck // example
 	// Output: env=staging port=8080
 }

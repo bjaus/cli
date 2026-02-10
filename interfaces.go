@@ -253,7 +253,7 @@ type FlagDef struct {
 	Short       string
 	Help        string
 	Default     string
-	DefaultMask string // displayed instead of Default in help (e.g. "****" for secrets)
+	Mask        string // displayed instead of Default in help (e.g. "****" for secrets)
 	Env         string
 	Enum        string
 	Category    string

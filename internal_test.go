@@ -2748,44 +2748,6 @@ func TestInheritFlags_NilProvidedMap(t *testing.T) {
 	assert.True(t, provided[1]["env"])
 }
 
-// --- inheritTagFields ---
-
-type internalInheritTagChild struct {
-	Env string `inherit:"env"`
-}
-
-func (c *internalInheritTagChild) Run(_ context.Context, _ []string) error { return nil }
-
-// Test that a non-struct ancestor (RunFunc) is safely skipped.
-func TestInheritTagFields_NonStructAncestor(t *testing.T) {
-	t.Parallel()
-
-	parent := RunFunc(func(_ context.Context, _ []string) error { return nil })
-	child := &internalInheritTagChild{}
-	chain := []Runner{parent, child}
-
-	inheritTagFields(chain)
-	assert.Empty(t, child.Env)
-}
-
-// Test type mismatch: parent has int env, child inherits string env.
-type internalInheritTagIntParent struct {
-	Env int `flag:"env"`
-}
-
-func (p *internalInheritTagIntParent) Run(_ context.Context, _ []string) error { return nil }
-
-func TestInheritTagFields_TypeMismatch(t *testing.T) {
-	t.Parallel()
-
-	parent := &internalInheritTagIntParent{Env: 42}
-	child := &internalInheritTagChild{}
-	chain := []Runner{parent, child}
-
-	inheritTagFields(chain)
-	// Types don't match (int vs string), so child stays zero.
-	assert.Empty(t, child.Env)
-}
 
 // --- applyDefaults ---
 
@@ -4408,10 +4370,10 @@ func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
 	}
 }
 
-// --- Env-only fields (flag:"-") ---
+// --- Env-only fields (standalone env tag) ---
 
 type envOnlyCmd struct {
-	Token string `flag:"-" env:"TEST_TOKEN" required:"true"`
+	Token string `env:"TEST_TOKEN" required:"true"`
 	Port  int    `flag:"port" default:"8080" help:"Port to listen on"`
 }
 
@@ -4448,7 +4410,7 @@ func TestEnvOnly_RequiredValidation(t *testing.T) {
 }
 
 type envOnlyDefaultCmd struct {
-	Secret string `flag:"-" default:"fallback"`
+	Secret string `env:"TEST_SECRET" default:"fallback"`
 }
 
 func (c *envOnlyDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -4463,7 +4425,7 @@ func TestEnvOnly_DefaultApplied(t *testing.T) {
 }
 
 type envOnlyEnumCmd struct {
-	Mode string `flag:"-" env:"TEST_MODE" enum:"fast,slow" required:"true"`
+	Mode string `env:"TEST_MODE" enum:"fast,slow" required:"true"`
 }
 
 func (c *envOnlyEnumCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -4519,7 +4481,7 @@ func TestEnvOnly_StoredInContext(t *testing.T) {
 }
 
 type envOnlyCaptureCmd struct {
-	Token    string `flag:"-" env:"TEST_TOKEN" required:"true"`
+	Token    string `env:"TEST_TOKEN" required:"true"`
 	captured string
 }
 
@@ -4544,7 +4506,7 @@ func TestEnvOnly_ConfigResolver(t *testing.T) {
 }
 
 type envOnlyParentCmd struct {
-	Token string `flag:"-" env:"TEST_PARENT_TOKEN"`
+	Token string `env:"TEST_PARENT_TOKEN"`
 }
 
 func (c *envOnlyParentCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -4769,4 +4731,244 @@ func TestDefaultRenderHelp_NoAsteriskWithoutRequired(t *testing.T) {
 			assert.False(t, strings.HasPrefix(line, "* "), "unexpected asterisk in: %q", line)
 		}
 	}
+}
+
+// --- validateStructTags ---
+
+func TestValidateStructTags(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		makeType func() reflect.Type
+		wantErr  string
+	}{
+		"flag + arg": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `flag:"name" arg:"name"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "flag and arg are mutually exclusive",
+		},
+		"required + default": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `flag:"name" required:"true" default:"x"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "required and default are mutually exclusive",
+		},
+		"short without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `short:"n"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "short requires flag",
+		},
+		"counter without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Count int `counter:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "counter requires flag",
+		},
+		"counter on string": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `flag:"name" counter:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "counter requires int type",
+		},
+		"negatable without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Force bool `negatable:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "negatable requires flag",
+		},
+		"negatable on int": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Count int `flag:"count" negatable:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "negatable requires bool type",
+		},
+		"sep without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Tags []string `sep:","`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "sep requires flag",
+		},
+		"sep on string": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `flag:"name" sep:","`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "sep requires slice type",
+		},
+		"hidden without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `hidden:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "hidden requires flag",
+		},
+		"inherit tag present": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Env string `inherit:"env"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "inherit tag removed",
+		},
+		"default-mask present": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Secret string `flag:"secret" default-mask:"****"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "default-mask renamed to mask",
+		},
+		"flag dash present": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Token string `flag:"-" env:"TOKEN"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: `flag:"-" removed`,
+		},
+		"required without source": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `required:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "required requires flag, arg, or env tag",
+		},
+		"default without source": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `default:"x"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "default requires flag, arg, or env tag",
+		},
+		"enum without source": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Mode string `enum:"a,b"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "enum requires flag, arg, or env tag",
+		},
+		"help without source": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `help:"something"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "help requires flag, arg, or env tag",
+		},
+		"mask without source": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `mask:"****"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "mask requires flag, arg, or env tag",
+		},
+		"valid flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Port int `flag:"port" short:"p" default:"8080" help:"Port"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+		},
+		"valid standalone env": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Token string `env:"TOKEN" required:"true" help:"API token"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+		},
+		"valid arg with enum": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Mode string `arg:"mode" enum:"a,b,c" help:"Mode"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateStructTags(tt.makeType())
+			if tt.wantErr != "" {
+				require.ErrorIs(t, err, ErrInvalidTag)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// --- mask tag ---
+
+type maskCmd struct {
+	Secret string `flag:"secret" default:"hunter2" mask:"****" help:"A secret"`
+}
+
+func (c *maskCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *maskCmd) Name() string                            { return "app" }
+
+func TestMask_InHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := &maskCmd{}
+	flags := ScanFlags(cmd)
+	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	assert.Contains(t, text, "(default: ****)")
+	assert.NotContains(t, text, "hunter2")
+}
+
+func TestScanFlags_Mask(t *testing.T) {
+	t.Parallel()
+
+	cmd := &maskCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, "****", defs[0].Mask)
 }

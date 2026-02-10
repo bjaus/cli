@@ -118,9 +118,9 @@ func setContextValue(ctx context.Context, name string, val any) context.Context 
 	return ctx
 }
 
-// storeFlags reads all flag-tagged fields from each command in the chain
-// and stores their current values in the context. Called after flag parsing
-// and inheritance, before Before hooks.
+// storeFlags reads all flag-tagged and standalone env-tagged fields from each
+// command in the chain and stores their current values in the context. Called
+// after flag parsing and inheritance, before Before hooks.
 func storeFlags(ctx context.Context, chain []Runner) context.Context {
 	for _, cmd := range chain {
 		v := reflect.ValueOf(cmd)
@@ -134,13 +134,20 @@ func storeFlags(ctx context.Context, chain []Runner) context.Context {
 		for i := range t.NumField() {
 			f := t.Field(i)
 			name, hasFlag := f.Tag.Lookup("flag")
-			if !hasFlag {
+			if hasFlag {
+				if name == "" {
+					name = camelToKebab(f.Name)
+				}
+				ctx = setContextValue(ctx, name, v.Field(i).Interface())
 				continue
 			}
-			if name == "-" || name == "" {
-				name = camelToKebab(f.Name)
+			// Standalone env field: has env tag but no flag or arg tag.
+			if f.Tag.Get("env") != "" {
+				if _, hasArg := f.Tag.Lookup("arg"); !hasArg {
+					name = camelToKebab(f.Name)
+					ctx = setContextValue(ctx, name, v.Field(i).Interface())
+				}
 			}
-			ctx = setContextValue(ctx, name, v.Field(i).Interface())
 		}
 	}
 	return ctx

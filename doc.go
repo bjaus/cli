@@ -58,12 +58,11 @@
 //
 // Struct tag keys:
 //
-//   - flag — the flag name (if empty, derived from field name: OutputFormat → output-format;
-//     if "-", the field is not a CLI flag but still participates in env/config/default resolution)
+//   - flag — the flag name (if empty, derived from field name: OutputFormat → output-format)
 //   - short — single-character short form
 //   - default — default value if not provided
 //   - help — description shown in help output
-//   - env — environment variable to read from (overrides default, overridden by explicit flag)
+//   - env — environment variable name; standalone (without flag/arg) for env/config/default-only fields
 //   - enum — comma-separated list of allowed values
 //   - required — "true" to require the flag
 //   - counter — "true" to increment an int on each occurrence (-vvv)
@@ -71,6 +70,8 @@
 //   - hidden — "true" to hide the flag from help output (flag still works)
 //   - deprecated — message shown when the flag is used; prints a warning to stderr
 //   - category — group heading for the flag in help output
+//   - mask — displayed instead of default in help (e.g. "****" for secrets)
+//   - placeholder — value name shown in help (e.g. "PORT" in --port PORT)
 //
 // Priority: explicit flag > env var > config > default > zero value.
 //
@@ -79,29 +80,33 @@
 //
 // Flags can appear anywhere — before or after subcommand names.
 //
+// The framework performs strict tag validation at parse time. Invalid
+// combinations (flag + arg, required + default, flag-only tags without
+// flag, etc.) return [ErrInvalidTag].
+//
 // # Env-Only Fields
 //
-// Use flag:"-" to declare a field that is populated from environment variables,
-// config, or defaults — but is not exposed as a CLI flag. It does not appear
-// in help output and cannot be passed via command-line arguments. This is
-// useful for secrets that should never appear in shell history:
+// A field with an env tag but no flag or arg tag is env/config/default-only.
+// It does not appear in help output and cannot be passed via command-line
+// arguments. This is useful for secrets that should never appear in shell
+// history:
 //
 //	type DeployCmd struct {
-//	    Token string `flag:"-" env:"DEPLOY_TOKEN" required:"true"`
+//	    Token string `env:"DEPLOY_TOKEN" required:"true"`
 //	    Env   string `flag:"env" enum:"prod,staging,dev" help:"Target environment"`
 //	}
 //
 // The logical name is derived from the field name (Token → token) and is used
 // for config resolver lookups and context storage via [Set]/[Get].
 //
+// Priority for env-only fields: env var > config > default > zero value.
+//
 // # Inheritance
 //
-// Flags can flow from parent commands to child subcommands automatically.
-// Two complementary mechanisms are supported:
-//
-// Automatic flag inheritance: when a parent and child both declare a flag
-// with the same name and type, the child inherits the parent's parsed value
-// if the child's flag was not explicitly provided via CLI args or env var.
+// Flags flow from parent commands to child subcommands via automatic flag
+// inheritance: when a parent and child both declare a flag with the same
+// name and type, the child inherits the parent's parsed value if the
+// child's flag was not explicitly provided via CLI args or env var.
 // The child's flag still appears in help output and accepts CLI args normally.
 //
 //	type App struct {
@@ -112,12 +117,11 @@
 //	    Port int    `flag:"port" default:"8080" help:"Listen port"`
 //	}
 //
-// Inherit tag: a child field tagged with `inherit:"flagname"` receives the
-// value from the nearest ancestor's matching flag without registering its
-// own CLI flag. It does not appear in help output and does not accept CLI args.
+// To inherit a parent flag without exposing it as a child flag, use a
+// hidden flag with the same name:
 //
 //	type ServeCmd struct {
-//	    Env  string `inherit:"env"`
+//	    Env  string `flag:"env" hidden:"true"`
 //	    Port int    `flag:"port" default:"8080" help:"Listen port"`
 //	}
 //
@@ -149,8 +153,7 @@
 //	    return cli.Set(ctx, "db", a.db), nil
 //	}
 //
-// This complements struct-based inheritance: use inherit tags when the child
-// knows about the flag at compile time, and context values when you want
+// This complements struct-based inheritance: use context values when you want
 // loose coupling or need to share non-flag data.
 //
 // # Config
