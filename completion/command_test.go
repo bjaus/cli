@@ -3,7 +3,6 @@ package completion_test
 import (
 	"bytes"
 	"context"
-	"os"
 	"testing"
 
 	"github.com/bjaus/cli"
@@ -16,7 +15,8 @@ func TestCommand_Structure(t *testing.T) {
 	t.Parallel()
 
 	root := newRoot()
-	cmd := completion.Command(root, "myapp")
+	var buf bytes.Buffer
+	cmd := completion.Command(root, "myapp", &buf)
 
 	n, ok := cmd.(cli.Namer)
 	require.True(t, ok)
@@ -44,43 +44,78 @@ func TestCommand_Structure(t *testing.T) {
 	}
 }
 
+func TestCommand_Hidden(t *testing.T) {
+	t.Parallel()
+
+	root := newRoot()
+	var buf bytes.Buffer
+	cmd := completion.Command(root, "myapp", &buf)
+
+	h, ok := cmd.(cli.Hider)
+	require.True(t, ok)
+	assert.True(t, h.Hidden())
+}
+
 func TestCommand_ShowsHelp(t *testing.T) {
 	t.Parallel()
 
 	root := newRoot()
-	cmd := completion.Command(root, "myapp")
+	var buf bytes.Buffer
+	cmd := completion.Command(root, "myapp", &buf)
 
 	err := cmd.Run(context.Background(), nil)
 	assert.ErrorIs(t, err, cli.ErrShowHelp)
 }
 
-func TestCommand_ShellOutput(t *testing.T) {
-	// Not parallel — we're redirecting os.Stdout which is global.
+func TestCommand_UsesWriter(t *testing.T) {
+	t.Parallel()
+
 	root := newRoot()
-	cmd := completion.Command(root, "myapp")
+	var buf bytes.Buffer
+	cmd := completion.Command(root, "myapp", &buf)
+
 	p, ok := cmd.(cli.Parent)
 	require.True(t, ok)
+
 	subs := p.Subcommands()
+	require.NotEmpty(t, subs)
+
+	// Run bash subcommand.
+	err := subs[0].Run(t.Context(), nil)
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, buf.String())
+	assert.Contains(t, buf.String(), "myapp")
+}
+
+func TestCommand_ShellOutput(t *testing.T) {
+	t.Parallel()
+
+	root := newRoot()
 
 	shells := []string{"bash", "zsh", "fish", "powershell"}
-	for i, sub := range subs {
-		t.Run(shells[i], func(t *testing.T) {
-			r, w, err := os.Pipe()
-			require.NoError(t, err)
-
-			oldStdout := os.Stdout
-			os.Stdout = w
-
-			runErr := sub.Run(t.Context(), nil)
-
-			os.Stdout = oldStdout
-			require.NoError(t, w.Close())
-			require.NoError(t, runErr)
+	for _, shell := range shells {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
 
 			var buf bytes.Buffer
-			_, err = buf.ReadFrom(r)
+			cmd := completion.Command(root, "myapp", &buf)
+			p, ok := cmd.(cli.Parent)
+			require.True(t, ok)
+
+			// Find the matching shell subcommand.
+			var target cli.Runner
+			for _, sub := range p.Subcommands() {
+				n, ok := sub.(cli.Namer)
+				if ok && n.Name() == shell {
+					target = sub
+					break
+				}
+			}
+			require.NotNil(t, target)
+
+			err := target.Run(t.Context(), nil)
 			require.NoError(t, err)
-			require.NoError(t, r.Close())
 
 			assert.NotEmpty(t, buf.String())
 			assert.Contains(t, buf.String(), "myapp")
