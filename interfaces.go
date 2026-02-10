@@ -160,9 +160,11 @@ type ArgsValidator interface {
 	ValidateArgs(args []string) error
 }
 
-// Passthrougher disables flag parsing for a command. When implemented,
-// all remaining args are passed directly to Run as positional arguments.
-// Useful for wrapper commands like "exec" that forward args to child processes.
+// Passthrougher enables passthrough mode for a command. When enabled,
+// recognized flags declared via struct tags are parsed normally, but
+// unknown flags are passed through as positional arguments instead of
+// producing errors. This is useful for wrapper commands like "exec"
+// that have their own flags but also forward args to child processes.
 type Passthrougher interface {
 	Passthrough() bool
 }

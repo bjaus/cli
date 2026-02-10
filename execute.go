@@ -451,9 +451,11 @@ func findVersioner(chain []Runner) Versioner {
 func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough bool, opts *options) ([]map[string]bool, error) {
 	provided := make([]map[string]bool, len(chain))
 	for i, cmd := range chain {
+		parseOpts := opts
 		if leafPassthrough && i == len(chain)-1 {
-			resolved.positional = append(resolved.chainArgs[i], resolved.positional...)
-			continue
+			copied := *opts
+			copied.ignoreUnknown = true
+			parseOpts = &copied
 		}
 
 		cmdArgs := resolved.chainArgs[i]
@@ -461,7 +463,7 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 			continue
 		}
 
-		remaining, prov, parseErr := parseFlags(cmd, cmdArgs, opts)
+		remaining, prov, parseErr := parseFlags(cmd, cmdArgs, parseOpts)
 		if parseErr != nil {
 			if opts.suggest {
 				if suggestion := suggestFlag(cmd, parseErr); suggestion != "" {

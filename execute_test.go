@@ -1809,6 +1809,50 @@ func TestExecute_OneRequired_TooMany(t *testing.T) {
 	assert.Contains(t, err.Error(), "exactly one of")
 }
 
+// --- Passthrougher interface ---
+
+type passthroughWithFlagsCmd struct {
+	Verbose bool `flag:"verbose" short:"v" help:"Enable verbose output"`
+	gotArgs []string
+}
+
+func (c *passthroughWithFlagsCmd) Run(_ context.Context, args []string) error {
+	c.gotArgs = args
+	return nil
+}
+
+func (c *passthroughWithFlagsCmd) Passthrough() bool { return true }
+
+func TestExecute_Passthrough_RecognizedFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	cmd := &passthroughWithFlagsCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--verbose", "--unknown", "arg1"})
+	require.NoError(t, err)
+	assert.True(t, cmd.Verbose)
+	assert.Equal(t, []string{"--unknown", "arg1"}, cmd.gotArgs)
+}
+
+type passthroughBareCmd struct {
+	gotArgs []string
+}
+
+func (c *passthroughBareCmd) Run(_ context.Context, args []string) error {
+	c.gotArgs = args
+	return nil
+}
+
+func (c *passthroughBareCmd) Passthrough() bool { return true }
+
+func TestExecute_Passthrough_NoFlags_AllArgsPassThrough(t *testing.T) {
+	t.Parallel()
+
+	cmd := &passthroughBareCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--foo", "bar", "-x"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"--foo", "bar", "-x"}, cmd.gotArgs)
+}
+
 // --- ScanArgs via external package ---
 
 func TestScanArgs_External(t *testing.T) {
