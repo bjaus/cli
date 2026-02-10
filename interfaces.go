@@ -110,9 +110,12 @@ type Validator interface {
 
 // --- UX interfaces (all optional) ---
 
-// Completer provides shell completion candidates.
+// Completer provides shell completion candidates. The returned
+// [ShellCompDirective] controls shell behavior after completing (e.g.
+// suppressing space or file completion). Return nil completions to fall
+// through to static completion of subcommands and flags.
 type Completer interface {
-	Complete(ctx context.Context, args []string) []string
+	Complete(ctx context.Context, args []string) ([]string, ShellCompDirective)
 }
 
 // Middlewarer provides middleware that wraps the command's Run function.

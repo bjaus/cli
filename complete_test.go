@@ -85,16 +85,16 @@ type compCompleterCmd struct{}
 
 func (c *compCompleterCmd) Run(_ context.Context, _ []string) error { return nil }
 func (c *compCompleterCmd) Name() string                            { return "myapp" }
-func (c *compCompleterCmd) Complete(_ context.Context, _ []string) []string {
-	return []string{"alpha", "beta", "gamma"}
+func (c *compCompleterCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
+	return []string{"alpha", "beta", "gamma"}, cli.ShellCompDirectiveNoFileComp
 }
 
 type compCompleterNilCmd struct{}
 
 func (c *compCompleterNilCmd) Run(_ context.Context, _ []string) error { return nil }
 func (c *compCompleterNilCmd) Name() string                            { return "myapp" }
-func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) []string {
-	return nil
+func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
+	return nil, cli.ShellCompDirectiveDefault
 }
 func (c *compCompleterNilCmd) Subcommands() []cli.Runner {
 	return []cli.Runner{&compServeCmd{}}
@@ -219,6 +219,24 @@ func TestComputeCompletions_CompleterNilFallback(t *testing.T) {
 
 	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
 	assert.Contains(t, completionNames(completions), "serve")
+}
+
+// Completer returning NoSpace directive.
+type compCompleterNoSpaceCmd struct{}
+
+func (c *compCompleterNoSpaceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *compCompleterNoSpaceCmd) Name() string                            { return "myapp" }
+func (c *compCompleterNoSpaceCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
+	return []string{"alpha", "beta"}, cli.ShellCompDirectiveNoSpace
+}
+
+func TestComputeCompletions_CompleterDirective(t *testing.T) {
+	t.Parallel()
+	cmd := &compCompleterNoSpaceCmd{}
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoSpace, directive)
+	assert.Equal(t, []string{"alpha", "beta"}, completions)
 }
 
 func TestRuntimeComplete_OutputFormat(t *testing.T) {

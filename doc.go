@@ -367,7 +367,8 @@
 //
 // Commands implementing [Completer] can provide custom completion candidates.
 // When a command implements Completer, its Complete method is called during
-// tab-completion and the returned strings are offered as candidates. If
-// Complete returns nil, the framework falls back to static completion of
-// subcommands and flags.
+// tab-completion and the returned strings are offered as candidates. The
+// returned [ShellCompDirective] controls shell behavior (e.g. suppressing
+// space or file completion). If Complete returns nil completions, the
+// framework falls back to static completion of subcommands and flags.
 package cli

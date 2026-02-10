@@ -80,10 +80,9 @@ func computeCompletions(ctx context.Context, root Runner, args []string) ([]stri
 
 	// If the target command implements Completer, delegate.
 	if c, ok := target.(Completer); ok {
-		results := c.Complete(ctx, args)
+		results, directive := c.Complete(ctx, args)
 		if results != nil {
 			filtered := filterCompletionPrefix(results, toComplete)
-			directive := ShellCompDirectiveNoFileComp
 			if len(filtered) == 0 {
 				directive = ShellCompDirectiveDefault
 			}
