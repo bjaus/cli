@@ -137,7 +137,7 @@ func storeFlags(ctx context.Context, chain []Runner) context.Context {
 			if !hasFlag {
 				continue
 			}
-			if name == "" {
+			if name == "-" || name == "" {
 				name = camelToKebab(f.Name)
 			}
 			ctx = setContextValue(ctx, name, v.Field(i).Interface())

@@ -87,6 +87,9 @@ func flagFieldIndex(t reflect.Type, flagName string) int {
 	for i := range t.NumField() {
 		f := t.Field(i)
 		name := f.Tag.Get("flag")
+		if name == "-" {
+			continue // env/config-only field, not a CLI flag
+		}
 		if name == "" {
 			name = camelToKebab(f.Name)
 		}

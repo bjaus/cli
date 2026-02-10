@@ -4408,6 +4408,167 @@ func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
 	}
 }
 
+// --- Env-only fields (flag:"-") ---
+
+type envOnlyCmd struct {
+	Token string `flag:"-" env:"TEST_TOKEN" required:"true"`
+	Port  int    `flag:"port" default:"8080" help:"Port to listen on"`
+}
+
+func (c *envOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envOnlyCmd) Name() string                            { return "app" }
+
+func TestScanFlags_SkipsEnvOnly(t *testing.T) {
+	t.Parallel()
+
+	cmd := &envOnlyCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, "port", defs[0].Name)
+}
+
+func TestEnvOnly_PopulatedFromEnv(t *testing.T) {
+	t.Setenv("TEST_TOKEN", "secret123")
+
+	cmd := &envOnlyCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "secret123", cmd.Token)
+}
+
+func TestEnvOnly_RequiredValidation(t *testing.T) {
+	t.Parallel()
+
+	cmd := &envOnlyCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.ErrorIs(t, err, ErrRequiredFlag)
+	assert.Contains(t, err.Error(), "token")
+	assert.Contains(t, err.Error(), "env: TEST_TOKEN")
+	assert.NotContains(t, err.Error(), "--")
+}
+
+type envOnlyDefaultCmd struct {
+	Secret string `flag:"-" default:"fallback"`
+}
+
+func (c *envOnlyDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEnvOnly_DefaultApplied(t *testing.T) {
+	t.Parallel()
+
+	cmd := &envOnlyDefaultCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "fallback", cmd.Secret)
+}
+
+type envOnlyEnumCmd struct {
+	Mode string `flag:"-" env:"TEST_MODE" enum:"fast,slow" required:"true"`
+}
+
+func (c *envOnlyEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEnvOnly_EnumValidation(t *testing.T) {
+	t.Setenv("TEST_MODE", "invalid")
+
+	cmd := &envOnlyEnumCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.ErrorIs(t, err, ErrInvalidFlagValue)
+	assert.Contains(t, err.Error(), "mode")
+	assert.NotContains(t, err.Error(), "--")
+}
+
+func TestEnvOnly_EnumValid(t *testing.T) {
+	t.Setenv("TEST_MODE", "fast")
+
+	cmd := &envOnlyEnumCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "fast", cmd.Mode)
+}
+
+func TestEnvOnly_NotAcceptedAsCLIArg(t *testing.T) {
+	t.Setenv("TEST_TOKEN", "from-env")
+
+	cmd := &envOnlyCmd{}
+	// --token is the derived name, but it is not a CLI flag.
+	// It becomes a positional arg; the field is only set from env.
+	err := Execute(context.Background(), cmd, []string{"--token", "val"})
+	require.NoError(t, err)
+	assert.Equal(t, "from-env", cmd.Token) // set from env, not from --token arg
+}
+
+func TestEnvOnly_NotInHelp(t *testing.T) {
+	t.Setenv("TEST_TOKEN", "secret123")
+
+	cmd := &envOnlyCmd{}
+	flags := ScanFlags(cmd)
+	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	assert.NotContains(t, text, "token")
+	assert.NotContains(t, text, "TEST_TOKEN")
+	assert.Contains(t, text, "port")
+}
+
+func TestEnvOnly_StoredInContext(t *testing.T) {
+	t.Setenv("TEST_TOKEN", "ctx-val")
+
+	cmd := &envOnlyCaptureCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "ctx-val", cmd.captured)
+}
+
+type envOnlyCaptureCmd struct {
+	Token    string `flag:"-" env:"TEST_TOKEN" required:"true"`
+	captured string
+}
+
+func (c *envOnlyCaptureCmd) Run(ctx context.Context, _ []string) error {
+	c.captured = Get[string](ctx, "token")
+	return nil
+}
+
+func TestEnvOnly_ConfigResolver(t *testing.T) {
+	t.Parallel()
+
+	cmd := &envOnlyCmd{}
+	resolver := func(name string) (string, bool) {
+		if name == "token" {
+			return "from-config", true
+		}
+		return "", false
+	}
+	err := Execute(context.Background(), cmd, nil, WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, "from-config", cmd.Token)
+}
+
+type envOnlyParentCmd struct {
+	Token string `flag:"-" env:"TEST_PARENT_TOKEN"`
+}
+
+func (c *envOnlyParentCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envOnlyParentCmd) Name() string                            { return "parent" }
+func (c *envOnlyParentCmd) Subcommands() []Runner {
+	return []Runner{&envOnlyChildCmd{}}
+}
+
+type envOnlyChildCmd struct {
+	Label string `flag:"label" default:"child"`
+}
+
+func (c *envOnlyChildCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envOnlyChildCmd) Name() string                            { return "child" }
+
+func TestEnvOnly_InheritFlagsSkips(t *testing.T) {
+	t.Setenv("TEST_PARENT_TOKEN", "parent-token")
+
+	parent := &envOnlyParentCmd{}
+	err := Execute(context.Background(), parent, []string{"child"})
+	require.NoError(t, err)
+	assert.Equal(t, "parent-token", parent.Token)
+}
+
 // --- Leaf context accessor ---
 
 type leafParentCmd struct {

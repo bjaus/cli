@@ -31,6 +31,9 @@ func ScanFlags(cmd Runner) []FlagDef {
 		if !hasFlag {
 			continue
 		}
+		if name == "-" {
+			continue // env/config-only field, not a CLI flag
+		}
 		if name == "" {
 			name = camelToKebab(f.Name)
 		}
@@ -112,6 +115,27 @@ type fieldInfo struct {
 	index    int
 	def      FlagDef
 	provided bool
+	envOnly  bool // flag:"-" — not a CLI flag, only env/config/default
+}
+
+// hasFlagFields reports whether cmd has any flag-tagged struct fields,
+// including env-only fields (flag:"-"). This is used by parseFlagChain
+// to decide whether to call defaultParseFlags.
+func hasFlagFields(cmd Runner) bool {
+	v := reflect.ValueOf(cmd)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return false
+	}
+	t := v.Type()
+	for i := range t.NumField() {
+		if _, ok := t.Field(i).Tag.Lookup("flag"); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // defaultParseFlags is the built-in flag parser using struct tag reflection.
@@ -171,12 +195,17 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 		if !hasFlag {
 			continue
 		}
-		if name == "" {
+
+		envOnly := name == "-"
+		if envOnly {
+			name = camelToKebab(f.Name)
+		} else if name == "" {
 			name = camelToKebab(f.Name)
 		}
 
 		fi := &fieldInfo{
-			index: i,
+			index:   i,
+			envOnly: envOnly,
 			def: FlagDef{
 				Name:        name,
 				Short:       f.Tag.Get("short"),
@@ -194,12 +223,18 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 				Negatable:   f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
 			},
 		}
-		fields["--"+name] = fi
-		if fi.def.Short != "" {
-			fields["-"+fi.def.Short] = fi
-		}
-		if fi.def.Negatable {
-			fields["--no-"+name] = fi
+
+		if envOnly {
+			// Internal key — not reachable by CLI arg parsing.
+			fields[":"+strconv.Itoa(i)] = fi
+		} else {
+			fields["--"+name] = fi
+			if fi.def.Short != "" {
+				fields["-"+fi.def.Short] = fi
+			}
+			if fi.def.Negatable {
+				fields["--no-"+name] = fi
+			}
 		}
 	}
 
@@ -211,7 +246,11 @@ func applyDefaults(v reflect.Value, fields map[string]*fieldInfo) error {
 		if fi.def.Default != "" {
 			field := v.Field(fi.index)
 			if err := setFieldValue(field, fi.def.Default); err != nil {
-				return fmt.Errorf("%w: invalid default for --%s: %w", ErrInvalidFlagValue, fi.def.Name, err)
+				prefix := "--"
+				if fi.envOnly {
+					prefix = ""
+				}
+				return fmt.Errorf("%w: invalid default for %s%s: %w", ErrInvalidFlagValue, prefix, fi.def.Name, err)
 			}
 		}
 	}
@@ -229,7 +268,11 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 		}
 		field := v.Field(fi.index)
 		if err := setFieldValue(field, val); err != nil {
-			return fmt.Errorf("%w: --%s (from config): %w", ErrInvalidFlagValue, fi.def.Name, err)
+			prefix := "--"
+			if fi.envOnly {
+				prefix = ""
+			}
+			return fmt.Errorf("%w: %s%s (from config): %w", ErrInvalidFlagValue, prefix, fi.def.Name, err)
 		}
 		fi.provided = true
 	}
@@ -243,7 +286,11 @@ func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) e
 			if envVal, ok := os.LookupEnv(envName); ok {
 				field := v.Field(fi.index)
 				if err := setFieldValue(field, envVal); err != nil {
-					return fmt.Errorf("%w: --%s (from %s): %w", ErrInvalidFlagValue, fi.def.Name, envName, err)
+					prefix := "--"
+					if fi.envOnly {
+						prefix = ""
+					}
+					return fmt.Errorf("%w: %s%s (from %s): %w", ErrInvalidFlagValue, prefix, fi.def.Name, envName, err)
 				}
 				fi.provided = true
 			}
@@ -362,11 +409,17 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 		}
 		seen[fi.def.Name] = true
 		if fi.def.Required && !fi.provided {
+			if fi.envOnly && fi.def.Env != "" {
+				return fmt.Errorf("%w: %s (env: %s)", ErrRequiredFlag, fi.def.Name, fi.def.Env)
+			}
 			return fmt.Errorf("%w: --%s", ErrRequiredFlag, fi.def.Name)
 		}
 		if fi.def.Enum != "" && (fi.provided || fi.def.Default != "") {
 			val := fmt.Sprint(v.Field(fi.index).Interface())
 			if !enumContains(fi.def.Enum, val) {
+				if fi.envOnly {
+					return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidFlagValue, fi.def.Name, fi.def.Enum)
+				}
 				return fmt.Errorf("%w: --%s must be one of [%s]", ErrInvalidFlagValue, fi.def.Name, fi.def.Enum)
 			}
 		}
@@ -588,7 +641,7 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 		for j := range ct.NumField() {
 			cf := ct.Field(j)
 			name := cf.Tag.Get("flag")
-			if name == "" {
+			if name == "" || name == "-" {
 				continue
 			}
 			if provided[i][name] {

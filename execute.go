@@ -448,7 +448,7 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 		}
 
 		cmdArgs := resolved.chainArgs[i]
-		if len(cmdArgs) == 0 && len(ScanFlags(cmd)) == 0 {
+		if len(cmdArgs) == 0 && !hasFlagFields(cmd) {
 			continue
 		}
 

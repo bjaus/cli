@@ -58,7 +58,8 @@
 //
 // Struct tag keys:
 //
-//   - flag — the flag name (if empty, derived from field name: OutputFormat → output-format)
+//   - flag — the flag name (if empty, derived from field name: OutputFormat → output-format;
+//     if "-", the field is not a CLI flag but still participates in env/config/default resolution)
 //   - short — single-character short form
 //   - default — default value if not provided
 //   - help — description shown in help output
@@ -77,6 +78,21 @@
 // For example, WithEnvVarPrefix("APP_") causes `env:"PORT"` to look up APP_PORT.
 //
 // Flags can appear anywhere — before or after subcommand names.
+//
+// # Env-Only Fields
+//
+// Use flag:"-" to declare a field that is populated from environment variables,
+// config, or defaults — but is not exposed as a CLI flag. It does not appear
+// in help output and cannot be passed via command-line arguments. This is
+// useful for secrets that should never appear in shell history:
+//
+//	type DeployCmd struct {
+//	    Token string `flag:"-" env:"DEPLOY_TOKEN" required:"true"`
+//	    Env   string `flag:"env" enum:"prod,staging,dev" help:"Target environment"`
+//	}
+//
+// The logical name is derived from the field name (Token → token) and is used
+// for config resolver lookups and context storage via [Set]/[Get].
 //
 // # Inheritance
 //
