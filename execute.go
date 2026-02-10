@@ -310,6 +310,12 @@ func expandShortOptions(args []string, fi flagIndex) []string {
 }
 
 func execute(ctx context.Context, root Runner, args []string, opts *options) error {
+	// Intercept __complete before any lifecycle hooks, flag parsing, or validation.
+	if len(args) > 0 && args[0] == "__complete" {
+		RuntimeComplete(ctx, root, args[1:], opts.stdout)
+		return nil
+	}
+
 	resolved, err := resolveCommand(root, args, opts)
 	if err != nil {
 		return err

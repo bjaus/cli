@@ -359,7 +359,15 @@
 //	completion.Fish(root, "myapp")       // fish completion script
 //	completion.PowerShell(root, "myapp") // PowerShell completion script
 //
-// Scripts are static and based on the command tree structure. Commands
-// implementing [Completer] can provide dynamic completion candidates at
-// runtime.
+// Generated scripts call the binary at runtime via the __complete protocol:
+// when the binary receives "__complete" as the first argument, it runs
+// [RuntimeComplete] instead of normal execution. This avoids side effects
+// (no lifecycle hooks, flag parsing, or validation) and provides dynamic
+// completions based on the current command tree.
+//
+// Commands implementing [Completer] can provide custom completion candidates.
+// When a command implements Completer, its Complete method is called during
+// tab-completion and the returned strings are offered as candidates. If
+// Complete returns nil, the framework falls back to static completion of
+// subcommands and flags.
 package cli
