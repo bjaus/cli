@@ -91,6 +91,9 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 	if info.description != "" {
 		fmt.Fprintf(&b, "%s\n\n", info.description)
 	}
+	if info.longDescription != "" {
+		fmt.Fprintf(&b, "%s\n\n", info.longDescription)
+	}
 
 	// Usage
 	b.WriteString("## Usage\n\n")
@@ -226,8 +229,12 @@ func genManPage(cmd cli.Runner, chain []cli.Runner, header *ManHeader) string {
 		fmt.Fprintf(&b, ".B %s\n%s\n", path, manEscape(argUsage))
 	}
 
-	// Description
-	if info.description != "" {
+	// Description — prefer long description in DESCRIPTION section.
+	switch {
+	case info.longDescription != "":
+		b.WriteString(".SH DESCRIPTION\n")
+		fmt.Fprintf(&b, "%s\n", manEscape(info.longDescription))
+	case info.description != "":
 		b.WriteString(".SH DESCRIPTION\n")
 		fmt.Fprintf(&b, "%s\n", manEscape(info.description))
 	}
@@ -280,8 +287,9 @@ func genManPage(cmd cli.Runner, chain []cli.Runner, header *ManHeader) string {
 // helpers
 
 type simpleInfo struct {
-	name        string
-	description string
+	name            string
+	description     string
+	longDescription string
 }
 
 func cmdInfo(cmd cli.Runner) simpleInfo {
@@ -291,6 +299,9 @@ func cmdInfo(cmd cli.Runner) simpleInfo {
 	}
 	if d, ok := cmd.(cli.Describer); ok {
 		info.description = d.Description()
+	}
+	if ld, ok := cmd.(cli.LongDescriber); ok {
+		info.longDescription = ld.LongDescription()
 	}
 	return info
 }

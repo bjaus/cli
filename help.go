@@ -11,8 +11,12 @@ func defaultRenderHelp(cmd Runner, chain []Runner, flags, globalFlags []FlagDef,
 
 	info := resolveInfo(cmd)
 
-	// Description
-	if info.description != "" {
+	// Description — prefer long description in own help output.
+	switch {
+	case info.longDescription != "":
+		b.WriteString(info.longDescription)
+		b.WriteString("\n\n")
+	case info.description != "":
 		b.WriteString(info.description)
 		b.WriteString("\n\n")
 	}

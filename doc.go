@@ -21,6 +21,7 @@
 //
 //   - [Namer] — override the command name (default: lowercase struct type name)
 //   - [Describer] — provide a one-line description
+//   - [LongDescriber] — provide extended description for help output
 //   - [Aliaser] — declare alternate names
 //   - [Parent] — return subcommands
 //   - [Hider] — hide the command from help output

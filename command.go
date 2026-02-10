@@ -6,11 +6,12 @@ import (
 )
 
 type commandInfo struct {
-	name        string
-	description string
-	aliases     []string
-	hidden      bool
-	examples    []Example
+	name            string
+	description     string
+	longDescription string
+	aliases         []string
+	hidden          bool
+	examples        []Example
 }
 
 func resolveInfo(cmd Runner) commandInfo {
@@ -22,6 +23,9 @@ func resolveInfo(cmd Runner) commandInfo {
 	}
 	if d, ok := cmd.(Describer); ok {
 		info.description = d.Description()
+	}
+	if ld, ok := cmd.(LongDescriber); ok {
+		info.longDescription = ld.LongDescription()
 	}
 	if a, ok := cmd.(Aliaser); ok {
 		info.aliases = a.Aliases()

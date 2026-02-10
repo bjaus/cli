@@ -14,6 +14,13 @@ type Describer interface {
 	Description() string
 }
 
+// LongDescriber provides extended description text shown in the command's
+// own help output. When implemented, this replaces [Describer] in the
+// help body while [Describer] remains used in subcommand listings.
+type LongDescriber interface {
+	LongDescription() string
+}
+
 // Aliaser declares alternate names for the command.
 type Aliaser interface {
 	Aliases() []string

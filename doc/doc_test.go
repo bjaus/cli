@@ -196,3 +196,36 @@ func TestGenMarkdownTree_IncludesDiscoveredCommands(t *testing.T) {
 	_, err = os.Stat(filepath.Join(dir, "myapp_serve.md"))
 	require.NoError(t, err)
 }
+
+// --- LongDescriber fixtures ---
+
+type longDescDocCmd struct{}
+
+func (c *longDescDocCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *longDescDocCmd) Name() string                            { return "longdesc" }
+func (c *longDescDocCmd) Description() string                     { return "Short description" }
+func (c *longDescDocCmd) LongDescription() string {
+	return "This is a detailed multi-paragraph description for documentation."
+}
+
+func TestGenMarkdown_LongDescription(t *testing.T) {
+	t.Parallel()
+	cmd := &longDescDocCmd{}
+	md := doc.GenMarkdown(cmd)
+
+	assert.Contains(t, md, "Short description")
+	assert.Contains(t, md, "detailed multi-paragraph description")
+}
+
+func TestGenManPage_LongDescription(t *testing.T) {
+	t.Parallel()
+	cmd := &longDescDocCmd{}
+	header := &doc.ManHeader{Section: "1", Source: "test"}
+
+	man := doc.GenManPage(cmd, header)
+
+	// NAME section uses short description.
+	assert.Contains(t, man, "Short description")
+	// DESCRIPTION section uses long description.
+	assert.Contains(t, man, "detailed multi\\-paragraph description")
+}
