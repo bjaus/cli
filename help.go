@@ -142,6 +142,18 @@ func renderArgDefs(b *strings.Builder, args []ArgDef) {
 		if a.Required {
 			parts = append(parts, "(required)")
 		}
+		if a.Enum != "" {
+			parts = append(parts, fmt.Sprintf("[%s]", strings.ReplaceAll(a.Enum, ",", "|")))
+		}
+		switch {
+		case a.Mask != "":
+			parts = append(parts, fmt.Sprintf("(default: %s)", a.Mask))
+		case a.Default != "":
+			parts = append(parts, fmt.Sprintf("(default: %s)", a.Default))
+		}
+		if a.Env != "" {
+			parts = append(parts, fmt.Sprintf("(env: %s)", a.Env))
+		}
 		right := strings.Join(parts, " ")
 		fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, a.Name, right)
 	}

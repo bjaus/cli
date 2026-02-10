@@ -171,15 +171,18 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 	// Arguments
 	if len(args) > 0 {
 		b.WriteString("## Arguments\n\n")
-		b.WriteString("| Argument | Description |\n")
-		b.WriteString("|----------|-------------|\n")
+		b.WriteString("| Argument | Default | Description |\n")
+		b.WriteString("|----------|---------|-------------|\n")
 		for i := range args {
 			a := &args[i]
 			desc := a.Help
 			if a.Required {
 				desc += " **(required)**"
 			}
-			fmt.Fprintf(&b, "| `%s` | %s |\n", a.Name, desc)
+			if a.Enum != "" {
+				desc += " [" + strings.ReplaceAll(a.Enum, ",", "\\|") + "]"
+			}
+			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", a.Name, a.Default, desc)
 		}
 		b.WriteString("\n")
 	}

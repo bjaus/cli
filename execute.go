@@ -339,7 +339,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 
 	// Populate arg-tagged struct fields on the leaf command.
 	if defs := ScanArgs(leaf); len(defs) > 0 {
-		remaining, err := populateArgs(leaf, resolved.positional)
+		remaining, err := populateArgs(leaf, resolved.positional, opts.envVarPrefix)
 		if err != nil {
 			return err
 		}

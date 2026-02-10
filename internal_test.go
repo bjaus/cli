@@ -3267,7 +3267,7 @@ func TestPopulateArgs(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalArgCmd{}
-	remaining, err := populateArgs(cmd, []string{"a.txt", "b.txt", "c.txt", "d.txt"})
+	remaining, err := populateArgs(cmd, []string{"a.txt", "b.txt", "c.txt", "d.txt"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "a.txt", cmd.Source)
 	assert.Equal(t, "b.txt", cmd.Dest)
@@ -3279,7 +3279,7 @@ func TestPopulateArgs_MissingRequired(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalArgCmd{}
-	_, err := populateArgs(cmd, []string{"a.txt"})
+	_, err := populateArgs(cmd, []string{"a.txt"}, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required argument: dest")
 }
@@ -3294,7 +3294,7 @@ func TestPopulateArgs_Optional(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalOptionalArgCmd{}
-	remaining, err := populateArgs(cmd, nil)
+	remaining, err := populateArgs(cmd, nil, "")
 	require.NoError(t, err)
 	assert.Empty(t, cmd.Name)
 	assert.Empty(t, remaining)
@@ -3304,7 +3304,7 @@ func TestPopulateArgs_NonStruct(t *testing.T) {
 	t.Parallel()
 
 	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
-	remaining, err := populateArgs(cmd, []string{"foo"})
+	remaining, err := populateArgs(cmd, []string{"foo"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, remaining)
 }
@@ -4971,4 +4971,142 @@ func TestScanFlags_Mask(t *testing.T) {
 	defs := ScanFlags(cmd)
 	require.Len(t, defs, 1)
 	assert.Equal(t, "****", defs[0].Mask)
+}
+
+// --- Arg enhancements (enum, default, env, mask) ---
+
+type argEnumCmd struct {
+	Mode string `arg:"mode" enum:"a,b,c" help:"Mode"`
+}
+
+func (c *argEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *argEnumCmd) Name() string                            { return "app" }
+
+func TestArgEnum_ValidValue(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argEnumCmd{}
+	err := Execute(context.Background(), cmd, []string{"b"})
+	require.NoError(t, err)
+	assert.Equal(t, "b", cmd.Mode)
+}
+
+func TestArgEnum_InvalidValue(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argEnumCmd{}
+	err := Execute(context.Background(), cmd, []string{"x"})
+	require.ErrorIs(t, err, ErrInvalidFlagValue)
+	assert.Contains(t, err.Error(), "must be one of [a,b,c]")
+}
+
+type argDefaultCmd struct {
+	Mode string `arg:"mode" default:"x" required:"false" help:"Mode"`
+}
+
+func (c *argDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestArgDefault_NoPositional(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argDefaultCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "x", cmd.Mode)
+}
+
+func TestArgDefault_PositionalWins(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argDefaultCmd{}
+	err := Execute(context.Background(), cmd, []string{"y"})
+	require.NoError(t, err)
+	assert.Equal(t, "y", cmd.Mode)
+}
+
+type argEnvCmd struct {
+	Target string `arg:"target" env:"DEPLOY_TARGET" required:"false" help:"Deploy target"`
+}
+
+func (c *argEnvCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestArgEnv_EnvUsed(t *testing.T) {
+	t.Setenv("DEPLOY_TARGET", "from-env")
+
+	cmd := &argEnvCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "from-env", cmd.Target)
+}
+
+func TestArgEnv_PositionalWins(t *testing.T) {
+	t.Setenv("DEPLOY_TARGET", "from-env")
+
+	cmd := &argEnvCmd{}
+	err := Execute(context.Background(), cmd, []string{"from-arg"})
+	require.NoError(t, err)
+	assert.Equal(t, "from-arg", cmd.Target)
+}
+
+type argPriorityCmd struct {
+	Mode string `arg:"mode" env:"TEST_ARG_MODE" default:"def" required:"false" help:"Mode"`
+}
+
+func (c *argPriorityCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestArgPriority_PositionalOverEnvOverDefault(t *testing.T) {
+	t.Setenv("TEST_ARG_MODE", "from-env")
+
+	cmd := &argPriorityCmd{}
+	err := Execute(context.Background(), cmd, []string{"from-arg"})
+	require.NoError(t, err)
+	assert.Equal(t, "from-arg", cmd.Mode)
+}
+
+func TestArgPriority_EnvOverDefault(t *testing.T) {
+	t.Setenv("TEST_ARG_MODE", "from-env")
+
+	cmd := &argPriorityCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "from-env", cmd.Mode)
+}
+
+func TestArgPriority_DefaultUsed(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argPriorityCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "def", cmd.Mode)
+}
+
+type argHelpCmd struct {
+	Env    string `arg:"env" enum:"prod,staging,dev" default:"dev" required:"false" help:"Target environment"`
+	Target string `arg:"target" env:"DEPLOY_TARGET" required:"false" help:"Deploy target"`
+}
+
+func (c *argHelpCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *argHelpCmd) Name() string                            { return "app" }
+
+func TestArgHelp_ShowsEnumDefaultEnv(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argHelpCmd{}
+	flags := ScanFlags(cmd)
+	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	assert.Contains(t, text, "[prod|staging|dev]")
+	assert.Contains(t, text, "(default: dev)")
+	assert.Contains(t, text, "(env: DEPLOY_TARGET)")
+}
+
+func TestScanArgs_EnhancedFields(t *testing.T) {
+	t.Parallel()
+
+	cmd := &argHelpCmd{}
+	defs := ScanArgs(cmd)
+	require.Len(t, defs, 2)
+	assert.Equal(t, "prod,staging,dev", defs[0].Enum)
+	assert.Equal(t, "dev", defs[0].Default)
+	assert.Equal(t, "DEPLOY_TARGET", defs[1].Env)
 }

@@ -142,6 +142,10 @@ type ConfigProvider interface {
 type ArgDef struct {
 	Name     string
 	Help     string
+	Default  string
+	Mask     string
+	Env      string
+	Enum     string
 	Required bool
 	TypeName string
 	IsSlice  bool

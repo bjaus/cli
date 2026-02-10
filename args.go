@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 )
 
@@ -38,6 +39,10 @@ func ScanArgs(cmd Runner) []ArgDef {
 		defs = append(defs, ArgDef{
 			Name:     name,
 			Help:     f.Tag.Get("help"),
+			Default:  f.Tag.Get("default"),
+			Mask:     f.Tag.Get("mask"),
+			Env:      f.Tag.Get("env"),
+			Enum:     f.Tag.Get("enum"),
 			Required: required,
 			TypeName: flagTypeName(f.Type),
 			IsSlice:  isSlice,
@@ -47,9 +52,9 @@ func ScanArgs(cmd Runner) []ArgDef {
 	return defs
 }
 
-// populateArgs sets struct fields tagged with `arg` from positional arguments.
-// Returns unconsumed positional arguments.
-func populateArgs(cmd Runner, args []string) ([]string, error) {
+// populateArgs sets struct fields tagged with `arg` from positional arguments,
+// environment variables, and defaults. Returns unconsumed positional arguments.
+func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -72,6 +77,7 @@ func populateArgs(cmd Runner, args []string) ([]string, error) {
 		}
 
 		field := v.Field(i)
+		enumTag := f.Tag.Get("enum")
 
 		// Slice field: consume all remaining args.
 		if f.Type.Kind() == reflect.Slice {
@@ -86,16 +92,43 @@ func populateArgs(cmd Runner, args []string) ([]string, error) {
 			continue
 		}
 
-		// Scalar field: consume one arg.
+		// Scalar field: consume one positional arg.
 		if argIdx < len(args) {
 			if err := setFieldValue(field, args[argIdx]); err != nil {
 				return nil, fmt.Errorf("invalid value for argument %q: %w", name, err)
 			}
 			argIdx++
+			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+				return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+			}
 			continue
 		}
 
-		// No more args — check if required.
+		// No positional arg — try env.
+		if envName := f.Tag.Get("env"); envName != "" {
+			if envVal, ok := os.LookupEnv(envPrefix + envName); ok {
+				if err := setFieldValue(field, envVal); err != nil {
+					return nil, fmt.Errorf("invalid value for argument %q (from %s): %w", name, envPrefix+envName, err)
+				}
+				if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+					return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+				}
+				continue
+			}
+		}
+
+		// Try default.
+		if def := f.Tag.Get("default"); def != "" {
+			if err := setFieldValue(field, def); err != nil {
+				return nil, fmt.Errorf("invalid default for argument %q: %w", name, err)
+			}
+			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+				return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+			}
+			continue
+		}
+
+		// Check required.
 		required := true
 		if req, ok := f.Tag.Lookup("required"); ok {
 			required = req == "true"
