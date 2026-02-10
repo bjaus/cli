@@ -4955,6 +4955,27 @@ func TestValidateStructTags(t *testing.T) {
 				return reflect.TypeOf(cmd{})
 			},
 		},
+		"prefix on non-struct": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `prefix:"db-"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "prefix requires struct type",
+		},
+		"prefix on anonymous": {
+			makeType: func() reflect.Type {
+				type inner struct {
+					Name string `flag:"name"`
+				}
+				type cmd struct {
+					inner `prefix:"db-"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "prefix cannot be used on anonymous",
+		},
 	}
 
 	for name, tt := range tests {
@@ -5339,4 +5360,302 @@ func TestAlt_WithEnum(t *testing.T) {
 	_, _, err := defaultParseFlags(cmd, []string{"--output", "json"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, "json", cmd.Format)
+}
+
+// --- embedded struct (anonymous promotion) ---
+
+type embeddedOutputFlags struct {
+	Format string `flag:"format" enum:"json,table" default:"table" help:"Output format"`
+}
+
+type embeddedListCmd struct {
+	embeddedOutputFlags
+	Limit int `flag:"limit" default:"50" help:"Max results"`
+}
+
+func (c *embeddedListCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEmbedded_Promoted(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--format", "json", "--limit", "10"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
+	assert.Equal(t, 10, cmd.Limit)
+}
+
+func TestEmbedded_Default(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "table", cmd.Format)
+	assert.Equal(t, 50, cmd.Limit)
+}
+
+func TestScanFlags_Embedded(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 2)
+
+	names := make([]string, len(defs))
+	for i := range defs {
+		names[i] = defs[i].Name
+	}
+	assert.Contains(t, names, "format")
+	assert.Contains(t, names, "limit")
+}
+
+func TestEmbedded_InHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+	assert.Contains(t, text, "--format")
+	assert.Contains(t, text, "--limit")
+}
+
+func TestEmbedded_InContext(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--format", "json"}, defaults())
+	require.NoError(t, err)
+
+	ctx := storeFlags(context.Background(), []Runner{cmd})
+	assert.Equal(t, "json", Get[string](ctx, "format"))
+	assert.Equal(t, 50, Get[int](ctx, "limit"))
+}
+
+func TestBuildFlagIndex_Embedded(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedListCmd{}
+	fi := buildFlagIndex(cmd)
+	assert.True(t, fi.has("--format"))
+	assert.True(t, fi.has("--limit"))
+}
+
+// --- embedded struct arg promotion ---
+
+type embeddedArgFlags struct {
+	Target string `arg:"target" help:"Deploy target"`
+}
+
+type embeddedDeployCmd struct {
+	embeddedArgFlags
+	Force bool `flag:"force" help:"Force deploy"`
+}
+
+func (c *embeddedDeployCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEmbedded_ArgPromotion(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedDeployCmd{}
+	defs := ScanArgs(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, "target", defs[0].Name)
+}
+
+// --- prefix tag ---
+
+type prefixDBFlags struct {
+	Host string `flag:"host" default:"localhost" help:"Database host"`
+	Port int    `flag:"port" default:"5432" help:"Database port"`
+}
+
+type prefixServeCmd struct {
+	DB   prefixDBFlags `prefix:"db-"`
+	Port int           `flag:"port" default:"8080" help:"Listen port"`
+}
+
+func (c *prefixServeCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestPrefix_Flags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--db-host", "remotehost", "--db-port", "3306", "--port", "9090"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "remotehost", cmd.DB.Host)
+	assert.Equal(t, 3306, cmd.DB.Port)
+	assert.Equal(t, 9090, cmd.Port)
+}
+
+func TestPrefix_Default(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "localhost", cmd.DB.Host)
+	assert.Equal(t, 5432, cmd.DB.Port)
+	assert.Equal(t, 8080, cmd.Port)
+}
+
+func TestScanFlags_Prefix(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 3)
+
+	names := make([]string, len(defs))
+	for i := range defs {
+		names[i] = defs[i].Name
+	}
+	assert.Contains(t, names, "db-host")
+	assert.Contains(t, names, "db-port")
+	assert.Contains(t, names, "port")
+}
+
+func TestPrefix_InHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+	assert.Contains(t, text, "--db-host")
+	assert.Contains(t, text, "--db-port")
+	assert.Contains(t, text, "--port")
+}
+
+func TestPrefix_InContext(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--db-host", "remote"}, defaults())
+	require.NoError(t, err)
+
+	ctx := storeFlags(context.Background(), []Runner{cmd})
+	assert.Equal(t, "remote", Get[string](ctx, "db-host"))
+	assert.Equal(t, 5432, Get[int](ctx, "db-port"))
+	assert.Equal(t, 8080, Get[int](ctx, "port"))
+}
+
+func TestBuildFlagIndex_Prefix(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixServeCmd{}
+	fi := buildFlagIndex(cmd)
+	assert.True(t, fi.has("--db-host"))
+	assert.True(t, fi.has("--db-port"))
+	assert.True(t, fi.has("--port"))
+}
+
+// --- nested prefix ---
+
+type prefixInnerFlags struct {
+	Name string `flag:"name" default:"inner" help:"Inner name"`
+}
+
+type prefixOuterFlags struct {
+	Inner prefixInnerFlags `prefix:"b-"`
+}
+
+type prefixNestedCmd struct {
+	Outer prefixOuterFlags `prefix:"a-"`
+}
+
+func (c *prefixNestedCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestPrefix_Nested(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixNestedCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--a-b-name", "deep"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "deep", cmd.Outer.Inner.Name)
+}
+
+func TestScanFlags_NestedPrefix(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixNestedCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, "a-b-name", defs[0].Name)
+}
+
+// --- embedded + prefix combined ---
+
+type embeddedPrefixCmd struct {
+	embeddedOutputFlags
+	DB prefixDBFlags `prefix:"db-"`
+}
+
+func (c *embeddedPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEmbeddedAndPrefix_Combined(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedPrefixCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--format", "json", "--db-host", "remote"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
+	assert.Equal(t, "remote", cmd.DB.Host)
+}
+
+// --- outer field shadows embedded ---
+
+type embeddedShadowBase struct {
+	Format string `flag:"format" default:"base"`
+}
+
+type embeddedShadowCmd struct {
+	embeddedShadowBase
+	Format string `flag:"format" default:"outer"`
+}
+
+func (c *embeddedShadowCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestEmbedded_OuterShadows(t *testing.T) {
+	t.Parallel()
+
+	cmd := &embeddedShadowCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--format", "custom"}, defaults())
+	require.NoError(t, err)
+	// Outer field should win (shallower depth).
+	assert.Equal(t, "custom", cmd.Format)
+}
+
+// --- prefix alt names ---
+
+type prefixAltFlags struct {
+	Format string `flag:"format" alt:"output" help:"Output format"`
+}
+
+type prefixAltCmd struct {
+	Out prefixAltFlags `prefix:"out-"`
+}
+
+func (c *prefixAltCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestPrefix_AltNames(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixAltCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--out-output", "json"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Out.Format)
+}
+
+func TestPrefix_AltInScanFlags(t *testing.T) {
+	t.Parallel()
+
+	cmd := &prefixAltCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, "out-format", defs[0].Name)
+	assert.Equal(t, []string{"out-output"}, defs[0].Alt)
 }

@@ -74,6 +74,7 @@
 //   - category — group heading for the flag in help output
 //   - mask — displayed instead of default in help (e.g. "****" for secrets)
 //   - placeholder — value name shown in help (e.g. "PORT" in --port PORT)
+//   - prefix — flag name prefix for named struct fields (e.g. "db-" yields --db-host)
 //
 // Priority: explicit flag > env var > config > default > zero value.
 //
@@ -102,6 +103,34 @@
 // for config resolver lookups and context storage via [Set]/[Get].
 //
 // Priority for env-only fields: env var > config > default > zero value.
+//
+// # Embedded Structs and Prefix
+//
+// Anonymous embedded structs have their flags promoted, just like Go's own
+// field promotion:
+//
+//	type OutputFlags struct {
+//	    Format string `flag:"format" enum:"json,table" default:"table" help:"Output format"`
+//	}
+//	type ListCmd struct {
+//	    OutputFlags // promoted: --format works as if declared on ListCmd
+//	    Limit int   `flag:"limit" default:"50"`
+//	}
+//
+// Named struct fields with the prefix tag namespace their flags:
+//
+//	type DBFlags struct {
+//	    Host string `flag:"host" default:"localhost" help:"Database host"`
+//	    Port int    `flag:"port" default:"5432" help:"Database port"`
+//	}
+//	type ServeCmd struct {
+//	    DB   DBFlags `prefix:"db-"`  // --db-host, --db-port
+//	    Port int     `flag:"port" default:"8080" help:"Listen port"`
+//	}
+//
+// Prefixes nest: a prefix:"a-" containing prefix:"b-" yields --a-b-name.
+// When an outer and embedded field share a flag name, the outer field wins
+// (matching Go's own promotion semantics).
 //
 // # Inheritance
 //

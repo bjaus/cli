@@ -130,23 +130,43 @@ func storeFlags(ctx context.Context, chain []Runner) context.Context {
 		if v.Kind() != reflect.Struct {
 			continue
 		}
-		t := v.Type()
-		for i := range t.NumField() {
-			f := t.Field(i)
-			name, hasFlag := f.Tag.Lookup("flag")
-			if hasFlag {
-				if name == "" {
-					name = camelToKebab(f.Name)
-				}
-				ctx = setContextValue(ctx, name, v.Field(i).Interface())
+		ctx = storeFlagsRecurse(ctx, v, v.Type(), "")
+	}
+	return ctx
+}
+
+func storeFlagsRecurse(ctx context.Context, v reflect.Value, t reflect.Type, prefix string) context.Context {
+	for i := range t.NumField() {
+		f := t.Field(i)
+
+		// Named struct with prefix: recurse.
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if pfx := f.Tag.Get("prefix"); pfx != "" {
+				ctx = storeFlagsRecurse(ctx, v.Field(i), f.Type, prefix+pfx)
 				continue
 			}
-			// Standalone env field: has env tag but no flag or arg tag.
-			if f.Tag.Get("env") != "" {
-				if _, hasArg := f.Tag.Lookup("arg"); !hasArg {
-					name = camelToKebab(f.Name)
-					ctx = setContextValue(ctx, name, v.Field(i).Interface())
-				}
+			// Fall through: may be a custom type with flag tag.
+		}
+
+		// Anonymous embedded struct: recurse with promotion.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			ctx = storeFlagsRecurse(ctx, v.Field(i), f.Type, prefix)
+			continue
+		}
+
+		name, hasFlag := f.Tag.Lookup("flag")
+		if hasFlag {
+			if name == "" {
+				name = camelToKebab(f.Name)
+			}
+			ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
+			continue
+		}
+		// Standalone env field: has env tag but no flag or arg tag.
+		if f.Tag.Get("env") != "" {
+			if _, hasArg := f.Tag.Lookup("arg"); !hasArg {
+				name = camelToKebab(f.Name)
+				ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
 			}
 		}
 	}

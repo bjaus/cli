@@ -110,6 +110,7 @@ type ServeCmd struct {
 | `sep` | Separator for splitting values into slice elements |
 | `mask` | Displayed instead of default in help (e.g. `"****"`) |
 | `placeholder` | Value label shown in help (e.g. `"PORT"` in `--port PORT`) |
+| `prefix` | Flag name prefix for named struct fields (e.g. `"db-"`) |
 
 ### Priority
 
@@ -183,6 +184,37 @@ Color bool `flag:"color" default:"true" negate:"true"`
 
 ```
 $ app --no-color  # Color = false
+```
+
+### Embedded structs
+
+Anonymous embedded structs have their flags promoted:
+
+```go
+type OutputFlags struct {
+    Format string `flag:"format" enum:"json,table" default:"table"`
+}
+
+type ListCmd struct {
+    OutputFlags
+    Limit int `flag:"limit" default:"50"`
+}
+```
+
+### Prefix
+
+Named struct fields with `prefix` namespace their flags:
+
+```go
+type DBFlags struct {
+    Host string `flag:"host" default:"localhost"`
+    Port int    `flag:"port" default:"5432"`
+}
+
+type ServeCmd struct {
+    DB   DBFlags `prefix:"db-"`  // --db-host, --db-port
+    Port int     `flag:"port" default:"8080"`
+}
 ```
 
 ### Custom flag types

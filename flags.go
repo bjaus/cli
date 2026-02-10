@@ -21,12 +21,30 @@ func ScanFlags(cmd Runner) []FlagDef {
 		return nil
 	}
 
-	t := v.Type()
-	n := t.NumField()
-	defs := make([]FlagDef, 0, n)
+	var defs []FlagDef
+	scanFlagsRecurse(v.Type(), &defs, "")
+	return defs
+}
 
-	for i := range n {
+func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
+	for i := range t.NumField() {
 		f := t.Field(i)
+
+		// Named struct with prefix tag: recurse.
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if pfx := f.Tag.Get("prefix"); pfx != "" {
+				scanFlagsRecurse(f.Type, defs, prefix+pfx)
+				continue
+			}
+			// Fall through: may be a custom type with flag tag (e.g. FlagUnmarshaler).
+		}
+
+		// Anonymous embedded struct: promote fields.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			scanFlagsRecurse(f.Type, defs, prefix)
+			continue
+		}
+
 		name, hasFlag := f.Tag.Lookup("flag")
 		if !hasFlag {
 			continue
@@ -35,13 +53,18 @@ func ScanFlags(cmd Runner) []FlagDef {
 			name = camelToKebab(f.Name)
 		}
 
+		fullName := prefix + name
+
 		var aliases []string
 		if raw := f.Tag.Get("alt"); raw != "" {
 			aliases = strings.Split(raw, ",")
+			for j := range aliases {
+				aliases[j] = prefix + aliases[j]
+			}
 		}
 
-		defs = append(defs, FlagDef{
-			Name:        name,
+		*defs = append(*defs, FlagDef{
+			Name:        fullName,
 			Short:       f.Tag.Get("short"),
 			Alt:         aliases,
 			Help:        f.Tag.Get("help"),
@@ -61,8 +84,6 @@ func ScanFlags(cmd Runner) []FlagDef {
 			Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
 		})
 	}
-
-	return defs
 }
 
 // camelToKebab converts a CamelCase string to kebab-case.
@@ -116,7 +137,7 @@ func flagTypeName(t reflect.Type) string {
 }
 
 type fieldInfo struct {
-	index    int
+	index    []int // field path for nested structs (e.g. [0, 2] for embedded.Field)
 	def      FlagDef
 	provided bool
 	envOnly  bool // standalone env field — not a CLI flag, only env/config/default
@@ -133,9 +154,27 @@ func hasProcessableFields(cmd Runner) bool {
 	if v.Kind() != reflect.Struct {
 		return false
 	}
-	t := v.Type()
+	return hasProcessableFieldsRecurse(v.Type())
+}
+
+func hasProcessableFieldsRecurse(t reflect.Type) bool {
 	for i := range t.NumField() {
 		f := t.Field(i)
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if f.Tag.Get("prefix") != "" {
+				if hasProcessableFieldsRecurse(f.Type) {
+					return true
+				}
+				continue
+			}
+			// Fall through: may be a custom type with flag/env tag.
+		}
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if hasProcessableFieldsRecurse(f.Type) {
+				return true
+			}
+			continue
+		}
 		if _, ok := f.Tag.Lookup("flag"); ok {
 			return true
 		}
@@ -200,9 +239,30 @@ func collectProvided(fields map[string]*fieldInfo) map[string]bool {
 
 func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 	fields := make(map[string]*fieldInfo)
+	buildFieldMapRecurse(t, fields, nil, "")
+	return fields
+}
 
+func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPath []int, prefix string) {
 	for i := range t.NumField() {
 		f := t.Field(i)
+		currentPath := append(append([]int{}, indexPath...), i)
+
+		// Named struct with prefix tag: recurse with prefix.
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if pfx := f.Tag.Get("prefix"); pfx != "" {
+				buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx)
+				continue
+			}
+			// Fall through: may be a custom type with flag tag (e.g. FlagUnmarshaler).
+		}
+
+		// Anonymous embedded struct (non-pointer): promote fields.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			buildFieldMapRecurse(f.Type, fields, currentPath, prefix)
+			continue
+		}
+
 		name, hasFlag := f.Tag.Lookup("flag")
 
 		// Standalone env: has env tag but no flag or arg tag.
@@ -220,16 +280,30 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 			name = camelToKebab(f.Name)
 		}
 
+		fullName := prefix + name
+
 		var aliases []string
 		if raw := f.Tag.Get("alt"); raw != "" {
 			aliases = strings.Split(raw, ",")
+			for j := range aliases {
+				aliases[j] = prefix + aliases[j]
+			}
+		}
+
+		// Depth-based shadowing: shallower fields win (Go promotion semantics).
+		primaryKey := "--" + fullName
+		if envOnly {
+			primaryKey = ":" + fullName
+		}
+		if existing, ok := fields[primaryKey]; ok && len(existing.index) <= len(currentPath) {
+			continue
 		}
 
 		fi := &fieldInfo{
-			index:   i,
+			index:   currentPath,
 			envOnly: envOnly,
 			def: FlagDef{
-				Name:        name,
+				Name:        fullName,
 				Short:       f.Tag.Get("short"),
 				Alt:         aliases,
 				Default:     f.Tag.Get("default"),
@@ -249,28 +323,26 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 		}
 
 		if envOnly {
-			fields[":"+strconv.Itoa(i)] = fi
+			fields[primaryKey] = fi
 		} else {
-			fields["--"+name] = fi
+			fields["--"+fullName] = fi
 			if fi.def.Short != "" {
 				fields["-"+fi.def.Short] = fi
 			}
 			if fi.def.Negate {
-				fields["--no-"+name] = fi
+				fields["--no-"+fullName] = fi
 			}
 			for _, alias := range aliases {
 				fields["--"+alias] = fi
 			}
 		}
 	}
-
-	return fields
 }
 
 func applyDefaults(v reflect.Value, fields map[string]*fieldInfo) error {
 	for _, fi := range fields {
 		if fi.def.Default != "" {
-			field := v.Field(fi.index)
+			field := v.FieldByIndex(fi.index)
 			if err := setFieldValue(field, fi.def.Default); err != nil {
 				prefix := "--"
 				if fi.envOnly {
@@ -292,7 +364,7 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 		if !found {
 			continue
 		}
-		field := v.Field(fi.index)
+		field := v.FieldByIndex(fi.index)
 		if err := setFieldValueSep(field, val, fi.def.Sep); err != nil {
 			prefix := "--"
 			if fi.envOnly {
@@ -310,7 +382,7 @@ func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) e
 		if fi.def.Env != "" {
 			envName := envPrefix + fi.def.Env
 			if envVal, ok := os.LookupEnv(envName); ok {
-				field := v.Field(fi.index)
+				field := v.FieldByIndex(fi.index)
 				if err := setFieldValueSep(field, envVal, fi.def.Sep); err != nil {
 					prefix := "--"
 					if fi.envOnly {
@@ -377,7 +449,7 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 					}
 					return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, name)
 				}
-				field := v.Field(fi.index)
+				field := v.FieldByIndex(fi.index)
 				if err := setFieldValueSep(field, value, fi.def.Sep); err != nil {
 					return nil, fmt.Errorf("%w: %s: %w", ErrInvalidFlagValue, name, err)
 				}
@@ -399,7 +471,7 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 			continue
 		}
 
-		field := v.Field(fi.index)
+		field := v.FieldByIndex(fi.index)
 
 		if fi.def.IsBool || fi.def.IsCounter {
 			switch {
@@ -441,7 +513,7 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 			return fmt.Errorf("%w: --%s", ErrRequiredFlag, fi.def.Name)
 		}
 		if fi.def.Enum != "" && (fi.provided || fi.def.Default != "") {
-			val := fmt.Sprint(v.Field(fi.index).Interface())
+			val := fmt.Sprint(v.FieldByIndex(fi.index).Interface())
 			if !enumContains(fi.def.Enum, val) {
 				if fi.envOnly {
 					return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidFlagValue, fi.def.Name, fi.def.Enum)
@@ -664,6 +736,44 @@ func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
 	}
 }
 
+// inheritableField describes a flag field with its resolved name, type, and index path.
+type inheritableField struct {
+	name string
+	typ  reflect.Type
+	path []int
+}
+
+// collectInheritableFields returns all flag-tagged fields with their resolved names and paths.
+func collectInheritableFields(t reflect.Type, indexPath []int, prefix string) []inheritableField {
+	fields := make([]inheritableField, 0, t.NumField())
+	for i := range t.NumField() {
+		f := t.Field(i)
+		currentPath := append(append([]int{}, indexPath...), i)
+
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if pfx := f.Tag.Get("prefix"); pfx != "" {
+				fields = append(fields, collectInheritableFields(f.Type, currentPath, prefix+pfx)...)
+				continue
+			}
+			// Fall through: may be a custom type with flag tag.
+		}
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			fields = append(fields, collectInheritableFields(f.Type, currentPath, prefix)...)
+			continue
+		}
+
+		name, hasFlag := f.Tag.Lookup("flag")
+		if !hasFlag {
+			continue
+		}
+		if name == "" {
+			name = camelToKebab(f.Name)
+		}
+		fields = append(fields, inheritableField{name: prefix + name, typ: f.Type, path: currentPath})
+	}
+	return fields
+}
+
 // inheritFlags copies matching flag values from parent commands to child
 // commands when the child's flag was not explicitly provided. It walks
 // parent→child and for each child flag not in its provided set, finds the
@@ -678,14 +788,9 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 			continue
 		}
 
-		ct := cv.Type()
-		for j := range ct.NumField() {
-			cf := ct.Field(j)
-			name := cf.Tag.Get("flag")
-			if name == "" {
-				continue
-			}
-			if provided[i][name] {
+		childFields := collectInheritableFields(cv.Type(), nil, "")
+		for _, cf := range childFields {
+			if provided[i][cf.name] {
 				continue
 			}
 
@@ -698,20 +803,17 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 				if pv.Kind() != reflect.Struct {
 					continue
 				}
-				pt := pv.Type()
-				for k := range pt.NumField() {
-					pf := pt.Field(k)
-					if pf.Tag.Get("flag") != name {
+
+				parentFields := collectInheritableFields(pv.Type(), nil, "")
+				for _, pf := range parentFields {
+					if pf.name != cf.name || pf.typ != cf.typ {
 						continue
 					}
-					if pf.Type != cf.Type {
-						continue
-					}
-					cv.Field(j).Set(pv.Field(k))
+					cv.FieldByIndex(cf.path).Set(pv.FieldByIndex(pf.path))
 					if provided[i] == nil {
 						provided[i] = make(map[string]bool)
 					}
-					provided[i][name] = true
+					provided[i][cf.name] = true
 					goto nextField
 				}
 			}
@@ -722,90 +824,122 @@ func inheritFlags(chain []Runner, provided []map[string]bool) {
 
 // validateStructTags checks for invalid or conflicting struct tag combinations.
 func validateStructTags(t reflect.Type) error {
+	return validateStructTagsRecurse(t)
+}
+
+func validateStructTagsRecurse(t reflect.Type) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
-		_, hasFlag := f.Tag.Lookup("flag")
-		_, hasArg := f.Tag.Lookup("arg")
-		envTag := f.Tag.Get("env")
-		_, hasDefault := f.Tag.Lookup("default")
-		hasRequired := f.Tag.Get("required") == "true"
-		_, hasEnum := f.Tag.Lookup("enum")
-		_, hasHelp := f.Tag.Lookup("help")
-		_, hasMask := f.Tag.Lookup("mask")
 
-		hasSource := hasFlag || hasArg || envTag != ""
-
-		// Removed tag migration errors.
-		if f.Tag.Get("inherit") != "" {
-			name := f.Tag.Get("inherit")
-			return fmt.Errorf("%w: field %s: inherit tag removed; use flag:%q hidden:\"true\" for automatic inheritance", ErrInvalidTag, f.Name, name)
-		}
-		if f.Tag.Get("default-mask") != "" {
-			return fmt.Errorf("%w: field %s: default-mask renamed to mask", ErrInvalidTag, f.Name)
-		}
-		if hasFlag && f.Tag.Get("flag") == "-" {
-			return fmt.Errorf(`%w: field %s: flag:"-" removed; use env:"VAR" without flag tag`, ErrInvalidTag, f.Name)
-		}
-
-		// Mutually exclusive source tags.
-		if hasFlag && hasArg {
-			return fmt.Errorf("%w: field %s: flag and arg are mutually exclusive", ErrInvalidTag, f.Name)
-		}
-
-		// Contradictory constraints.
-		if hasRequired && hasDefault {
-			return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
-		}
-
-		// Removed tag migration errors.
-		if f.Tag.Get("negatable") != "" {
-			return fmt.Errorf("%w: field %s: negatable renamed to negate", ErrInvalidTag, f.Name)
-		}
-
-		// Tags that require flag.
-		flagOnlyTags := map[string]string{
-			"short":      f.Tag.Get("short"),
-			"counter":    f.Tag.Get("counter"),
-			"negate":     f.Tag.Get("negate"),
-			"alt":        f.Tag.Get("alt"),
-			"sep":        f.Tag.Get("sep"),
-			"placeholder": f.Tag.Get("placeholder"),
-			"hidden":     f.Tag.Get("hidden"),
-			"deprecated": f.Tag.Get("deprecated"),
-			"category":   f.Tag.Get("category"),
-		}
-		for tag, val := range flagOnlyTags {
-			if val != "" && !hasFlag {
-				return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
+		// prefix tag validation and recursion.
+		if pfx := f.Tag.Get("prefix"); pfx != "" {
+			if f.Anonymous {
+				return fmt.Errorf("%w: field %s: prefix cannot be used on anonymous (embedded) fields", ErrInvalidTag, f.Name)
 			}
-		}
-
-		// Type-specific constraints.
-		if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 {
-			return fmt.Errorf("%w: field %s: counter requires int type", ErrInvalidTag, f.Name)
-		}
-		if f.Tag.Get("negate") == "true" && f.Type.Kind() != reflect.Bool {
-			return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)
-		}
-		if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {
-			return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
-		}
-
-		// Orphan detection: CLI-related tags without a source.
-		orphanTags := []struct {
-			name string
-			set  bool
-		}{
-			{"default", hasDefault},
-			{"required", hasRequired},
-			{"enum", hasEnum},
-			{"help", hasHelp},
-			{"mask", hasMask},
-		}
-		for _, ot := range orphanTags {
-			if ot.set && !hasSource {
-				return fmt.Errorf("%w: field %s: %s requires flag, arg, or env tag", ErrInvalidTag, f.Name, ot.name)
+			if f.Type.Kind() != reflect.Struct {
+				return fmt.Errorf("%w: field %s: prefix requires struct type", ErrInvalidTag, f.Name)
 			}
+			if err := validateStructTagsRecurse(f.Type); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Anonymous embedded struct: recurse into promoted fields.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if err := validateStructTagsRecurse(f.Type); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := validateFieldTags(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFieldTags(f reflect.StructField) error {
+	_, hasFlag := f.Tag.Lookup("flag")
+	_, hasArg := f.Tag.Lookup("arg")
+	envTag := f.Tag.Get("env")
+	_, hasDefault := f.Tag.Lookup("default")
+	hasRequired := f.Tag.Get("required") == "true"
+	_, hasEnum := f.Tag.Lookup("enum")
+	_, hasHelp := f.Tag.Lookup("help")
+	_, hasMask := f.Tag.Lookup("mask")
+
+	hasSource := hasFlag || hasArg || envTag != ""
+
+	// Removed tag migration errors.
+	if f.Tag.Get("inherit") != "" {
+		name := f.Tag.Get("inherit")
+		return fmt.Errorf("%w: field %s: inherit tag removed; use flag:%q hidden:\"true\" for automatic inheritance", ErrInvalidTag, f.Name, name)
+	}
+	if f.Tag.Get("default-mask") != "" {
+		return fmt.Errorf("%w: field %s: default-mask renamed to mask", ErrInvalidTag, f.Name)
+	}
+	if hasFlag && f.Tag.Get("flag") == "-" {
+		return fmt.Errorf(`%w: field %s: flag:"-" removed; use env:"VAR" without flag tag`, ErrInvalidTag, f.Name)
+	}
+	if f.Tag.Get("negatable") != "" {
+		return fmt.Errorf("%w: field %s: negatable renamed to negate", ErrInvalidTag, f.Name)
+	}
+
+	// Mutually exclusive source tags.
+	if hasFlag && hasArg {
+		return fmt.Errorf("%w: field %s: flag and arg are mutually exclusive", ErrInvalidTag, f.Name)
+	}
+
+	// Contradictory constraints.
+	if hasRequired && hasDefault {
+		return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
+	}
+
+	// Tags that require flag.
+	flagOnlyTags := map[string]string{
+		"short":       f.Tag.Get("short"),
+		"counter":     f.Tag.Get("counter"),
+		"negate":      f.Tag.Get("negate"),
+		"alt":         f.Tag.Get("alt"),
+		"sep":         f.Tag.Get("sep"),
+		"placeholder": f.Tag.Get("placeholder"),
+		"hidden":      f.Tag.Get("hidden"),
+		"deprecated":  f.Tag.Get("deprecated"),
+		"category":    f.Tag.Get("category"),
+	}
+	for tag, val := range flagOnlyTags {
+		if val != "" && !hasFlag {
+			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
+		}
+	}
+
+	// Type-specific constraints.
+	if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 {
+		return fmt.Errorf("%w: field %s: counter requires int type", ErrInvalidTag, f.Name)
+	}
+	if f.Tag.Get("negate") == "true" && f.Type.Kind() != reflect.Bool {
+		return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)
+	}
+	if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {
+		return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
+	}
+
+	// Orphan detection: CLI-related tags without a source.
+	orphanTags := []struct {
+		name string
+		set  bool
+	}{
+		{"default", hasDefault},
+		{"required", hasRequired},
+		{"enum", hasEnum},
+		{"help", hasHelp},
+		{"mask", hasMask},
+	}
+	for _, ot := range orphanTags {
+		if ot.set && !hasSource {
+			return fmt.Errorf("%w: field %s: %s requires flag, arg, or env tag", ErrInvalidTag, f.Name, ot.name)
 		}
 	}
 	return nil

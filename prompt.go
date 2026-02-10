@@ -66,11 +66,11 @@ func promptForFlags(cmd Runner, provided map[string]bool, opts *options) (map[st
 			continue // validation will catch it
 		}
 
-		fieldIdx := flagFieldIndex(v.Type(), def.Name)
-		if fieldIdx < 0 {
+		fieldPath := flagFieldPath(v.Type(), def.Name, nil, "")
+		if fieldPath == nil {
 			continue
 		}
-		if err := setFieldValue(v.Field(fieldIdx), input); err != nil {
+		if err := setFieldValue(v.FieldByIndex(fieldPath), input); err != nil {
 			return provided, fmt.Errorf("%w: --%s: %w", ErrInvalidFlagValue, def.Name, err)
 		}
 		if provided == nil {
@@ -82,10 +82,28 @@ func promptForFlags(cmd Runner, provided map[string]bool, opts *options) (map[st
 	return provided, nil
 }
 
-// flagFieldIndex returns the struct field index for a flag name, or -1.
-func flagFieldIndex(t reflect.Type, flagName string) int {
+// flagFieldPath returns the field index path for a flag name, or nil if not found.
+func flagFieldPath(t reflect.Type, flagName string, indexPath []int, prefix string) []int {
 	for i := range t.NumField() {
 		f := t.Field(i)
+		currentPath := append(append([]int{}, indexPath...), i)
+
+		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
+			if pfx := f.Tag.Get("prefix"); pfx != "" {
+				if path := flagFieldPath(f.Type, flagName, currentPath, prefix+pfx); path != nil {
+					return path
+				}
+				continue
+			}
+			// Fall through: may be a custom type with flag tag.
+		}
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if path := flagFieldPath(f.Type, flagName, currentPath, prefix); path != nil {
+				return path
+			}
+			continue
+		}
+
 		name, hasFlag := f.Tag.Lookup("flag")
 		if !hasFlag {
 			continue
@@ -93,11 +111,11 @@ func flagFieldIndex(t reflect.Type, flagName string) int {
 		if name == "" {
 			name = camelToKebab(f.Name)
 		}
-		if name == flagName {
-			return i
+		if prefix+name == flagName {
+			return currentPath
 		}
 	}
-	return -1
+	return nil
 }
 
 // readPrompt writes a prompt to w and reads a line using the given scanner.

@@ -17,11 +17,21 @@ func ScanArgs(cmd Runner) []ArgDef {
 		return nil
 	}
 
-	t := v.Type()
-	defs := make([]ArgDef, 0, t.NumField())
+	var defs []ArgDef
+	scanArgsRecurse(v.Type(), &defs)
+	return defs
+}
 
+func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 	for i := range t.NumField() {
 		f := t.Field(i)
+
+		// Anonymous embedded struct: promote args.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			scanArgsRecurse(f.Type, defs)
+			continue
+		}
+
 		name, hasArg := f.Tag.Lookup("arg")
 		if !hasArg {
 			continue
@@ -36,7 +46,7 @@ func ScanArgs(cmd Runner) []ArgDef {
 			required = req == "true"
 		}
 
-		defs = append(defs, ArgDef{
+		*defs = append(*defs, ArgDef{
 			Name:     name,
 			Help:     f.Tag.Get("help"),
 			Default:  f.Tag.Get("default"),
@@ -48,8 +58,6 @@ func ScanArgs(cmd Runner) []ArgDef {
 			IsSlice:  isSlice,
 		})
 	}
-
-	return defs
 }
 
 // populateArgs sets struct fields tagged with `arg` from positional arguments,
@@ -63,11 +71,26 @@ func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error)
 		return args, nil
 	}
 
-	t := v.Type()
 	argIdx := 0
+	if err := populateArgsRecurse(v, v.Type(), args, envPrefix, &argIdx); err != nil {
+		return nil, err
+	}
 
+	return args[argIdx:], nil
+}
+
+func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPrefix string, argIdx *int) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
+
+		// Anonymous embedded struct: recurse into promoted fields.
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if err := populateArgsRecurse(v.Field(i), f.Type, args, envPrefix, argIdx); err != nil {
+				return err
+			}
+			continue
+		}
+
 		name, hasArg := f.Tag.Lookup("arg")
 		if !hasArg {
 			continue
@@ -81,25 +104,25 @@ func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error)
 
 		// Slice field: consume all remaining args.
 		if f.Type.Kind() == reflect.Slice {
-			for argIdx < len(args) {
-				elemVal, err := parseScalarValue(f.Type.Elem(), args[argIdx])
+			for *argIdx < len(args) {
+				elemVal, err := parseScalarValue(f.Type.Elem(), args[*argIdx])
 				if err != nil {
-					return nil, fmt.Errorf("invalid value for argument %q: %w", name, err)
+					return fmt.Errorf("invalid value for argument %q: %w", name, err)
 				}
 				field.Set(reflect.Append(field, elemVal))
-				argIdx++
+				*argIdx++
 			}
 			continue
 		}
 
 		// Scalar field: consume one positional arg.
-		if argIdx < len(args) {
-			if err := setFieldValue(field, args[argIdx]); err != nil {
-				return nil, fmt.Errorf("invalid value for argument %q: %w", name, err)
+		if *argIdx < len(args) {
+			if err := setFieldValue(field, args[*argIdx]); err != nil {
+				return fmt.Errorf("invalid value for argument %q: %w", name, err)
 			}
-			argIdx++
+			*argIdx++
 			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+				return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
 			}
 			continue
 		}
@@ -108,10 +131,10 @@ func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error)
 		if envName := f.Tag.Get("env"); envName != "" {
 			if envVal, ok := os.LookupEnv(envPrefix + envName); ok {
 				if err := setFieldValue(field, envVal); err != nil {
-					return nil, fmt.Errorf("invalid value for argument %q (from %s): %w", name, envPrefix+envName, err)
+					return fmt.Errorf("invalid value for argument %q (from %s): %w", name, envPrefix+envName, err)
 				}
 				if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-					return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+					return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
 				}
 				continue
 			}
@@ -120,10 +143,10 @@ func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error)
 		// Try default.
 		if def := f.Tag.Get("default"); def != "" {
 			if err := setFieldValue(field, def); err != nil {
-				return nil, fmt.Errorf("invalid default for argument %q: %w", name, err)
+				return fmt.Errorf("invalid default for argument %q: %w", name, err)
 			}
 			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return nil, fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+				return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
 			}
 			continue
 		}
@@ -134,11 +157,11 @@ func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error)
 			required = req == "true"
 		}
 		if required {
-			return nil, fmt.Errorf("missing required argument: %s", name)
+			return fmt.Errorf("missing required argument: %s", name)
 		}
 	}
 
-	return args[argIdx:], nil
+	return nil
 }
 
 // ExactArgs returns an arg validator that requires exactly n arguments.
