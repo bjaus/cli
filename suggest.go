@@ -78,15 +78,15 @@ func jaroWinkler(s1, s2 string) float64 {
 
 // suggestSubcommand finds the closest matching subcommand name.
 func suggestSubcommand(cmd Runner, unknown string) string {
-	p, ok := cmd.(Parent)
-	if !ok {
+	subs, _ := allSubcommands(cmd) //nolint:errcheck // best-effort suggestion
+	if len(subs) == 0 {
 		return ""
 	}
 
 	var bestName string
 	var bestScore float64
 
-	for _, sub := range p.Subcommands() {
+	for _, sub := range subs {
 		info := resolveInfo(sub)
 		if info.hidden {
 			continue

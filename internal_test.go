@@ -476,6 +476,35 @@ func TestSuggestSubcommand_NonParent(t *testing.T) {
 	assert.Empty(t, suggestSubcommand(&internalBareCmd{}, "anything"))
 }
 
+// --- suggestSubcommand with Discoverer ---
+
+type internalDiscovererParent struct{}
+
+func (p *internalDiscovererParent) Run(_ context.Context, _ []string) error { return nil }
+func (p *internalDiscovererParent) Name() string                            { return "myapp" }
+func (p *internalDiscovererParent) Subcommands() []Runner {
+	return []Runner{&internalNamedCmd{n: "serve"}}
+}
+func (p *internalDiscovererParent) Discover() ([]Runner, error) {
+	return []Runner{&internalNamedCmd{n: "deploy-plugin"}}, nil
+}
+
+func TestSuggestSubcommand_DiscoveredCommand(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscovererParent{}
+	// Misspell the plugin name — should still suggest it.
+	assert.Equal(t, "deploy-plugin", suggestSubcommand(parent, "deploy-plugi"))
+}
+
+func TestSuggestSubcommand_StaticWithDiscovererPresent(t *testing.T) {
+	t.Parallel()
+
+	parent := &internalDiscovererParent{}
+	// Misspell a static subcommand — should suggest it even with plugins present.
+	assert.Equal(t, "serve", suggestSubcommand(parent, "serv"))
+}
+
 func TestSuggestFlagName_NoFlags(t *testing.T) {
 	t.Parallel()
 	assert.Empty(t, suggestFlagName(&internalBareCmd{}, "--anything"))
