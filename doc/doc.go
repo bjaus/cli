@@ -95,7 +95,8 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 	// Usage
 	b.WriteString("## Usage\n\n")
 	b.WriteString("```\n")
-	if p, ok := cmd.(cli.Parent); ok && len(p.Subcommands()) > 0 {
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
+	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "%s [command]\n", path)
 	}
 	flags := cli.ScanFlags(cmd)
@@ -123,18 +124,16 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 	}
 
 	// Subcommands
-	if p, ok := cmd.(cli.Parent); ok {
-		subs := visibleSubs(p.Subcommands())
-		if len(subs) > 0 {
-			b.WriteString("## Commands\n\n")
-			b.WriteString("| Command | Description |\n")
-			b.WriteString("|---------|-------------|\n")
-			for _, s := range subs {
-				si := cmdInfo(s)
-				fmt.Fprintf(&b, "| `%s` | %s |\n", si.name, si.description)
-			}
-			b.WriteString("\n")
+	visSubs := visibleSubs(allSubs)
+	if len(visSubs) > 0 {
+		b.WriteString("## Commands\n\n")
+		b.WriteString("| Command | Description |\n")
+		b.WriteString("|---------|-------------|\n")
+		for _, s := range visSubs {
+			si := cmdInfo(s)
+			fmt.Fprintf(&b, "| `%s` | %s |\n", si.name, si.description)
 		}
+		b.WriteString("\n")
 	}
 
 	// Flags
@@ -262,16 +261,15 @@ func genManPage(cmd cli.Runner, chain []cli.Runner, header *ManHeader) string {
 	}
 
 	// Subcommands
-	if p, ok := cmd.(cli.Parent); ok {
-		subs := visibleSubs(p.Subcommands())
-		if len(subs) > 0 {
-			b.WriteString(".SH COMMANDS\n")
-			for _, s := range subs {
-				si := cmdInfo(s)
-				fmt.Fprintf(&b, ".TP\n\\fB%s\\fR\n", si.name)
-				if si.description != "" {
-					fmt.Fprintf(&b, "%s\n", manEscape(si.description))
-				}
+	manSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
+	manVisSubs := visibleSubs(manSubs)
+	if len(manVisSubs) > 0 {
+		b.WriteString(".SH COMMANDS\n")
+		for _, s := range manVisSubs {
+			si := cmdInfo(s)
+			fmt.Fprintf(&b, ".TP\n\\fB%s\\fR\n", si.name)
+			if si.description != "" {
+				fmt.Fprintf(&b, "%s\n", manEscape(si.description))
 			}
 		}
 	}
@@ -311,14 +309,13 @@ func walkTree(cmd cli.Runner, chain []cli.Runner, fn func(cli.Runner, []cli.Runn
 	if err := fn(cmd, chain); err != nil {
 		return err
 	}
-	if p, ok := cmd.(cli.Parent); ok {
-		for _, sub := range p.Subcommands() {
-			if h, ok := sub.(cli.Hider); ok && h.Hidden() {
-				continue
-			}
-			if err := walkTree(sub, append(chain, sub), fn); err != nil {
-				return err
-			}
+	subs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
+	for _, sub := range subs {
+		if h, ok := sub.(cli.Hider); ok && h.Hidden() {
+			continue
+		}
+		if err := walkTree(sub, append(chain, sub), fn); err != nil {
+			return err
 		}
 	}
 	return nil

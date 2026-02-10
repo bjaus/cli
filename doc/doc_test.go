@@ -136,3 +136,63 @@ func TestGenManPage_DefaultSection(t *testing.T) {
 	man := doc.GenManPage(root, nil)
 	assert.Contains(t, man, "\"1\"")
 }
+
+// --- discoverer fixtures ---
+
+type pluginCmd struct{}
+
+func (p *pluginCmd) Run(_ context.Context, _ []string) error { return nil }
+func (p *pluginCmd) Name() string                            { return "deploy-plugin" }
+func (p *pluginCmd) Description() string                     { return "Deploy via plugin" }
+
+type discovererRoot struct {
+	serve *serveCmd
+}
+
+func (d *discovererRoot) Run(_ context.Context, _ []string) error { return nil }
+func (d *discovererRoot) Name() string                            { return "myapp" }
+func (d *discovererRoot) Description() string                     { return "App with plugins" }
+func (d *discovererRoot) Subcommands() []cli.Runner               { return []cli.Runner{d.serve} }
+func (d *discovererRoot) Discover() ([]cli.Runner, error)         { return []cli.Runner{&pluginCmd{}}, nil }
+
+func newDiscovererRoot() *discovererRoot {
+	return &discovererRoot{serve: &serveCmd{}}
+}
+
+func TestGenMarkdown_IncludesDiscoveredCommands(t *testing.T) {
+	t.Parallel()
+	root := newDiscovererRoot()
+	md := doc.GenMarkdown(root)
+
+	assert.Contains(t, md, "deploy-plugin")
+	assert.Contains(t, md, "Deploy via plugin")
+	assert.Contains(t, md, "serve")
+}
+
+func TestGenManPage_IncludesDiscoveredCommands(t *testing.T) {
+	t.Parallel()
+	root := newDiscovererRoot()
+	header := &doc.ManHeader{Section: "1", Source: "myapp"}
+
+	man := doc.GenManPage(root, header)
+
+	assert.Contains(t, man, "deploy-plugin")
+	assert.Contains(t, man, "Deploy via plugin")
+}
+
+func TestGenMarkdownTree_IncludesDiscoveredCommands(t *testing.T) {
+	t.Parallel()
+	root := newDiscovererRoot()
+	dir := t.TempDir()
+
+	err := doc.GenMarkdownTree(root, dir)
+	require.NoError(t, err)
+
+	// Plugin command should get its own file.
+	_, err = os.Stat(filepath.Join(dir, "myapp_deploy-plugin.md"))
+	require.NoError(t, err)
+
+	// Static subcommand should also be present.
+	_, err = os.Stat(filepath.Join(dir, "myapp_serve.md"))
+	require.NoError(t, err)
+}
