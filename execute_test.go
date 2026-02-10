@@ -245,7 +245,7 @@ type validatingCmd struct {
 
 func (c *validatingCmd) Run(_ context.Context, _ []string) error { return nil }
 
-func (c *validatingCmd) Validate() error {
+func (c *validatingCmd) Validate(_ map[string]bool) error {
 	if len(c.Name) < 3 {
 		return errors.New("name must be at least 3 characters")
 	}
@@ -706,7 +706,7 @@ func TestExecute_VersionNoVersioner(t *testing.T) {
 	assert.Contains(t, gotArgs, "--version")
 }
 
-// --- Deprecater interface ---
+// --- Deprecator interface ---
 
 type deprecatedCmd struct{}
 

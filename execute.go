@@ -330,7 +330,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 
 	// Check if leaf disables flag parsing (passthrough mode).
 	leafPassthrough := false
-	if pt, ok := leaf.(Passthrough); ok {
+	if pt, ok := leaf.(Passthrougher); ok {
 		leafPassthrough = pt.Passthrough()
 	}
 
@@ -339,6 +339,11 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	if err != nil {
 		return err
 	}
+
+	// Save original positional args for ArgsValidator. populateArgs
+	// consumes arg-tagged fields, so the validator should see the raw
+	// positional args the user provided, not the leftovers.
+	originalPositional := resolved.positional
 
 	// Populate arg-tagged struct fields on the leaf command.
 	if defs := ScanArgs(leaf); len(defs) > 0 {
@@ -349,16 +354,17 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 		resolved.positional = remaining
 	}
 
-	// Validate positional args.
+	// Validate positional args using the original args.
 	if av, ok := leaf.(ArgsValidator); ok {
-		if err := av.ValidateArgs(resolved.positional); err != nil {
+		if err := av.ValidateArgs(originalPositional); err != nil {
 			return err
 		}
 	}
 
 	// Validate leaf.
+	leafIdx := len(chain) - 1
 	if v, ok := leaf.(Validator); ok {
-		if err := v.Validate(); err != nil {
+		if err := v.Validate(provided[leafIdx]); err != nil {
 			return err
 		}
 	}
@@ -375,7 +381,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	// Before hooks (parent-first).
 	var afterHooks []Runner
 	for _, cmd := range chain {
-		if b, ok := cmd.(BeforeRunner); ok {
+		if b, ok := cmd.(Beforer); ok {
 			var err error
 			ctx, err = b.Before(ctx)
 			if err != nil {
@@ -383,7 +389,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 				return err
 			}
 		}
-		if _, ok := cmd.(AfterRunner); ok {
+		if _, ok := cmd.(Afterer); ok {
 			afterHooks = append(afterHooks, cmd)
 		}
 	}
@@ -512,7 +518,7 @@ func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]
 func runAfterHooks(ctx context.Context, hooks []Runner) error {
 	var firstErr error
 	for i := len(hooks) - 1; i >= 0; i-- {
-		if a, ok := hooks[i].(AfterRunner); ok {
+		if a, ok := hooks[i].(Afterer); ok {
 			if err := a.After(ctx); err != nil && firstErr == nil {
 				firstErr = err
 			}
@@ -554,9 +560,11 @@ func renderHelp(cmd Runner, chain []Runner, opts *options) error {
 		sortFlags(globalFlags)
 	}
 
+	args := ScanArgs(cmd)
+
 	var text string
 	if renderer != nil {
-		text = renderer.RenderHelp(cmd, chain, flags)
+		text = renderer.RenderHelp(cmd, chain, flags, args, globalFlags)
 	} else {
 		text = defaultRenderHelp(cmd, chain, flags, globalFlags, opts.sortedHelp)
 	}
@@ -603,7 +611,7 @@ func printDeprecationWarnings(chain []Runner, provided []map[string]bool, opts *
 				}
 			}
 		}
-		if d, ok := cmd.(Deprecater); ok {
+		if d, ok := cmd.(Deprecator); ok {
 			if msg := d.Deprecated(); msg != "" {
 				fmt.Fprintf(opts.stderr, "Warning: %q is deprecated: %s\n", resolveInfo(cmd).name, msg) //nolint:errcheck // best-effort warning
 			}

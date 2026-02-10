@@ -296,7 +296,7 @@ All optional. Implement any combination:
 | `Hider` | `Hidden() bool` | Hide from help output |
 | `Exampler` | `Examples() []Example` | Usage examples |
 | `Versioner` | `Version() string` | Version string for `--version` |
-| `Deprecater` | `Deprecated() string` | Deprecation warning to stderr |
+| `Deprecator` | `Deprecated() string` | Deprecation warning to stderr |
 | `Categorizer` | `Category() string` | Group subcommands in help |
 | `Fallbacker` | `Fallback() Runner` | Default subcommand |
 
@@ -315,7 +315,7 @@ $ myapp --version
 
 ### Deprecation
 
-Implement `Deprecater` to warn users. The command still runs, but a warning is printed to stderr.
+Implement `Deprecator` to warn users. The command still runs, but a warning is printed to stderr.
 
 ```go
 func (o *OldCmd) Deprecated() string { return "use new-cmd instead" }
@@ -346,9 +346,9 @@ Admin Commands:
 
 | Interface | Method | When |
 |-----------|--------|------|
-| `BeforeRunner` | `Before(ctx) (ctx, error)` | Before Run, parent-first. Returns modified context. |
-| `AfterRunner` | `After(ctx) error` | After Run, child-first. Always runs. |
-| `Validator` | `Validate() error` | After flag parsing, before Run. |
+| `Beforer` | `Before(ctx) (ctx, error)` | Before Run, parent-first. Returns modified context. |
+| `Afterer` | `After(ctx) error` | After Run, child-first. Always runs. |
+| `Validator` | `Validate(provided map[string]bool) error` | After flag parsing, before Run. |
 
 ```go
 func (a *App) Before(ctx context.Context) (context.Context, error) {
@@ -426,7 +426,7 @@ Every major subsystem is replaceable per-command or globally:
 |-----------|--------|-------|
 | `Helper` | `Help() string` | Per-command help override |
 | `FlagParser` | `ParseFlags(cmd, args) (remaining, error)` | Custom flag parsing |
-| `HelpRenderer` | `RenderHelp(cmd, chain, flags) string` | Custom help rendering |
+| `HelpRenderer` | `RenderHelp(cmd, chain, flags, args, globalFlags) string` | Custom help rendering |
 | `Suggester` | `Suggest(name) string` | Custom "did you mean?" |
 
 Global overrides via options:
@@ -451,7 +451,7 @@ func (a *App) Subcommands() []cli.Runner {
 }
 ```
 
-**Context enrichment** — cross-cutting concerns flow through context via `BeforeRunner`:
+**Context enrichment** — cross-cutting concerns flow through context via `Beforer`:
 
 ```go
 func (a *App) Before(ctx context.Context) (context.Context, error) {

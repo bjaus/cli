@@ -26,7 +26,7 @@
 //   - [Hider] — hide the command from help output
 //   - [Exampler] — provide usage examples
 //   - [Versioner] — report a version string via --version / -V
-//   - [Deprecater] — mark a command as deprecated with a warning message
+//   - [Deprecator] — mark a command as deprecated with a warning message
 //   - [Categorizer] — group subcommands under headings in help output
 //   - [Fallbacker] — provide a fallback subcommand when no name matches
 //   - [Exiter] — control error printing and process exit in [ExecuteAndExit]
@@ -34,8 +34,8 @@
 //
 // # Lifecycle Interfaces
 //
-//   - [BeforeRunner] — run setup logic before Run (parent-first), returns modified context
-//   - [AfterRunner] — run teardown logic after Run (child-first, always runs)
+//   - [Beforer] — run setup logic before Run (parent-first), returns modified context
+//   - [Afterer] — run teardown logic after Run (child-first, always runs)
 //   - [Validator] — validate state after flag parsing, before Run
 //
 // # Flags
@@ -162,7 +162,7 @@
 // # Context Values
 //
 // The framework automatically stores every parsed flag value in the context
-// before [BeforeRunner] hooks run. Subcommands can retrieve any ancestor's
+// before [Beforer] hooks run. Subcommands can retrieve any ancestor's
 // flag value without declaring struct fields:
 //
 //	func (s *ServeCmd) Run(ctx context.Context, args []string) error {
@@ -176,7 +176,7 @@
 //   - [Get] — retrieve a value by name; returns zero value if missing or type mismatch
 //   - [Lookup] — retrieve a value by name; returns (value, ok) for safe checking
 //
-// User code can also call [Set] in a [BeforeRunner.Before] hook to share
+// User code can also call [Set] in a [Beforer.Before] hook to share
 // arbitrary values (database connections, loggers, etc.) with downstream
 // commands:
 //

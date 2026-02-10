@@ -295,7 +295,7 @@ func ExampleExecute_versioner() {
 	// Output: 2.1.0
 }
 
-// Deprecater interface prints a warning to stderr when a command runs.
+// Deprecator interface prints a warning to stderr when a command runs.
 // Use when retiring a command — keep it functional but warn users to migrate.
 type OldCmd struct{}
 

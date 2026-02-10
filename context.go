@@ -13,12 +13,12 @@ type contextStore struct {
 }
 
 // Leaf returns the leaf (target) command from the context. The framework
-// stores the leaf before [BeforeRunner] hooks run, so parent commands can
+// stores the leaf before [Beforer] hooks run, so parent commands can
 // inspect the leaf to make decisions based on consumer-defined interfaces.
 // Returns nil if called on a context that did not originate from [Execute].
 //
 // A common use case is centralized auth: define marker interfaces in your
-// application and check them in a root [BeforeRunner]:
+// application and check them in a root [Beforer]:
 //
 //	type Authenticated interface{ Authenticate() }
 //	type Authorized interface{ Permissions() []string }
@@ -52,9 +52,9 @@ func Leaf(ctx context.Context) Runner {
 // the value and should be used for subsequent operations.
 //
 // The framework automatically calls Set for every parsed flag value before
-// [BeforeRunner] hooks run, so flag values are available to all commands in
+// [Beforer] hooks run, so flag values are available to all commands in
 // the chain via [Get] or [Lookup]. User code can also call Set in a
-// [BeforeRunner.Before] hook to share arbitrary values with downstream commands:
+// [Beforer.Before] hook to share arbitrary values with downstream commands:
 //
 //	func (a *App) Before(ctx context.Context) (context.Context, error) {
 //	    db, err := openDB(a.DSN)

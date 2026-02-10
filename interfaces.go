@@ -45,9 +45,9 @@ type Versioner interface {
 	Version() string
 }
 
-// Deprecater marks a command as deprecated. A non-empty return value
+// Deprecator marks a command as deprecated. A non-empty return value
 // is printed as a warning to stderr before the command runs.
-type Deprecater interface {
+type Deprecator interface {
 	Deprecated() string
 }
 
@@ -88,21 +88,24 @@ type Exiter interface {
 
 // --- Lifecycle interfaces (all optional) ---
 
-// BeforeRunner runs setup logic before Run. Called parent-first through the
+// Beforer runs setup logic before Run. Called parent-first through the
 // command chain. The returned context flows forward to subsequent hooks and Run.
-type BeforeRunner interface {
+type Beforer interface {
 	Before(ctx context.Context) (context.Context, error)
 }
 
-// AfterRunner runs teardown logic after Run. Called child-first through the
+// Afterer runs teardown logic after Run. Called child-first through the
 // command chain. After hooks always run, even if Run returned an error.
-type AfterRunner interface {
+type Afterer interface {
 	After(ctx context.Context) error
 }
 
 // Validator validates command state after flag parsing and before Run.
+// The provided map contains the names of flags that were explicitly set
+// (via CLI args, env vars, config, or inheritance) — flags with only a
+// default value are not included.
 type Validator interface {
-	Validate() error
+	Validate(provided map[string]bool) error
 }
 
 // --- UX interfaces (all optional) ---
@@ -157,10 +160,10 @@ type ArgsValidator interface {
 	ValidateArgs(args []string) error
 }
 
-// Passthrough disables flag parsing for a command. When implemented,
+// Passthrougher disables flag parsing for a command. When implemented,
 // all remaining args are passed directly to Run as positional arguments.
 // Useful for wrapper commands like "exec" that forward args to child processes.
-type Passthrough interface {
+type Passthrougher interface {
 	Passthrough() bool
 }
 
@@ -247,8 +250,15 @@ type FlagParser interface {
 // HelpRenderer replaces the help rendering engine. Checked on the command
 // first, then falls back to the global renderer set via [WithHelpRenderer],
 // then to the default renderer.
+//
+// Parameters:
+//   - cmd: the leaf command being rendered
+//   - chain: the full command chain from root to leaf
+//   - flags: the leaf command's flags
+//   - args: the leaf command's positional arg definitions
+//   - globalFlags: visible flags from parent commands
 type HelpRenderer interface {
-	RenderHelp(cmd Runner, chain []Runner, flags []FlagDef) string
+	RenderHelp(cmd Runner, chain []Runner, flags []FlagDef, args []ArgDef, globalFlags []FlagDef) string
 }
 
 // FlagDef describes a single flag for use by custom [HelpRenderer] implementations.
