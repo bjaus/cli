@@ -149,6 +149,9 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 			if f.Short != "" {
 				flag = "`-" + f.Short + "`, " + flag
 			}
+			for _, alt := range f.Alt {
+				flag += ", `--" + alt + "`"
+			}
 			typeName := f.TypeName
 			if f.IsBool || f.IsCounter {
 				typeName = ""
@@ -241,6 +244,9 @@ func genManPage(cmd cli.Runner, chain []cli.Runner, header *ManHeader) string {
 				flag = fmt.Sprintf("\\fB-%s\\fR, \\fB--%s\\fR", f.Short, f.Name)
 			} else {
 				flag = fmt.Sprintf("\\fB--%s\\fR", f.Name)
+			}
+			for _, alt := range f.Alt {
+				flag += fmt.Sprintf(", \\fB--%s\\fR", alt)
 			}
 			if !f.IsBool && !f.IsCounter {
 				flag += " \\fI" + f.TypeName + "\\fR"

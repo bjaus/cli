@@ -267,7 +267,7 @@ func ExampleExecute_mapFlags() {
 // Use for features with sensible defaults that users may want to explicitly disable:
 // --color is on by default, --no-color turns it off.
 type ColorCmd struct {
-	Color bool `flag:"color" default:"true" negatable:"true" help:"Colorize output"`
+	Color bool `flag:"color" default:"true" negate:"true" help:"Colorize output"`
 }
 
 func (c *ColorCmd) Run(_ context.Context, _ []string) error {

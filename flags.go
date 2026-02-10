@@ -35,9 +35,15 @@ func ScanFlags(cmd Runner) []FlagDef {
 			name = camelToKebab(f.Name)
 		}
 
+		var aliases []string
+		if raw := f.Tag.Get("alt"); raw != "" {
+			aliases = strings.Split(raw, ",")
+		}
+
 		defs = append(defs, FlagDef{
 			Name:        name,
 			Short:       f.Tag.Get("short"),
+			Alt:         aliases,
 			Help:        f.Tag.Get("help"),
 			Default:     f.Tag.Get("default"),
 			Mask:        f.Tag.Get("mask"),
@@ -52,7 +58,7 @@ func ScanFlags(cmd Runner) []FlagDef {
 			TypeName:    flagTypeName(f.Type),
 			IsBool:      f.Type.Kind() == reflect.Bool,
 			IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
-			Negatable:   f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
+			Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
 		})
 	}
 
@@ -214,12 +220,18 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 			name = camelToKebab(f.Name)
 		}
 
+		var aliases []string
+		if raw := f.Tag.Get("alt"); raw != "" {
+			aliases = strings.Split(raw, ",")
+		}
+
 		fi := &fieldInfo{
 			index:   i,
 			envOnly: envOnly,
 			def: FlagDef{
 				Name:        name,
 				Short:       f.Tag.Get("short"),
+				Alt:         aliases,
 				Default:     f.Tag.Get("default"),
 				Mask:        f.Tag.Get("mask"),
 				Env:         envTag,
@@ -232,20 +244,22 @@ func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
 				Hidden:      f.Tag.Get("hidden") == "true",
 				IsBool:      f.Type.Kind() == reflect.Bool,
 				IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
-				Negatable:   f.Tag.Get("negatable") == "true" && f.Type.Kind() == reflect.Bool,
+				Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
 			},
 		}
 
 		if envOnly {
-			// Internal key — not reachable by CLI arg parsing.
 			fields[":"+strconv.Itoa(i)] = fi
 		} else {
 			fields["--"+name] = fi
 			if fi.def.Short != "" {
 				fields["-"+fi.def.Short] = fi
 			}
-			if fi.def.Negatable {
+			if fi.def.Negate {
 				fields["--no-"+name] = fi
+			}
+			for _, alias := range aliases {
+				fields["--"+alias] = fi
 			}
 		}
 	}
@@ -391,7 +405,7 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 			switch {
 			case fi.def.IsCounter:
 				field.SetInt(field.Int() + 1)
-			case fi.def.Negatable && strings.HasPrefix(arg, "--no-"):
+			case fi.def.Negate && strings.HasPrefix(arg, "--no-"):
 				field.SetBool(false)
 			default:
 				field.SetBool(true)
@@ -743,17 +757,22 @@ func validateStructTags(t reflect.Type) error {
 			return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
 		}
 
+		// Removed tag migration errors.
+		if f.Tag.Get("negatable") != "" {
+			return fmt.Errorf("%w: field %s: negatable renamed to negate", ErrInvalidTag, f.Name)
+		}
+
 		// Tags that require flag.
 		flagOnlyTags := map[string]string{
-			"short":       f.Tag.Get("short"),
-			"counter":     f.Tag.Get("counter"),
-			"negatable":   f.Tag.Get("negatable"),
-			"aliases":     f.Tag.Get("aliases"),
-			"sep":         f.Tag.Get("sep"),
-			"placeholder":  f.Tag.Get("placeholder"),
-			"hidden":      f.Tag.Get("hidden"),
-			"deprecated":  f.Tag.Get("deprecated"),
-			"category":    f.Tag.Get("category"),
+			"short":      f.Tag.Get("short"),
+			"counter":    f.Tag.Get("counter"),
+			"negate":     f.Tag.Get("negate"),
+			"alt":        f.Tag.Get("alt"),
+			"sep":        f.Tag.Get("sep"),
+			"placeholder": f.Tag.Get("placeholder"),
+			"hidden":     f.Tag.Get("hidden"),
+			"deprecated": f.Tag.Get("deprecated"),
+			"category":   f.Tag.Get("category"),
 		}
 		for tag, val := range flagOnlyTags {
 			if val != "" && !hasFlag {
@@ -765,8 +784,8 @@ func validateStructTags(t reflect.Type) error {
 		if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 {
 			return fmt.Errorf("%w: field %s: counter requires int type", ErrInvalidTag, f.Name)
 		}
-		if f.Tag.Get("negatable") == "true" && f.Type.Kind() != reflect.Bool {
-			return fmt.Errorf("%w: field %s: negatable requires bool type", ErrInvalidTag, f.Name)
+		if f.Tag.Get("negate") == "true" && f.Type.Kind() != reflect.Bool {
+			return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)
 		}
 		if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {
 			return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)

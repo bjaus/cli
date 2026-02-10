@@ -138,6 +138,9 @@ func bashWriteCommand(b *strings.Builder, cmd cli.Runner, path string, words []s
 		if f.Short != "" {
 			completions = append(completions, "-"+f.Short)
 		}
+		for _, alt := range f.Alt {
+			completions = append(completions, "--"+alt)
+		}
 	}
 
 	// Generate a conditional block based on the word position.
@@ -278,6 +281,9 @@ func psWriteCommands(b *strings.Builder, cmd cli.Runner, parentPath []string) {
 		completions = append(completions, "--"+f.Name)
 		if f.Short != "" {
 			completions = append(completions, "-"+f.Short)
+		}
+		for _, alt := range f.Alt {
+			completions = append(completions, "--"+alt)
 		}
 	}
 

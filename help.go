@@ -248,14 +248,17 @@ func writeFlagLines(b *strings.Builder, flags []FlagDef, maxLeft int) {
 func flagLeft(f *FlagDef) string {
 	var left string
 	switch {
-	case f.Negatable && f.Short != "":
+	case f.Negate && f.Short != "":
 		left = fmt.Sprintf("-%s, --[no-]%s", f.Short, f.Name)
-	case f.Negatable:
+	case f.Negate:
 		left = fmt.Sprintf("    --[no-]%s", f.Name)
 	case f.Short != "":
 		left = fmt.Sprintf("-%s, --%s", f.Short, f.Name)
 	default:
 		left = fmt.Sprintf("    --%s", f.Name)
+	}
+	for _, alt := range f.Alt {
+		left += ", --" + alt
 	}
 	if !f.IsBool && !f.IsCounter {
 		if f.Placeholder != "" {

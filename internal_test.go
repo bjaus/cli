@@ -1666,7 +1666,7 @@ func TestFlagTypeName_Map(t *testing.T) {
 // --- Negatable bool flags ---
 
 type internalNegatableCmd struct {
-	Verbose bool `flag:"verbose" short:"v" negatable:"true" help:"Verbose output"`
+	Verbose bool `flag:"verbose" short:"v" negate:"true" help:"Verbose output"`
 }
 
 func (c *internalNegatableCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -1703,7 +1703,7 @@ func TestScanFlags_Negatable(t *testing.T) {
 	cmd := &internalNegatableCmd{}
 	flags := ScanFlags(cmd)
 	require.Len(t, flags, 1)
-	assert.True(t, flags[0].Negatable)
+	assert.True(t, flags[0].Negate)
 	assert.True(t, flags[0].IsBool)
 }
 
@@ -2469,7 +2469,7 @@ func TestFindSubcommand_PrefixMatchAliasOnly(t *testing.T) {
 // --- Negatable without short flag in help ---
 
 type internalNegatableNoShortCmd struct {
-	Color bool `flag:"color" negatable:"true" help:"Colorize output"`
+	Color bool `flag:"color" negate:"true" help:"Colorize output"`
 }
 
 func (c *internalNegatableNoShortCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -4787,23 +4787,32 @@ func TestValidateStructTags(t *testing.T) {
 			},
 			wantErr: "counter requires int type",
 		},
-		"negatable without flag": {
+		"negate without flag": {
 			makeType: func() reflect.Type {
 				type cmd struct {
-					Force bool `negatable:"true"`
+					Force bool `negate:"true"`
 				}
 				return reflect.TypeOf(cmd{})
 			},
-			wantErr: "negatable requires flag",
+			wantErr: "negate requires flag",
 		},
-		"negatable on int": {
+		"negate on int": {
 			makeType: func() reflect.Type {
 				type cmd struct {
-					Count int `flag:"count" negatable:"true"`
+					Count int `flag:"count" negate:"true"`
 				}
 				return reflect.TypeOf(cmd{})
 			},
-			wantErr: "negatable requires bool type",
+			wantErr: "negate requires bool type",
+		},
+		"negatable tag present": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Color bool `flag:"color" negatable:"true"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "negatable renamed to negate",
 		},
 		"sep without flag": {
 			makeType: func() reflect.Type {
@@ -4822,6 +4831,24 @@ func TestValidateStructTags(t *testing.T) {
 				return reflect.TypeOf(cmd{})
 			},
 			wantErr: "sep requires slice type",
+		},
+		"alt without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `alt:"alias"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "alt requires flag",
+		},
+		"placeholder without flag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Name string `placeholder:"NAME"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "placeholder requires flag",
 		},
 		"hidden without flag": {
 			makeType: func() reflect.Type {
@@ -5214,4 +5241,102 @@ func TestScanFlags_Sep(t *testing.T) {
 	defs := ScanFlags(cmd)
 	require.Len(t, defs, 1)
 	assert.Equal(t, ",", defs[0].Sep)
+}
+
+// --- alt tag ---
+
+type altCmd struct {
+	Format string `flag:"format" alt:"output,out" short:"f" help:"Output format"`
+}
+
+func (c *altCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestAlt_PrimaryFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--format", "json"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
+}
+
+func TestAlt_AltFlag(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args []string
+	}{
+		"output": {args: []string{"--output", "json"}},
+		"out":    {args: []string{"--out", "json"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &altCmd{}
+			_, _, err := defaultParseFlags(cmd, tt.args, defaults())
+			require.NoError(t, err)
+			assert.Equal(t, "json", cmd.Format)
+		})
+	}
+}
+
+func TestAlt_ShortFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"-f", "json"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
+}
+
+func TestScanFlags_Alt(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altCmd{}
+	defs := ScanFlags(cmd)
+	require.Len(t, defs, 1)
+	assert.Equal(t, []string{"output", "out"}, defs[0].Alt)
+	assert.Equal(t, "f", defs[0].Short)
+}
+
+func TestAlt_InHelpOutput(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altCmd{}
+	chain := []Runner{cmd}
+	flags := ScanFlags(cmd)
+
+	text := defaultRenderHelp(cmd, chain, flags, nil, false)
+	assert.Contains(t, text, "--format")
+	assert.Contains(t, text, "--output")
+	assert.Contains(t, text, "--out")
+}
+
+func TestBuildFlagIndex_Alt(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altCmd{}
+	fi := buildFlagIndex(cmd)
+
+	assert.True(t, fi.has("--format"))
+	assert.True(t, fi.has("--output"))
+	assert.True(t, fi.has("--out"))
+	assert.True(t, fi.has("-f"))
+}
+
+type altEnumCmd struct {
+	Format string `flag:"format" alt:"output" enum:"json,yaml"`
+}
+
+func (c *altEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+
+func TestAlt_WithEnum(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altEnumCmd{}
+	_, _, err := defaultParseFlags(cmd, []string{"--output", "json"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "json", cmd.Format)
 }

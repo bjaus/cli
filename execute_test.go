@@ -908,7 +908,7 @@ func TestExecute_SliceFlags(t *testing.T) {
 // --- Negatable via Execute ---
 
 type negatableExtCmd struct {
-	Color bool `flag:"color" negatable:"true" default:"true"`
+	Color bool `flag:"color" negate:"true" default:"true"`
 }
 
 func (c *negatableExtCmd) Run(_ context.Context, _ []string) error { return nil }
@@ -1018,7 +1018,7 @@ func TestExecute_MapFlags(t *testing.T) {
 type flagScanTestCmd struct {
 	Format  string   `flag:"format" enum:"json,yaml"`
 	Verbose int      `flag:"verbose" counter:"true"`
-	Color   bool     `flag:"color" negatable:"true"`
+	Color   bool     `flag:"color" negate:"true"`
 	Tags    []string `flag:"tag"`
 }
 
@@ -1041,7 +1041,7 @@ func TestScanFlags_NewFields(t *testing.T) {
 
 	color := findFlagDef(defs, "color")
 	require.NotNil(t, color)
-	assert.True(t, color.Negatable)
+	assert.True(t, color.Negate)
 
 	tag := findFlagDef(defs, "tag")
 	require.NotNil(t, tag)

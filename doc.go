@@ -49,7 +49,7 @@
 //	    Env     map[string]string `flag:"env" help:"Environment variables as key=value"`
 //	    Format  string        `flag:"format" enum:"text,json,yaml" default:"text" help:"Output format"`
 //	    Verbose int           `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
-//	    Color   bool          `flag:"color" default:"true" negatable:"true" help:"Colorize output"`
+//	    Color   bool          `flag:"color" default:"true" negate:"true" help:"Colorize output"`
 //	}
 //
 // Supported types: string, int, int64, float64, bool, time.Duration,
@@ -66,7 +66,9 @@
 //   - enum — comma-separated list of allowed values
 //   - required — "true" to require the flag
 //   - counter — "true" to increment an int on each occurrence (-vvv)
-//   - negatable — "true" to add a --no- prefix that sets a bool to false
+//   - negate — "true" to add a --no- prefix that sets a bool to false
+//   - alt — comma-separated additional long flag names (e.g. "output,out")
+//   - sep — separator for splitting a single value into slice elements (e.g. ",")
 //   - hidden — "true" to hide the flag from help output (flag still works)
 //   - deprecated — message shown when the flag is used; prints a warning to stderr
 //   - category — group heading for the flag in help output

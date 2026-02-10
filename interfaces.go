@@ -255,6 +255,7 @@ type HelpRenderer interface {
 type FlagDef struct {
 	Name        string
 	Short       string
+	Alt         []string // additional long flag names
 	Help        string
 	Default     string
 	Mask        string // displayed instead of Default in help (e.g. "****" for secrets)
@@ -269,6 +270,6 @@ type FlagDef struct {
 	TypeName    string
 	IsBool      bool
 	IsCounter   bool
-	Negatable   bool
+	Negate      bool
 }
 

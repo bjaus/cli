@@ -29,8 +29,11 @@ func buildFlagIndex(cmd Runner) flagIndex {
 		if f.Short != "" {
 			idx.known["-"+f.Short] = boolLike
 		}
-		if f.Negatable {
+		if f.Negate {
 			idx.known["--no-"+f.Name] = true
+		}
+		for _, alt := range f.Alt {
+			idx.known["--"+alt] = boolLike
 		}
 	}
 	return idx

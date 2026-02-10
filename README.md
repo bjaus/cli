@@ -85,7 +85,7 @@ type ServeCmd struct {
     Env     map[string]string `flag:"env" help:"Environment variables as key=value"`
     Format  string        `flag:"format" enum:"text,json,yaml" default:"text" help:"Output format"`
     Verbose int           `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
-    Color   bool          `flag:"color" default:"true" negatable:"true" help:"Colorize output"`
+    Color   bool          `flag:"color" default:"true" negate:"true" help:"Colorize output"`
 }
 ```
 
@@ -105,7 +105,11 @@ type ServeCmd struct {
 | `enum` | Comma-separated allowed values |
 | `required` | `"true"` to require the flag |
 | `counter` | `"true"` to increment an int per occurrence |
-| `negatable` | `"true"` to add `--no-` prefix for bool flags |
+| `negate` | `"true"` to add `--no-` prefix for bool flags |
+| `alt` | Comma-separated additional long flag names |
+| `sep` | Separator for splitting values into slice elements |
+| `mask` | Displayed instead of default in help (e.g. `"****"`) |
+| `placeholder` | Value label shown in help (e.g. `"PORT"` in `--port PORT`) |
 
 ### Priority
 
@@ -174,7 +178,7 @@ $ app -v -v -v    # Verbose = 3
 Add `--no-` prefix to explicitly disable a default-on flag:
 
 ```go
-Color bool `flag:"color" default:"true" negatable:"true"`
+Color bool `flag:"color" default:"true" negate:"true"`
 ```
 
 ```
