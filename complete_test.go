@@ -332,6 +332,64 @@ func TestComputeCompletions_CompleterWithPrefix(t *testing.T) {
 	assert.Equal(t, []string{"alpha"}, completions)
 }
 
+// --- FlagCompleter tests ---
+
+type compFlagCompleterCmd struct {
+	Region string `flag:"region" short:"r" help:"AWS region"`
+	Format string `flag:"format" enum:"json,yaml" help:"Output format"`
+	Port   int    `flag:"port" help:"Port number"`
+}
+
+func (c *compFlagCompleterCmd) Run(_ context.Context) error { return nil }
+func (c *compFlagCompleterCmd) Name() string                { return "myapp" }
+func (c *compFlagCompleterCmd) CompleteFlag(_ context.Context, flag, _ string) ([]string, cli.ShellCompDirective) {
+	if flag == "region" {
+		return []string{"us-east-1", "us-west-2", "eu-west-1"}, cli.ShellCompDirectiveNoFileComp
+	}
+	return nil, cli.ShellCompDirectiveDefault
+}
+
+func TestComputeCompletions_FlagCompleter(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// FlagCompleter provides completions for --region.
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completions)
+}
+
+func TestComputeCompletions_FlagCompleterPrefix(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// Prefix "us-e" filters to "us-east-1".
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", "us-e"})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, []string{"us-east-1"}, completions)
+}
+
+func TestComputeCompletions_FlagCompleterNilFallsToEnum(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// FlagCompleter returns nil for --format; falls through to enum.
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--format", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Contains(t, completions, "json")
+	assert.Contains(t, completions, "yaml")
+}
+
+func TestComputeCompletions_FlagCompleterShortFlag(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// Short flag -r triggers FlagCompleter for "region".
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"-r", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completions)
+}
+
 func TestComputeCompletions_EnumValuePrefix(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}

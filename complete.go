@@ -101,17 +101,32 @@ func computeCompletions(ctx context.Context, root Runner, args []string) ([]stri
 		return candidates, directive
 	}
 
-	// If the previous arg was a value flag with Enum, complete enum values.
+	// If the previous arg was a value flag, try FlagCompleter then enum.
 	if len(contextArgs) > 0 {
 		prev := contextArgs[len(contextArgs)-1]
-		if enumVals := lookupFlagEnum(target, prev); enumVals != "" {
-			vals := strings.Split(enumVals, ",")
-			filtered := filterCompletionPrefix(vals, toComplete)
-			directive := ShellCompDirectiveNoFileComp
-			if len(filtered) == 0 {
-				directive = ShellCompDirectiveDefault
+		if flagName := lookupValueFlagName(target, prev); flagName != "" {
+			// Try FlagCompleter interface first.
+			if fc, ok := target.(FlagCompleter); ok {
+				results, directive := fc.CompleteFlag(ctx, flagName, toComplete)
+				if results != nil {
+					filtered := filterCompletionPrefix(results, toComplete)
+					if len(filtered) == 0 {
+						directive = ShellCompDirectiveDefault
+					}
+					return filtered, directive
+				}
 			}
-			return filtered, directive
+
+			// Fall through to enum completion.
+			if enumVals := lookupFlagEnum(target, prev); enumVals != "" {
+				vals := strings.Split(enumVals, ",")
+				filtered := filterCompletionPrefix(vals, toComplete)
+				directive := ShellCompDirectiveNoFileComp
+				if len(filtered) == 0 {
+					directive = ShellCompDirectiveDefault
+				}
+				return filtered, directive
+			}
 		}
 	}
 
@@ -197,6 +212,29 @@ func completeCommandFlags(cmd Runner, prefix string) []string {
 		}
 	}
 	return candidates
+}
+
+// lookupValueFlagName returns the flag name (without dashes) if arg matches
+// a non-bool, non-counter flag on cmd, or empty string if not found.
+func lookupValueFlagName(cmd Runner, arg string) string {
+	if !strings.HasPrefix(arg, "-") {
+		return ""
+	}
+	flags := ScanFlags(cmd)
+	name := strings.TrimLeft(arg, "-")
+	for i := range flags {
+		f := &flags[i]
+		if f.Hidden || f.Deprecated != "" {
+			continue
+		}
+		if f.IsBool || f.IsCounter {
+			continue
+		}
+		if f.Name == name || f.Short == name || slices.Contains(f.Alt, name) {
+			return f.Name
+		}
+	}
+	return ""
 }
 
 // lookupFlagEnum returns the Enum string for a flag matching the given arg

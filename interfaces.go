@@ -125,6 +125,21 @@ type Completer interface {
 	Complete(ctx context.Context, args []string) ([]string, ShellCompDirective)
 }
 
+// FlagCompleter provides dynamic completion for flag values. When a flag
+// requires a value and the command implements this interface, the framework
+// calls CompleteFlag with the flag name and partial value. Return nil to
+// fall through to enum-based completion.
+//
+//	func (c *DeployCmd) CompleteFlag(ctx context.Context, flag, value string) ([]string, ShellCompDirective) {
+//	    if flag == "region" {
+//	        return []string{"us-east-1", "us-west-2", "eu-west-1"}, cli.ShellCompDirectiveNoFileComp
+//	    }
+//	    return nil, cli.ShellCompDirectiveDefault
+//	}
+type FlagCompleter interface {
+	CompleteFlag(ctx context.Context, flag string, value string) ([]string, ShellCompDirective)
+}
+
 // Middlewarer provides middleware that wraps the command's Run function.
 type Middlewarer interface {
 	Middleware() []func(next RunFunc) RunFunc
