@@ -1,0 +1,236 @@
+package cli_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/bjaus/cli"
+)
+
+type mockDB struct {
+	name string
+}
+
+type Cache interface {
+	Get(key string) string
+}
+
+type redisCache struct {
+	prefix string
+}
+
+func (r *redisCache) Get(key string) string {
+	return r.prefix + ":" + key
+}
+
+// bindTestCmd has a field that can be injected by type.
+type bindTestCmd struct {
+	DB   *mockDB // will be injected if bound
+	Port int     `flag:"port" default:"8080"`
+
+	ran bool
+}
+
+func (c *bindTestCmd) Run(ctx context.Context) error {
+	c.ran = true
+	return nil
+}
+
+func TestBind(t *testing.T) {
+	db := &mockDB{name: "testdb"}
+	cmd := &bindTestCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.Bind(db),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if cmd.DB != db {
+		t.Errorf("DB not injected: got %v, want %v", cmd.DB, db)
+	}
+	if !cmd.ran {
+		t.Error("Run was not called")
+	}
+}
+
+type bindToCmd struct {
+	Cache Cache // interface field
+}
+
+func (c *bindToCmd) Run(ctx context.Context) error {
+	return nil
+}
+
+func TestBindTo(t *testing.T) {
+	cache := &redisCache{prefix: "test"}
+	cmd := &bindToCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindTo(cache, (*Cache)(nil)),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if cmd.Cache == nil {
+		t.Fatal("Cache not injected")
+	}
+	if cmd.Cache.Get("foo") != "test:foo" {
+		t.Errorf("Cache.Get returned wrong value: %s", cmd.Cache.Get("foo"))
+	}
+}
+
+func TestBindNoMatchingBinding(t *testing.T) {
+	// When no binding matches, field remains zero (no error).
+	cmd := &bindTestCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindTo(&redisCache{}, (*Cache)(nil)), // bind cache, not DB
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if cmd.DB != nil {
+		t.Error("DB should remain nil when not bound")
+	}
+}
+
+func TestBindNoBindingsProvided(t *testing.T) {
+	// When no Bind options are used, fields remain at zero value.
+	cmd := &bindTestCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if cmd.DB != nil {
+		t.Error("DB should remain nil")
+	}
+}
+
+type flagOnlyCmd struct {
+	Port int `flag:"port" default:"8080"`
+}
+
+func (c *flagOnlyCmd) Run(ctx context.Context) error { return nil }
+
+func TestBindSkipsFlagFields(t *testing.T) {
+	// Fields with flag tags should not be injected even if type matches.
+	c := &flagOnlyCmd{}
+
+	// Bind an int - it should NOT inject into Port because it has flag tag.
+	err := cli.Execute(context.Background(), c, []string{},
+		cli.Bind(9999),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if c.Port != 8080 {
+		t.Errorf("Port should be default 8080, got %d (was incorrectly injected)", c.Port)
+	}
+}
+
+// Test that bindings are available in subcommands.
+type bindParentCmd struct {
+	DB *mockDB
+}
+
+func (c *bindParentCmd) Subcommands() []cli.Runner {
+	return []cli.Runner{&bindChildCmd{}}
+}
+
+func (c *bindParentCmd) Run(ctx context.Context) error {
+	return nil
+}
+
+type bindChildCmd struct {
+	DB    *mockDB
+	Cache Cache
+}
+
+func (c *bindChildCmd) Name() string { return "child" }
+
+func (c *bindChildCmd) Run(ctx context.Context) error {
+	return nil
+}
+
+func TestBindInChain(t *testing.T) {
+	db := &mockDB{name: "shared"}
+	cache := &redisCache{prefix: "child"}
+	parent := &bindParentCmd{}
+
+	err := cli.Execute(context.Background(), parent, []string{"child"},
+		cli.Bind(db),
+		cli.BindTo(cache, (*Cache)(nil)),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if parent.DB != db {
+		t.Error("parent DB not injected")
+	}
+}
+
+type argsCmd struct {
+	Args cli.Args
+	ran  bool
+}
+
+func (c *argsCmd) Run(ctx context.Context) error {
+	c.ran = true
+	return nil
+}
+
+func TestBindArgs(t *testing.T) {
+	cmd := &argsCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{"foo", "bar", "baz"})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if !cmd.ran {
+		t.Error("Run was not called")
+	}
+
+	want := cli.Args{"foo", "bar", "baz"}
+	if len(cmd.Args) != len(want) {
+		t.Fatalf("wrong args length: got %d, want %d", len(cmd.Args), len(want))
+	}
+	for i, arg := range cmd.Args {
+		if arg != want[i] {
+			t.Errorf("args[%d] = %q, want %q", i, arg, want[i])
+		}
+	}
+}
+
+type argsFlagsCmd struct {
+	Args cli.Args
+	Port int `flag:"port" default:"8080"`
+}
+
+func (c *argsFlagsCmd) Run(ctx context.Context) error {
+	return nil
+}
+
+func TestBindArgsWithFlags(t *testing.T) {
+	c := &argsFlagsCmd{}
+
+	err := cli.Execute(context.Background(), c, []string{"--port", "3000", "file1.txt", "file2.txt"})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	if c.Port != 3000 {
+		t.Errorf("Port = %d, want 3000", c.Port)
+	}
+	if len(c.Args) != 2 || c.Args[0] != "file1.txt" || c.Args[1] != "file2.txt" {
+		t.Errorf("Args = %v, want [file1.txt file2.txt]", c.Args)
+	}
+}

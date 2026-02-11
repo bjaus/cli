@@ -22,15 +22,15 @@ import (
 
 type internalBareCmd struct{}
 
-func (c *internalBareCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBareCmd) Run(_ context.Context) error { return nil }
 
 type internalFullCmd struct{}
 
-func (c *internalFullCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalFullCmd) Name() string                            { return "serve" }
-func (c *internalFullCmd) Description() string                     { return "Start the server" }
-func (c *internalFullCmd) Aliases() []string                       { return []string{"s", "srv"} }
-func (c *internalFullCmd) Hidden() bool                            { return true }
+func (c *internalFullCmd) Run(_ context.Context) error { return nil }
+func (c *internalFullCmd) Name() string                { return "serve" }
+func (c *internalFullCmd) Description() string         { return "Start the server" }
+func (c *internalFullCmd) Aliases() []string           { return []string{"s", "srv"} }
+func (c *internalFullCmd) Hidden() bool                { return true }
 
 func (c *internalFullCmd) Examples() []Example {
 	return []Example{
@@ -89,7 +89,7 @@ func TestDefaultName(t *testing.T) {
 			wantName: "internalbarecmd",
 		},
 		"RunFunc": {
-			cmd:      RunFunc(func(_ context.Context, _ []string) error { return nil }),
+			cmd:      RunFunc(func(_ context.Context) error { return nil }),
 			wantName: "runfunc",
 		},
 	}
@@ -112,13 +112,13 @@ type internalFlaggedCmd struct {
 	Rate    float64       `flag:"rate" default:"1.5" help:"Rate limit"`
 }
 
-func (c *internalFlaggedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalFlaggedCmd) Run(_ context.Context) error { return nil }
 
 type internalRequiredFlagCmd struct {
 	Name string `flag:"name" required:"true" help:"Your name"`
 }
 
-func (c *internalRequiredFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalRequiredFlagCmd) Run(_ context.Context) error { return nil }
 
 type internalCustomValue struct {
 	vals []string
@@ -133,7 +133,7 @@ type internalCustomFlagCmd struct {
 	Tags internalCustomValue `flag:"tag" short:"t" help:"Tags"`
 }
 
-func (c *internalCustomFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalCustomFlagCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags(t *testing.T) {
 	t.Parallel()
@@ -403,7 +403,7 @@ func TestJaroWinkler(t *testing.T) {
 
 type internalParentWithSubs struct{}
 
-func (p *internalParentWithSubs) Run(_ context.Context, _ []string) error { return nil }
+func (p *internalParentWithSubs) Run(_ context.Context) error { return nil }
 
 func (p *internalParentWithSubs) Subcommands() []Runner {
 	return []Runner{
@@ -417,8 +417,8 @@ type internalNamedCmd struct {
 	n string
 }
 
-func (c *internalNamedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalNamedCmd) Name() string                            { return c.n }
+func (c *internalNamedCmd) Run(_ context.Context) error { return nil }
+func (c *internalNamedCmd) Name() string                { return c.n }
 
 func TestSuggestSubcommand(t *testing.T) {
 	t.Parallel()
@@ -447,7 +447,7 @@ type internalFlagCmdForSuggest struct {
 	Verbose bool `flag:"verbose" short:"v"`
 }
 
-func (c *internalFlagCmdForSuggest) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalFlagCmdForSuggest) Run(_ context.Context) error { return nil }
 
 func TestSuggestFlagName(t *testing.T) {
 	t.Parallel()
@@ -480,11 +480,12 @@ func TestSuggestSubcommand_NonParent(t *testing.T) {
 
 type internalDiscovererParent struct{}
 
-func (p *internalDiscovererParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalDiscovererParent) Name() string                            { return "myapp" }
+func (p *internalDiscovererParent) Run(_ context.Context) error { return nil }
+func (p *internalDiscovererParent) Name() string                { return "myapp" }
 func (p *internalDiscovererParent) Subcommands() []Runner {
 	return []Runner{&internalNamedCmd{n: "serve"}}
 }
+
 func (p *internalDiscovererParent) Discover() ([]Runner, error) {
 	return []Runner{&internalNamedCmd{n: "deploy-plugin"}}, nil
 }
@@ -517,31 +518,31 @@ func TestApplyMiddleware(t *testing.T) {
 
 	var order []string
 
-	base := RunFunc(func(_ context.Context, _ []string) error {
+	base := RunFunc(func(_ context.Context) error {
 		order = append(order, "run")
 		return nil
 	})
 
 	mw1 := func(next RunFunc) RunFunc {
-		return func(ctx context.Context, args []string) error {
+		return func(ctx context.Context) error {
 			order = append(order, "mw1-before")
-			err := next(ctx, args)
+			err := next(ctx)
 			order = append(order, "mw1-after")
 			return err
 		}
 	}
 
 	mw2 := func(next RunFunc) RunFunc {
-		return func(ctx context.Context, args []string) error {
+		return func(ctx context.Context) error {
 			order = append(order, "mw2-before")
-			err := next(ctx, args)
+			err := next(ctx)
 			order = append(order, "mw2-after")
 			return err
 		}
 	}
 
 	wrapped := applyMiddleware(base, []func(next RunFunc) RunFunc{mw1, mw2})
-	err := wrapped(context.Background(), nil)
+	err := wrapped(context.Background())
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{
@@ -557,13 +558,13 @@ func TestApplyMiddleware_Empty(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	base := RunFunc(func(_ context.Context, _ []string) error {
+	base := RunFunc(func(_ context.Context) error {
 		called = true
 		return nil
 	})
 
 	wrapped := applyMiddleware(base, nil)
-	err := wrapped(context.Background(), nil)
+	err := wrapped(context.Background())
 	require.NoError(t, err)
 	assert.True(t, called)
 }
@@ -571,21 +572,21 @@ func TestApplyMiddleware_Empty(t *testing.T) {
 func TestApplyMiddleware_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
-	base := RunFunc(func(_ context.Context, _ []string) error {
+	base := RunFunc(func(_ context.Context) error {
 		return Exit("fail", 1)
 	})
 
 	var afterCalled bool
 	mw := func(next RunFunc) RunFunc {
-		return func(ctx context.Context, args []string) error {
-			err := next(ctx, args)
+		return func(ctx context.Context) error {
+			err := next(ctx)
 			afterCalled = true
 			return err
 		}
 	}
 
 	wrapped := applyMiddleware(base, []func(next RunFunc) RunFunc{mw})
-	err := wrapped(context.Background(), nil)
+	err := wrapped(context.Background())
 	require.Error(t, err)
 	assert.True(t, afterCalled)
 }
@@ -597,18 +598,18 @@ type internalServeCmd struct {
 	Host string `flag:"host" default:"localhost" help:"Host"`
 }
 
-func (s *internalServeCmd) Run(_ context.Context, _ []string) error { return nil }
-func (s *internalServeCmd) Name() string                            { return "serve" }
-func (s *internalServeCmd) Description() string                     { return "Start the server" }
+func (s *internalServeCmd) Run(_ context.Context) error { return nil }
+func (s *internalServeCmd) Name() string                { return "serve" }
+func (s *internalServeCmd) Description() string         { return "Start the server" }
 
 type internalRootCmd struct {
 	serve *internalServeCmd
 }
 
-func (r *internalRootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (r *internalRootCmd) Name() string                            { return "app" }
-func (r *internalRootCmd) Description() string                     { return "Test application" }
-func (r *internalRootCmd) Subcommands() []Runner                   { return []Runner{r.serve} }
+func (r *internalRootCmd) Run(_ context.Context) error { return nil }
+func (r *internalRootCmd) Name() string                { return "app" }
+func (r *internalRootCmd) Description() string         { return "Test application" }
+func (r *internalRootCmd) Subcommands() []Runner       { return []Runner{r.serve} }
 
 func TestDefaultRenderHelp_Basic(t *testing.T) {
 	t.Parallel()
@@ -644,17 +645,17 @@ func TestDefaultRenderHelp_WithSubcommands(t *testing.T) {
 
 type internalHiddenSubCmd struct{}
 
-func (c *internalHiddenSubCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalHiddenSubCmd) Name() string                            { return "secret" }
-func (c *internalHiddenSubCmd) Hidden() bool                            { return true }
+func (c *internalHiddenSubCmd) Run(_ context.Context) error { return nil }
+func (c *internalHiddenSubCmd) Name() string                { return "secret" }
+func (c *internalHiddenSubCmd) Hidden() bool                { return true }
 
 type internalParentWithHidden struct {
 	child Runner
 }
 
-func (p *internalParentWithHidden) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalParentWithHidden) Name() string                            { return "app" }
-func (p *internalParentWithHidden) Subcommands() []Runner                   { return []Runner{p.child} }
+func (p *internalParentWithHidden) Run(_ context.Context) error { return nil }
+func (p *internalParentWithHidden) Name() string                { return "app" }
+func (p *internalParentWithHidden) Subcommands() []Runner       { return []Runner{p.child} }
 
 func TestDefaultRenderHelp_HiddenSubcommands(t *testing.T) {
 	t.Parallel()
@@ -937,9 +938,9 @@ func TestSeparateLeafArgs(t *testing.T) {
 
 type internalEmptyParent struct{}
 
-func (p *internalEmptyParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalEmptyParent) Name() string                            { return "empty" }
-func (p *internalEmptyParent) Subcommands() []Runner                   { return nil }
+func (p *internalEmptyParent) Run(_ context.Context) error { return nil }
+func (p *internalEmptyParent) Name() string                { return "empty" }
+func (p *internalEmptyParent) Subcommands() []Runner       { return nil }
 
 func TestResolveCommand(t *testing.T) {
 	t.Parallel()
@@ -995,7 +996,7 @@ type internalFlagParserCmd struct {
 	parseCalled bool
 }
 
-func (c *internalFlagParserCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalFlagParserCmd) Run(_ context.Context) error { return nil }
 
 func (c *internalFlagParserCmd) ParseFlags(_ Runner, args []string) ([]string, error) {
 	c.parseCalled = true
@@ -1039,7 +1040,7 @@ type internalAfterErrorCmd struct {
 	errMsg string
 }
 
-func (c *internalAfterErrorCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalAfterErrorCmd) Run(_ context.Context) error { return nil }
 
 func (c *internalAfterErrorCmd) After(_ context.Context) error {
 	return fmt.Errorf("%s", c.errMsg)
@@ -1108,7 +1109,7 @@ type internalBoolValueCmd struct {
 	Debug bool `flag:"debug"`
 }
 
-func (c *internalBoolValueCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBoolValueCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_BoolEquals(t *testing.T) {
 	t.Parallel()
@@ -1130,7 +1131,7 @@ func TestDefaultParseFlags_BoolInvalidValue(t *testing.T) {
 func TestDefaultParseFlags_NonStruct(t *testing.T) {
 	t.Parallel()
 
-	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	cmd := RunFunc(func(_ context.Context) error { return nil })
 	remaining, _, err := defaultParseFlags(cmd, []string{"arg1", "arg2"}, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"arg1", "arg2"}, remaining)
@@ -1140,7 +1141,7 @@ type internalBadDefaultCmd struct {
 	Port int `flag:"port" default:"not-a-number"`
 }
 
-func (c *internalBadDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBadDefaultCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_InvalidDefault(t *testing.T) {
 	t.Parallel()
@@ -1154,7 +1155,7 @@ type internalEnvCmd struct {
 	Port int `flag:"port" env:"BAD_PORT"`
 }
 
-func (c *internalEnvCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalEnvCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_InvalidEnv(t *testing.T) {
 	t.Setenv("BAD_PORT", "not-a-number")
@@ -1186,7 +1187,7 @@ type internalUnsupportedFieldCmd struct {
 	Ch chan int `flag:"ch"`
 }
 
-func (c *internalUnsupportedFieldCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalUnsupportedFieldCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_UnsupportedType(t *testing.T) {
 	t.Parallel()
@@ -1274,9 +1275,9 @@ type internalBeforeParent struct {
 	child       Runner
 }
 
-func (c *internalBeforeParent) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalBeforeParent) Name() string                            { return "parent" }
-func (c *internalBeforeParent) Subcommands() []Runner                   { return []Runner{c.child} }
+func (c *internalBeforeParent) Run(_ context.Context) error { return nil }
+func (c *internalBeforeParent) Name() string                { return "parent" }
+func (c *internalBeforeParent) Subcommands() []Runner       { return []Runner{c.child} }
 
 func (c *internalBeforeParent) Before(ctx context.Context) (context.Context, error) {
 	return ctx, nil
@@ -1289,8 +1290,8 @@ func (c *internalBeforeParent) After(_ context.Context) error {
 
 type internalBeforeFailChild struct{}
 
-func (c *internalBeforeFailChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalBeforeFailChild) Name() string                            { return "child" }
+func (c *internalBeforeFailChild) Run(_ context.Context) error { return nil }
+func (c *internalBeforeFailChild) Name() string                { return "child" }
 
 func (c *internalBeforeFailChild) Before(_ context.Context) (context.Context, error) {
 	return nil, fmt.Errorf("before failed")
@@ -1366,8 +1367,8 @@ func TestExecute_SuggestNoMatch(t *testing.T) {
 
 type internalNoDescCmd struct{}
 
-func (c *internalNoDescCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalNoDescCmd) Name() string                            { return "nodesc" }
+func (c *internalNoDescCmd) Run(_ context.Context) error { return nil }
+func (c *internalNoDescCmd) Name() string                { return "nodesc" }
 
 func TestDefaultRenderHelp_NoDescription(t *testing.T) {
 	t.Parallel()
@@ -1384,8 +1385,8 @@ type internalEnvFlagCmd struct {
 	Port int `flag:"port" env:"PORT" help:"Port"`
 }
 
-func (c *internalEnvFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalEnvFlagCmd) Name() string                            { return "envtest" }
+func (c *internalEnvFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalEnvFlagCmd) Name() string                { return "envtest" }
 
 func TestDefaultRenderHelp_FlagWithEnv(t *testing.T) {
 	t.Parallel()
@@ -1402,13 +1403,13 @@ func TestDefaultRenderHelp_FlagWithEnv(t *testing.T) {
 
 type internalAliasedSubCmd struct{}
 
-func (c *internalAliasedSubCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalAliasedSubCmd) Name() string                            { return "deploy" }
-func (c *internalAliasedSubCmd) Aliases() []string                       { return []string{"dep"} }
+func (c *internalAliasedSubCmd) Run(_ context.Context) error { return nil }
+func (c *internalAliasedSubCmd) Name() string                { return "deploy" }
+func (c *internalAliasedSubCmd) Aliases() []string           { return []string{"dep"} }
 
 type internalParentMixed struct{}
 
-func (p *internalParentMixed) Run(_ context.Context, _ []string) error { return nil }
+func (p *internalParentMixed) Run(_ context.Context) error { return nil }
 
 func (p *internalParentMixed) Subcommands() []Runner {
 	return []Runner{&internalAliasedSubCmd{}, &internalHiddenSubCmd{}}
@@ -1435,8 +1436,8 @@ type internalNoShortFlagCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port"`
 }
 
-func (c *internalNoShortFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalNoShortFlagCmd) Name() string                            { return "noshort" }
+func (c *internalNoShortFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalNoShortFlagCmd) Name() string                { return "noshort" }
 
 func TestDefaultRenderHelp_NoShortFlag(t *testing.T) {
 	t.Parallel()
@@ -1453,8 +1454,8 @@ func TestDefaultRenderHelp_NoShortFlag(t *testing.T) {
 
 type internalExampleNoDescCmd struct{}
 
-func (c *internalExampleNoDescCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalExampleNoDescCmd) Name() string                            { return "extest" }
+func (c *internalExampleNoDescCmd) Run(_ context.Context) error { return nil }
+func (c *internalExampleNoDescCmd) Name() string                { return "extest" }
 
 func (c *internalExampleNoDescCmd) Examples() []Example {
 	return []Example{{Command: "extest --flag"}}
@@ -1495,7 +1496,7 @@ type internalValueUnmarshalerCmd struct {
 	Val internalValueReceiverUnmarshaler `flag:"val"`
 }
 
-func (c *internalValueUnmarshalerCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalValueUnmarshalerCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_ValueReceiverUnmarshaler(t *testing.T) {
 	t.Parallel()
@@ -1534,7 +1535,7 @@ type internalInt64Cmd struct {
 	Big int64 `flag:"big"`
 }
 
-func (c *internalInt64Cmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalInt64Cmd) Run(_ context.Context) error { return nil }
 
 func TestFlagTypeName_Int64(t *testing.T) {
 	t.Parallel()
@@ -1557,12 +1558,12 @@ func TestDefaultParseFlags_Int64(t *testing.T) {
 // --- Slice flag support ---
 
 type internalSliceCmd struct {
-	Tags    []string `flag:"tag" short:"t" help:"Tags"`
-	Ports   []int    `flag:"port" help:"Ports"`
+	Tags    []string  `flag:"tag" short:"t" help:"Tags"`
+	Ports   []int     `flag:"port" help:"Ports"`
 	Weights []float64 `flag:"weight" help:"Weights"`
 }
 
-func (c *internalSliceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalSliceCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Slice(t *testing.T) {
 	t.Parallel()
@@ -1586,8 +1587,8 @@ func TestDefaultParseFlags_Slice(t *testing.T) {
 			wantWeights: []float64{1.5, 2.5},
 		},
 		"mixed": {
-			args:     []string{"--tag", "a", "-t", "b", "--port", "80"},
-			wantTags: []string{"a", "b"},
+			args:      []string{"--tag", "a", "-t", "b", "--port", "80"},
+			wantTags:  []string{"a", "b"},
 			wantPorts: []int{80},
 		},
 	}
@@ -1642,15 +1643,15 @@ type internalMapCmd struct {
 	Headers map[string]string `flag:"header" short:"H" help:"HTTP headers"`
 }
 
-func (c *internalMapCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalMapCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Map(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		args       []string
-		wantMap    map[string]string
-		assertErr  require.ErrorAssertionFunc
+		args      []string
+		wantMap   map[string]string
+		assertErr require.ErrorAssertionFunc
 	}{
 		"single entry": {
 			args:      []string{"--header", "Content-Type=application/json"},
@@ -1698,7 +1699,7 @@ type internalNegatableCmd struct {
 	Verbose bool `flag:"verbose" short:"v" negate:"true" help:"Verbose output"`
 }
 
-func (c *internalNegatableCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalNegatableCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Negatable(t *testing.T) {
 	t.Parallel()
@@ -1707,9 +1708,9 @@ func TestDefaultParseFlags_Negatable(t *testing.T) {
 		args        []string
 		wantVerbose bool
 	}{
-		"enable":  {args: []string{"--verbose"}, wantVerbose: true},
-		"negate":  {args: []string{"--no-verbose"}, wantVerbose: false},
-		"short":   {args: []string{"-v"}, wantVerbose: true},
+		"enable":             {args: []string{"--verbose"}, wantVerbose: true},
+		"negate":             {args: []string{"--no-verbose"}, wantVerbose: false},
+		"short":              {args: []string{"-v"}, wantVerbose: true},
 		"enable then negate": {args: []string{"--verbose", "--no-verbose"}, wantVerbose: false},
 		"negate then enable": {args: []string{"--no-verbose", "--verbose"}, wantVerbose: true},
 	}
@@ -1754,7 +1755,7 @@ type internalCounterCmd struct {
 	Verbosity int `flag:"verbose" short:"v" counter:"true" help:"Verbosity level"`
 }
 
-func (c *internalCounterCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalCounterCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Counter(t *testing.T) {
 	t.Parallel()
@@ -1807,7 +1808,7 @@ type internalEnumCmd struct {
 	Format string `flag:"format" enum:"json,yaml,text" default:"json" help:"Output format"`
 }
 
-func (c *internalEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalEnumCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Enum(t *testing.T) {
 	t.Parallel()
@@ -1855,7 +1856,7 @@ type internalEnumNoDefaultCmd struct {
 	Format string `flag:"format" enum:"json,yaml"`
 }
 
-func (c *internalEnumNoDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalEnumNoDefaultCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_EnumNoDefault(t *testing.T) {
 	t.Parallel()
@@ -1911,17 +1912,17 @@ func TestParseScalarValue(t *testing.T) {
 		want      any
 		assertErr require.ErrorAssertionFunc
 	}{
-		"string":   {typ: reflect.TypeOf(""), value: "hello", want: "hello", assertErr: require.NoError},
-		"int":      {typ: reflect.TypeOf(0), value: "42", want: 42, assertErr: require.NoError},
-		"int64":    {typ: reflect.TypeOf(int64(0)), value: "99", want: int64(99), assertErr: require.NoError},
-		"float64":  {typ: reflect.TypeOf(0.0), value: "3.14", want: 3.14, assertErr: require.NoError},
-		"bool":     {typ: reflect.TypeOf(false), value: "true", want: true, assertErr: require.NoError},
-		"duration": {typ: reflect.TypeOf(time.Duration(0)), value: "5s", want: 5 * time.Second, assertErr: require.NoError},
-		"bad int":  {typ: reflect.TypeOf(0), value: "abc", assertErr: require.Error},
-		"bad float": {typ: reflect.TypeOf(0.0), value: "xyz", assertErr: require.Error},
-		"bad bool":  {typ: reflect.TypeOf(false), value: "nope", assertErr: require.Error},
+		"string":       {typ: reflect.TypeOf(""), value: "hello", want: "hello", assertErr: require.NoError},
+		"int":          {typ: reflect.TypeOf(0), value: "42", want: 42, assertErr: require.NoError},
+		"int64":        {typ: reflect.TypeOf(int64(0)), value: "99", want: int64(99), assertErr: require.NoError},
+		"float64":      {typ: reflect.TypeOf(0.0), value: "3.14", want: 3.14, assertErr: require.NoError},
+		"bool":         {typ: reflect.TypeOf(false), value: "true", want: true, assertErr: require.NoError},
+		"duration":     {typ: reflect.TypeOf(time.Duration(0)), value: "5s", want: 5 * time.Second, assertErr: require.NoError},
+		"bad int":      {typ: reflect.TypeOf(0), value: "abc", assertErr: require.Error},
+		"bad float":    {typ: reflect.TypeOf(0.0), value: "xyz", assertErr: require.Error},
+		"bad bool":     {typ: reflect.TypeOf(false), value: "nope", assertErr: require.Error},
 		"bad duration": {typ: reflect.TypeOf(time.Duration(0)), value: "bad", assertErr: require.Error},
-		"unsupported": {typ: reflect.TypeOf(make(chan int)), assertErr: require.Error},
+		"unsupported":  {typ: reflect.TypeOf(make(chan int)), assertErr: require.Error},
 	}
 
 	for name, tt := range tests {
@@ -1981,9 +1982,9 @@ func TestFindSubcommand_PrefixMatch(t *testing.T) {
 
 type internalAliasedForPrefix struct{}
 
-func (c *internalAliasedForPrefix) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalAliasedForPrefix) Name() string                            { return "deploy" }
-func (c *internalAliasedForPrefix) Aliases() []string                       { return []string{"dep"} }
+func (c *internalAliasedForPrefix) Run(_ context.Context) error { return nil }
+func (c *internalAliasedForPrefix) Name() string                { return "deploy" }
+func (c *internalAliasedForPrefix) Aliases() []string           { return []string{"dep"} }
 
 func TestFindSubcommand_PrefixMatchAliasAmbiguous(t *testing.T) {
 	t.Parallel()
@@ -2060,8 +2061,8 @@ func TestVersionRequested(t *testing.T) {
 		positional []string
 		want       bool
 	}{
-		"long":       {positional: []string{"--version"}, want: true},
-		"short":      {positional: []string{"-V"}, want: true},
+		"long":        {positional: []string{"--version"}, want: true},
+		"short":       {positional: []string{"-V"}, want: true},
 		"not present": {positional: []string{"arg1"}, want: false},
 	}
 
@@ -2124,10 +2125,10 @@ type internalDefaultParent struct {
 	child *internalNamedCmd
 }
 
-func (p *internalDefaultParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalDefaultParent) Name() string                            { return "app" }
-func (p *internalDefaultParent) Subcommands() []Runner                   { return []Runner{p.child} }
-func (p *internalDefaultParent) Fallback() Runner                        { return p.def }
+func (p *internalDefaultParent) Run(_ context.Context) error { return nil }
+func (p *internalDefaultParent) Name() string                { return "app" }
+func (p *internalDefaultParent) Subcommands() []Runner       { return []Runner{p.child} }
+func (p *internalDefaultParent) Fallback() Runner            { return p.def }
 
 func TestResolveCommand_Fallback(t *testing.T) {
 	t.Parallel()
@@ -2218,18 +2219,18 @@ type internalCatCmd struct {
 	cat string
 }
 
-func (c *internalCatCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalCatCmd) Name() string                            { return c.n }
-func (c *internalCatCmd) Description() string                     { return c.n + " command" }
-func (c *internalCatCmd) Category() string                        { return c.cat }
+func (c *internalCatCmd) Run(_ context.Context) error { return nil }
+func (c *internalCatCmd) Name() string                { return c.n }
+func (c *internalCatCmd) Description() string         { return c.n + " command" }
+func (c *internalCatCmd) Category() string            { return c.cat }
 
 type internalCatParent struct {
 	subs []Runner
 }
 
-func (p *internalCatParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalCatParent) Name() string                            { return "app" }
-func (p *internalCatParent) Subcommands() []Runner                   { return p.subs }
+func (p *internalCatParent) Run(_ context.Context) error { return nil }
+func (p *internalCatParent) Name() string                { return "app" }
+func (p *internalCatParent) Subcommands() []Runner       { return p.subs }
 
 func TestDefaultRenderHelp_Categories(t *testing.T) {
 	t.Parallel()
@@ -2294,7 +2295,7 @@ type internalDurationSliceCmd struct {
 	Timeouts []time.Duration `flag:"timeout" help:"Timeouts"`
 }
 
-func (c *internalDurationSliceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalDurationSliceCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_DurationSlice(t *testing.T) {
 	t.Parallel()
@@ -2320,7 +2321,7 @@ type internalInt64SliceCmd struct {
 	IDs []int64 `flag:"id" help:"IDs"`
 }
 
-func (c *internalInt64SliceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalInt64SliceCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_Int64Slice(t *testing.T) {
 	t.Parallel()
@@ -2337,7 +2338,7 @@ type internalBadSliceCmd struct {
 	Items []chan int `flag:"item"`
 }
 
-func (c *internalBadSliceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBadSliceCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_SliceUnsupportedElem(t *testing.T) {
 	t.Parallel()
@@ -2353,7 +2354,7 @@ type internalBadMapKeyCmd struct {
 	Items map[chan int]string `flag:"item"`
 }
 
-func (c *internalBadMapKeyCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBadMapKeyCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_MapUnsupportedKey(t *testing.T) {
 	t.Parallel()
@@ -2369,7 +2370,7 @@ type internalBadMapValCmd struct {
 	Items map[string]chan int `flag:"item"`
 }
 
-func (c *internalBadMapValCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBadMapValCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_MapUnsupportedValue(t *testing.T) {
 	t.Parallel()
@@ -2385,7 +2386,7 @@ type internalEnumEnvCmd struct {
 	Format string `flag:"format" enum:"json,yaml" env:"TEST_FORMAT"`
 }
 
-func (c *internalEnumEnvCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalEnumEnvCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_EnumEnv(t *testing.T) {
 	t.Setenv("TEST_FORMAT", "xml")
@@ -2404,7 +2405,7 @@ type internalBoolSliceCmd struct {
 	Flags []bool `flag:"flag" help:"Flags"`
 }
 
-func (c *internalBoolSliceCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalBoolSliceCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultParseFlags_BoolSlice(t *testing.T) {
 	t.Parallel()
@@ -2431,9 +2432,9 @@ type internalShortOptParent struct {
 	child   Runner
 }
 
-func (p *internalShortOptParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalShortOptParent) Name() string                            { return "app" }
-func (p *internalShortOptParent) Subcommands() []Runner                   { return []Runner{p.child} }
+func (p *internalShortOptParent) Run(_ context.Context) error { return nil }
+func (p *internalShortOptParent) Name() string                { return "app" }
+func (p *internalShortOptParent) Subcommands() []Runner       { return []Runner{p.child} }
 
 func TestResolveCommand_ShortOptionHandlingInScanPhase(t *testing.T) {
 	t.Parallel()
@@ -2453,9 +2454,9 @@ func TestResolveCommand_ShortOptionHandlingInScanPhase(t *testing.T) {
 
 type internalPrefixAliased struct{}
 
-func (c *internalPrefixAliased) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalPrefixAliased) Name() string                            { return "deploy" }
-func (c *internalPrefixAliased) Aliases() []string                       { return []string{"dp"} }
+func (c *internalPrefixAliased) Run(_ context.Context) error { return nil }
+func (c *internalPrefixAliased) Name() string                { return "deploy" }
+func (c *internalPrefixAliased) Aliases() []string           { return []string{"dp"} }
 
 func TestFindSubcommand_PrefixMatchAlias(t *testing.T) {
 	t.Parallel()
@@ -2481,9 +2482,9 @@ func TestFindSubcommand_PrefixMatchAlias(t *testing.T) {
 // Test unique prefix match via alias only (name doesn't prefix-match).
 type internalOnlyAliasPrefix struct{}
 
-func (c *internalOnlyAliasPrefix) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalOnlyAliasPrefix) Name() string                            { return "xdeploy" }
-func (c *internalOnlyAliasPrefix) Aliases() []string                       { return []string{"dp"} }
+func (c *internalOnlyAliasPrefix) Run(_ context.Context) error { return nil }
+func (c *internalOnlyAliasPrefix) Name() string                { return "xdeploy" }
+func (c *internalOnlyAliasPrefix) Aliases() []string           { return []string{"dp"} }
 
 func TestFindSubcommand_PrefixMatchAliasOnly(t *testing.T) {
 	t.Parallel()
@@ -2501,7 +2502,7 @@ type internalNegatableNoShortCmd struct {
 	Color bool `flag:"color" negate:"true" help:"Colorize output"`
 }
 
-func (c *internalNegatableNoShortCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalNegatableNoShortCmd) Run(_ context.Context) error { return nil }
 
 func TestDefaultRenderHelp_NegatableNoShort(t *testing.T) {
 	t.Parallel()
@@ -2603,9 +2604,9 @@ type internalDiscoverParent struct {
 	discoverFn func() ([]Runner, error)
 }
 
-func (d *internalDiscoverParent) Run(_ context.Context, _ []string) error { return nil }
-func (d *internalDiscoverParent) Name() string                            { return "root" }
-func (d *internalDiscoverParent) Subcommands() []Runner                   { return d.subs }
+func (d *internalDiscoverParent) Run(_ context.Context) error { return nil }
+func (d *internalDiscoverParent) Name() string                { return "root" }
+func (d *internalDiscoverParent) Subcommands() []Runner       { return d.subs }
 
 func (d *internalDiscoverParent) Discover() ([]Runner, error) {
 	if d.discoverFn != nil {
@@ -2616,8 +2617,8 @@ func (d *internalDiscoverParent) Discover() ([]Runner, error) {
 
 type internalSimpleCmd struct{ n string }
 
-func (s *internalSimpleCmd) Run(_ context.Context, _ []string) error { return nil }
-func (s *internalSimpleCmd) Name() string                            { return s.n }
+func (s *internalSimpleCmd) Run(_ context.Context) error { return nil }
+func (s *internalSimpleCmd) Name() string                { return s.n }
 
 func TestAllSubcommands_MergesParentAndDiscoverer(t *testing.T) {
 	t.Parallel()
@@ -2666,9 +2667,9 @@ func TestAllSubcommands_DiscoverError(t *testing.T) {
 
 type internalParentOnlyCmd struct{ subs []Runner }
 
-func (p *internalParentOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
-func (p *internalParentOnlyCmd) Name() string                            { return "root" }
-func (p *internalParentOnlyCmd) Subcommands() []Runner                   { return p.subs }
+func (p *internalParentOnlyCmd) Run(_ context.Context) error { return nil }
+func (p *internalParentOnlyCmd) Name() string                { return "root" }
+func (p *internalParentOnlyCmd) Subcommands() []Runner       { return p.subs }
 
 func TestAllSubcommands_ParentOnly(t *testing.T) {
 	t.Parallel()
@@ -2685,8 +2686,8 @@ func TestAllSubcommands_ParentOnly(t *testing.T) {
 
 type internalDiscovererOnlyCmd struct{ discovered []Runner }
 
-func (d *internalDiscovererOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
-func (d *internalDiscovererOnlyCmd) Name() string                            { return "root" }
+func (d *internalDiscovererOnlyCmd) Run(_ context.Context) error { return nil }
+func (d *internalDiscovererOnlyCmd) Name() string                { return "root" }
 
 func (d *internalDiscovererOnlyCmd) Discover() ([]Runner, error) {
 	return d.discovered, nil
@@ -2740,19 +2741,19 @@ type internalInheritParent struct {
 	Env string `flag:"env"`
 }
 
-func (p *internalInheritParent) Run(_ context.Context, _ []string) error { return nil }
+func (p *internalInheritParent) Run(_ context.Context) error { return nil }
 
 type internalInheritChild struct {
 	Env string `flag:"env"`
 }
 
-func (c *internalInheritChild) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalInheritChild) Run(_ context.Context) error { return nil }
 
 // Test that a non-struct ancestor (RunFunc) is safely skipped.
 func TestInheritFlags_NonStructAncestor(t *testing.T) {
 	t.Parallel()
 
-	parent := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	parent := RunFunc(func(_ context.Context) error { return nil })
 	child := &internalInheritChild{}
 	chain := []Runner{parent, child}
 	provided := []map[string]bool{nil, nil}
@@ -2776,7 +2777,6 @@ func TestInheritFlags_NilProvidedMap(t *testing.T) {
 	assert.Equal(t, "prod", child.Env)
 	assert.True(t, provided[1]["env"])
 }
-
 
 // --- applyDefaults ---
 
@@ -3029,8 +3029,8 @@ type internalHiddenFlagCmd struct {
 	Debug bool `flag:"debug" hidden:"true" help:"Debug mode"`
 }
 
-func (c *internalHiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalHiddenFlagCmd) Name() string                            { return "app" }
+func (c *internalHiddenFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalHiddenFlagCmd) Name() string                { return "app" }
 
 func TestScanFlags_Hidden(t *testing.T) {
 	t.Parallel()
@@ -3065,8 +3065,8 @@ type internalAllHiddenFlagCmd struct {
 	Debug bool `flag:"debug" hidden:"true"`
 }
 
-func (c *internalAllHiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalAllHiddenFlagCmd) Name() string                            { return "app" }
+func (c *internalAllHiddenFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalAllHiddenFlagCmd) Name() string                { return "app" }
 
 func TestDefaultRenderHelp_AllFlagsHidden(t *testing.T) {
 	t.Parallel()
@@ -3089,8 +3089,8 @@ type internalDeprecatedFlagCmd struct {
 	OldPort int `flag:"old-port" deprecated:"use --port instead" help:"Legacy port"`
 }
 
-func (c *internalDeprecatedFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalDeprecatedFlagCmd) Name() string                            { return "app" }
+func (c *internalDeprecatedFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalDeprecatedFlagCmd) Name() string                { return "app" }
 
 func TestScanFlags_Deprecated(t *testing.T) {
 	t.Parallel()
@@ -3129,8 +3129,8 @@ type internalFlagCategoryCmd struct {
 	Format  string `flag:"format" default:"text" help:"Output format" category:"Output"`
 }
 
-func (c *internalFlagCategoryCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalFlagCategoryCmd) Name() string                            { return "app" }
+func (c *internalFlagCategoryCmd) Run(_ context.Context) error { return nil }
+func (c *internalFlagCategoryCmd) Name() string                { return "app" }
 
 func TestScanFlags_Category(t *testing.T) {
 	t.Parallel()
@@ -3174,8 +3174,8 @@ type internalAllCatFlagCmd struct {
 	Port int    `flag:"port" help:"Port" category:"Server"`
 }
 
-func (c *internalAllCatFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalAllCatFlagCmd) Name() string                            { return "app" }
+func (c *internalAllCatFlagCmd) Run(_ context.Context) error { return nil }
+func (c *internalAllCatFlagCmd) Name() string                { return "app" }
 
 func TestDefaultRenderHelp_AllFlagsCategorized(t *testing.T) {
 	t.Parallel()
@@ -3198,9 +3198,9 @@ func TestHasVisibleFlags(t *testing.T) {
 		flags []FlagDef
 		want  bool
 	}{
-		"nil":        {flags: nil, want: false},
-		"empty":      {flags: []FlagDef{}, want: false},
-		"all hidden": {flags: []FlagDef{{Hidden: true}}, want: false},
+		"nil":         {flags: nil, want: false},
+		"empty":       {flags: []FlagDef{}, want: false},
+		"all hidden":  {flags: []FlagDef{{Hidden: true}}, want: false},
 		"one visible": {flags: []FlagDef{{Hidden: true}, {Name: "port"}}, want: true},
 	}
 
@@ -3221,14 +3221,14 @@ func TestCamelToKebab(t *testing.T) {
 		input string
 		want  string
 	}{
-		"simple":           {input: "Port", want: "port"},
-		"two words":        {input: "OutputFormat", want: "output-format"},
-		"acronym prefix":   {input: "HTTPHost", want: "http-host"},
-		"acronym suffix":   {input: "UserID", want: "user-id"},
-		"single word":      {input: "ID", want: "id"},
-		"three words":      {input: "MaxRetryCount", want: "max-retry-count"},
-		"all caps":         {input: "RPS", want: "rps"},
-		"mixed":            {input: "XMLParser", want: "xml-parser"},
+		"simple":            {input: "Port", want: "port"},
+		"two words":         {input: "OutputFormat", want: "output-format"},
+		"acronym prefix":    {input: "HTTPHost", want: "http-host"},
+		"acronym suffix":    {input: "UserID", want: "user-id"},
+		"single word":       {input: "ID", want: "id"},
+		"three words":       {input: "MaxRetryCount", want: "max-retry-count"},
+		"all caps":          {input: "RPS", want: "rps"},
+		"mixed":             {input: "XMLParser", want: "xml-parser"},
 		"already lowercase": {input: "port", want: "port"},
 	}
 
@@ -3248,7 +3248,7 @@ type internalAutoNameCmd struct {
 	HTTPHost     string `flag:"" help:"HTTP host"`
 }
 
-func (c *internalAutoNameCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalAutoNameCmd) Run(_ context.Context) error { return nil }
 
 func TestScanFlags_AutoName(t *testing.T) {
 	t.Parallel()
@@ -3279,7 +3279,7 @@ type internalEnvPrefixCmd struct {
 	Port int `flag:"port" env:"PORT"`
 }
 
-func (c *internalEnvPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalEnvPrefixCmd) Run(_ context.Context) error { return nil }
 
 func TestApplyEnv_WithPrefix(t *testing.T) {
 	t.Setenv("APP_PORT", "4444")
@@ -3326,8 +3326,8 @@ type internalArgCmd struct {
 	Extra  []string `arg:"extra" help:"Extra files"`
 }
 
-func (c *internalArgCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalArgCmd) Name() string                            { return "copy" }
+func (c *internalArgCmd) Run(_ context.Context) error { return nil }
+func (c *internalArgCmd) Name() string                { return "copy" }
 
 func TestScanArgs(t *testing.T) {
 	t.Parallel()
@@ -3373,7 +3373,7 @@ func TestScanArgs_AutoName(t *testing.T) {
 func TestScanArgs_NonStruct(t *testing.T) {
 	t.Parallel()
 
-	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	cmd := RunFunc(func(_ context.Context) error { return nil })
 	defs := ScanArgs(cmd)
 	assert.Nil(t, defs)
 }
@@ -3405,7 +3405,7 @@ type internalOptionalArgCmd struct {
 	Name string `arg:"name" required:"false" help:"Name"`
 }
 
-func (c *internalOptionalArgCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalOptionalArgCmd) Run(_ context.Context) error { return nil }
 
 func TestPopulateArgs_Optional(t *testing.T) {
 	t.Parallel()
@@ -3420,7 +3420,7 @@ func TestPopulateArgs_Optional(t *testing.T) {
 func TestPopulateArgs_NonStruct(t *testing.T) {
 	t.Parallel()
 
-	cmd := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	cmd := RunFunc(func(_ context.Context) error { return nil })
 	remaining, err := populateArgs(cmd, []string{"foo"}, "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"foo"}, remaining)
@@ -3478,10 +3478,10 @@ func TestBuildArgUsage(t *testing.T) {
 		args []ArgDef
 		want string
 	}{
-		"no args":   {args: nil, want: "[args...]"},
-		"required":  {args: []ArgDef{{Name: "file", Required: true}}, want: "<file>"},
-		"optional":  {args: []ArgDef{{Name: "file", Required: false}}, want: "[file]"},
-		"slice":     {args: []ArgDef{{Name: "files", IsSlice: true}}, want: "[files...]"},
+		"no args":  {args: nil, want: "[args...]"},
+		"required": {args: []ArgDef{{Name: "file", Required: true}}, want: "<file>"},
+		"optional": {args: []ArgDef{{Name: "file", Required: false}}, want: "[file]"},
+		"slice":    {args: []ArgDef{{Name: "files", IsSlice: true}}, want: "[files...]"},
 		"mixed": {
 			args: []ArgDef{
 				{Name: "src", Required: true},
@@ -3508,8 +3508,8 @@ type internalArgHelpCmd struct {
 	Dest   string `arg:"dest" help:"Destination"`
 }
 
-func (c *internalArgHelpCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalArgHelpCmd) Name() string                            { return "copy" }
+func (c *internalArgHelpCmd) Run(_ context.Context) error { return nil }
+func (c *internalArgHelpCmd) Name() string                { return "copy" }
 
 // --- Flag group validation ---
 
@@ -3519,8 +3519,8 @@ type mutexGroupCmd struct {
 	Text bool `flag:"text" help:"Text output"`
 }
 
-func (c *mutexGroupCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *mutexGroupCmd) Name() string                            { return "format" }
+func (c *mutexGroupCmd) Run(_ context.Context) error { return nil }
+func (c *mutexGroupCmd) Name() string                { return "format" }
 func (c *mutexGroupCmd) FlagGroups() []FlagGroup {
 	return []FlagGroup{MutuallyExclusive("json", "yaml", "text")}
 }
@@ -3531,8 +3531,8 @@ type requiredTogetherGroupCmd struct {
 	Host     string `flag:"host" help:"Host"`
 }
 
-func (c *requiredTogetherGroupCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *requiredTogetherGroupCmd) Name() string                            { return "login" }
+func (c *requiredTogetherGroupCmd) Run(_ context.Context) error { return nil }
+func (c *requiredTogetherGroupCmd) Name() string                { return "login" }
 func (c *requiredTogetherGroupCmd) FlagGroups() []FlagGroup {
 	return []FlagGroup{RequiredTogether("username", "password")}
 }
@@ -3543,8 +3543,8 @@ type oneRequiredGroupCmd struct {
 	URL   string `flag:"url" help:"Fetch from URL"`
 }
 
-func (c *oneRequiredGroupCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *oneRequiredGroupCmd) Name() string                            { return "read" }
+func (c *oneRequiredGroupCmd) Run(_ context.Context) error { return nil }
+func (c *oneRequiredGroupCmd) Name() string                { return "read" }
 func (c *oneRequiredGroupCmd) FlagGroups() []FlagGroup {
 	return []FlagGroup{OneRequired("file", "stdin", "url")}
 }
@@ -3630,9 +3630,9 @@ type internalAliasedCmd struct {
 	aliases []string
 }
 
-func (c *internalAliasedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalAliasedCmd) Name() string                            { return c.n }
-func (c *internalAliasedCmd) Aliases() []string                       { return c.aliases }
+func (c *internalAliasedCmd) Run(_ context.Context) error { return nil }
+func (c *internalAliasedCmd) Name() string                { return c.n }
+func (c *internalAliasedCmd) Aliases() []string           { return c.aliases }
 
 func TestAllSubcommands_BuiltinAliasBlocksDiscovered(t *testing.T) {
 	t.Parallel()
@@ -3748,13 +3748,13 @@ type internalStoreFlagsParent struct {
 	Verbose bool   `flag:"verbose"`
 }
 
-func (c *internalStoreFlagsParent) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalStoreFlagsParent) Run(_ context.Context) error { return nil }
 
 type internalStoreFlagsChild struct {
 	Port int `flag:"port"`
 }
 
-func (c *internalStoreFlagsChild) Run(_ context.Context, _ []string) error { return nil }
+func (c *internalStoreFlagsChild) Run(_ context.Context) error { return nil }
 
 func TestStoreFlags(t *testing.T) {
 	t.Parallel()
@@ -3781,7 +3781,7 @@ func TestStoreFlags(t *testing.T) {
 func TestStoreFlags_NonStructSkipped(t *testing.T) {
 	t.Parallel()
 
-	fn := RunFunc(func(_ context.Context, _ []string) error { return nil })
+	fn := RunFunc(func(_ context.Context) error { return nil })
 	chain := []Runner{fn}
 
 	ctx := storeFlags(context.Background(), chain)
@@ -3829,9 +3829,9 @@ type internalSectionedCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port"`
 }
 
-func (c *internalSectionedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalSectionedCmd) Name() string                            { return "jira" }
-func (c *internalSectionedCmd) Description() string                     { return "Interact with Jira" }
+func (c *internalSectionedCmd) Run(_ context.Context) error { return nil }
+func (c *internalSectionedCmd) Name() string                { return "jira" }
+func (c *internalSectionedCmd) Description() string         { return "Interact with Jira" }
 
 func (c *internalSectionedCmd) AppendHelp() []HelpSection {
 	return []HelpSection{
@@ -3872,9 +3872,9 @@ type internalPrependCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port"`
 }
 
-func (c *internalPrependCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *internalPrependCmd) Name() string                            { return "vpn-tool" }
-func (c *internalPrependCmd) Description() string                     { return "VPN management" }
+func (c *internalPrependCmd) Run(_ context.Context) error { return nil }
+func (c *internalPrependCmd) Name() string                { return "vpn-tool" }
+func (c *internalPrependCmd) Description() string         { return "VPN management" }
 
 func (c *internalPrependCmd) PrependHelp() []HelpSection {
 	return []HelpSection{{
@@ -3969,7 +3969,7 @@ type signalCmd struct {
 	ctxErr error
 }
 
-func (c *signalCmd) Run(ctx context.Context, _ []string) error {
+func (c *signalCmd) Run(ctx context.Context) error {
 	// Send SIGINT to ourselves.
 	p, err := os.FindProcess(os.Getpid())
 	if err != nil {
@@ -3999,7 +3999,7 @@ type noopCmd struct {
 	ctxErr error
 }
 
-func (c *noopCmd) Run(ctx context.Context, _ []string) error {
+func (c *noopCmd) Run(ctx context.Context) error {
 	c.ctxErr = ctx.Err()
 	return nil
 }
@@ -4068,8 +4068,8 @@ type namedRoot struct {
 	Name_ string `flag:"name" required:"true"`
 }
 
-func (c *namedRoot) Run(_ context.Context, _ []string) error { return nil }
-func (c *namedRoot) Name() string                            { return "myapp" }
+func (c *namedRoot) Run(_ context.Context) error { return nil }
+func (c *namedRoot) Name() string                { return "myapp" }
 
 func TestFormatError(t *testing.T) {
 	t.Parallel()
@@ -4077,9 +4077,9 @@ func TestFormatError(t *testing.T) {
 	root := &namedRoot{}
 
 	tests := map[string]struct {
-		err        error
-		wantError  string
-		wantHint   bool
+		err       error
+		wantError string
+		wantHint  bool
 	}{
 		"flag error includes hint": {
 			err:       fmt.Errorf("%w: --name", ErrRequiredFlag),
@@ -4158,17 +4158,17 @@ type globalFlagParent struct {
 	Secret string `flag:"secret" hidden:"true" help:"Hidden flag"`
 }
 
-func (c *globalFlagParent) Run(_ context.Context, _ []string) error { return nil }
-func (c *globalFlagParent) Name() string                            { return "app" }
-func (c *globalFlagParent) Subcommands() []Runner                   { return []Runner{&globalFlagChild{}} }
+func (c *globalFlagParent) Run(_ context.Context) error { return nil }
+func (c *globalFlagParent) Name() string                { return "app" }
+func (c *globalFlagParent) Subcommands() []Runner       { return []Runner{&globalFlagChild{}} }
 
 type globalFlagChild struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
 	Format string `flag:"format" help:"Override format"` // overlaps with parent
 }
 
-func (c *globalFlagChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *globalFlagChild) Name() string                            { return "serve" }
+func (c *globalFlagChild) Run(_ context.Context) error { return nil }
+func (c *globalFlagChild) Name() string                { return "serve" }
 
 func TestCollectGlobalFlags(t *testing.T) {
 	t.Parallel()
@@ -4271,23 +4271,23 @@ type multiLevelGrandparent struct {
 	Region string `flag:"region" help:"AWS region"`
 }
 
-func (c *multiLevelGrandparent) Run(_ context.Context, _ []string) error { return nil }
-func (c *multiLevelGrandparent) Name() string                            { return "app" }
+func (c *multiLevelGrandparent) Run(_ context.Context) error { return nil }
+func (c *multiLevelGrandparent) Name() string                { return "app" }
 
 type multiLevelParent struct {
 	Env    string `flag:"env" help:"Environment"`
 	Region string `flag:"region" help:"Override region"` // overlap with grandparent
 }
 
-func (c *multiLevelParent) Run(_ context.Context, _ []string) error { return nil }
-func (c *multiLevelParent) Name() string                            { return "deploy" }
+func (c *multiLevelParent) Run(_ context.Context) error { return nil }
+func (c *multiLevelParent) Name() string                { return "deploy" }
 
 type multiLevelChild struct {
 	Port int `flag:"port" help:"Port"`
 }
 
-func (c *multiLevelChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *multiLevelChild) Name() string                            { return "run" }
+func (c *multiLevelChild) Run(_ context.Context) error { return nil }
+func (c *multiLevelChild) Name() string                { return "run" }
 
 func TestDefaultRenderHelp_MultiLevelGlobalFlags(t *testing.T) {
 	t.Parallel()
@@ -4373,7 +4373,7 @@ type promptCmd struct {
 	Host  string `flag:"host" default:"localhost" help:"Hostname"`
 }
 
-func (c *promptCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *promptCmd) Run(_ context.Context) error { return nil }
 
 func TestPromptForFlags(t *testing.T) {
 	t.Parallel()
@@ -4464,7 +4464,7 @@ type customPrompterCmd struct {
 	Env string `flag:"env" required:"true" help:"Target environment"`
 }
 
-func (c *customPrompterCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *customPrompterCmd) Run(_ context.Context) error { return nil }
 
 func (c *customPrompterCmd) Prompt(flag FlagDef) (string, error) {
 	if flag.Name == "env" {
@@ -4494,7 +4494,7 @@ type interactiveCmd struct {
 	Name_ string `flag:"name" required:"true" help:"Your name"`
 }
 
-func (c *interactiveCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *interactiveCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_InteractiveDisabled(t *testing.T) {
 	t.Parallel()
@@ -4529,8 +4529,8 @@ type requiredIndicatorCmd struct {
 	Format string `flag:"format" default:"table" help:"Output format"`
 }
 
-func (c *requiredIndicatorCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *requiredIndicatorCmd) Name() string                            { return "app" }
+func (c *requiredIndicatorCmd) Run(_ context.Context) error { return nil }
+func (c *requiredIndicatorCmd) Name() string                { return "app" }
 
 func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
 	t.Parallel()
@@ -4561,8 +4561,8 @@ type envOnlyCmd struct {
 	Port  int    `flag:"port" default:"8080" help:"Port to listen on"`
 }
 
-func (c *envOnlyCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *envOnlyCmd) Name() string                            { return "app" }
+func (c *envOnlyCmd) Run(_ context.Context) error { return nil }
+func (c *envOnlyCmd) Name() string                { return "app" }
 
 func TestScanFlags_SkipsEnvOnly(t *testing.T) {
 	t.Parallel()
@@ -4597,7 +4597,7 @@ type envOnlyDefaultCmd struct {
 	Secret string `env:"TEST_SECRET" default:"fallback"`
 }
 
-func (c *envOnlyDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envOnlyDefaultCmd) Run(_ context.Context) error { return nil }
 
 func TestEnvOnly_DefaultApplied(t *testing.T) {
 	t.Parallel()
@@ -4612,7 +4612,7 @@ type envOnlyEnumCmd struct {
 	Mode string `env:"TEST_MODE" enum:"fast,slow" required:"true"`
 }
 
-func (c *envOnlyEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envOnlyEnumCmd) Run(_ context.Context) error { return nil }
 
 func TestEnvOnly_EnumValidation(t *testing.T) {
 	t.Setenv("TEST_MODE", "invalid")
@@ -4669,7 +4669,7 @@ type envOnlyCaptureCmd struct {
 	captured string
 }
 
-func (c *envOnlyCaptureCmd) Run(ctx context.Context, _ []string) error {
+func (c *envOnlyCaptureCmd) Run(ctx context.Context) error {
 	c.captured = Get[string](ctx, "token")
 	return nil
 }
@@ -4693,8 +4693,8 @@ type envOnlyParentCmd struct {
 	Token string `env:"TEST_PARENT_TOKEN"`
 }
 
-func (c *envOnlyParentCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *envOnlyParentCmd) Name() string                            { return "parent" }
+func (c *envOnlyParentCmd) Run(_ context.Context) error { return nil }
+func (c *envOnlyParentCmd) Name() string                { return "parent" }
 func (c *envOnlyParentCmd) Subcommands() []Runner {
 	return []Runner{&envOnlyChildCmd{}}
 }
@@ -4703,8 +4703,8 @@ type envOnlyChildCmd struct {
 	Label string `flag:"label" default:"child"`
 }
 
-func (c *envOnlyChildCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *envOnlyChildCmd) Name() string                            { return "child" }
+func (c *envOnlyChildCmd) Run(_ context.Context) error { return nil }
+func (c *envOnlyChildCmd) Name() string                { return "child" }
 
 func TestEnvOnly_InheritFlagsSkips(t *testing.T) {
 	t.Setenv("TEST_PARENT_TOKEN", "parent-token")
@@ -4721,20 +4721,21 @@ type leafParentCmd struct {
 	capturedLeaf Runner
 }
 
-func (c *leafParentCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *leafParentCmd) Name() string                            { return "app" }
+func (c *leafParentCmd) Run(_ context.Context) error { return nil }
+func (c *leafParentCmd) Name() string                { return "app" }
 func (c *leafParentCmd) Before(ctx context.Context) (context.Context, error) {
 	c.capturedLeaf = Leaf(ctx)
 	return ctx, nil
 }
+
 func (c *leafParentCmd) Subcommands() []Runner {
 	return []Runner{&leafChildCmd{}}
 }
 
 type leafChildCmd struct{}
 
-func (c *leafChildCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *leafChildCmd) Name() string                            { return "child" }
+func (c *leafChildCmd) Run(_ context.Context) error { return nil }
+func (c *leafChildCmd) Name() string                { return "child" }
 
 func TestLeaf_AvailableInBefore(t *testing.T) {
 	t.Parallel()
@@ -4769,7 +4770,7 @@ type leafCaptureCmd struct {
 	captured Runner
 }
 
-func (c *leafCaptureCmd) Run(ctx context.Context, _ []string) error {
+func (c *leafCaptureCmd) Run(ctx context.Context) error {
 	c.captured = Leaf(ctx)
 	return nil
 }
@@ -4791,8 +4792,8 @@ type leafRunParent struct {
 	child Runner
 }
 
-func (c *leafRunParent) Run(_ context.Context, _ []string) error { return nil }
-func (c *leafRunParent) Name() string                            { return "app" }
+func (c *leafRunParent) Run(_ context.Context) error { return nil }
+func (c *leafRunParent) Name() string                { return "app" }
 func (c *leafRunParent) Subcommands() []Runner {
 	return []Runner{c.child}
 }
@@ -4813,8 +4814,8 @@ type authRootCmd struct {
 	perms     []string
 }
 
-func (c *authRootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *authRootCmd) Name() string                            { return "myctl" }
+func (c *authRootCmd) Run(_ context.Context) error { return nil }
+func (c *authRootCmd) Name() string                { return "myctl" }
 func (c *authRootCmd) Before(ctx context.Context) (context.Context, error) {
 	leaf := Leaf(ctx)
 	_, c.needsAuth = leaf.(authenticated)
@@ -4824,27 +4825,28 @@ func (c *authRootCmd) Before(ctx context.Context) (context.Context, error) {
 	}
 	return ctx, nil
 }
+
 func (c *authRootCmd) Subcommands() []Runner {
 	return []Runner{&unauthedCmd{}, &authedCmd{}, &rbacCmd{}}
 }
 
 type unauthedCmd struct{}
 
-func (c *unauthedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *unauthedCmd) Name() string                            { return "status" }
+func (c *unauthedCmd) Run(_ context.Context) error { return nil }
+func (c *unauthedCmd) Name() string                { return "status" }
 
 type authedCmd struct{}
 
-func (c *authedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *authedCmd) Name() string                            { return "list" }
-func (c *authedCmd) Authenticate()                           {}
+func (c *authedCmd) Run(_ context.Context) error { return nil }
+func (c *authedCmd) Name() string                { return "list" }
+func (c *authedCmd) Authenticate()               {}
 
 type rbacCmd struct{}
 
-func (c *rbacCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *rbacCmd) Name() string                            { return "deploy" }
-func (c *rbacCmd) Authenticate()                           {}
-func (c *rbacCmd) Permissions() []string                   { return []string{"deploy:write"} }
+func (c *rbacCmd) Run(_ context.Context) error { return nil }
+func (c *rbacCmd) Name() string                { return "deploy" }
+func (c *rbacCmd) Authenticate()               {}
+func (c *rbacCmd) Permissions() []string       { return []string{"deploy:write"} }
 
 func TestLeaf_AuthPattern(t *testing.T) {
 	t.Parallel()
@@ -4888,8 +4890,8 @@ type noRequiredFlagsCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port to listen on"`
 }
 
-func (c *noRequiredFlagsCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *noRequiredFlagsCmd) Name() string                            { return "app" }
+func (c *noRequiredFlagsCmd) Run(_ context.Context) error { return nil }
+func (c *noRequiredFlagsCmd) Name() string                { return "app" }
 
 func TestDefaultRenderHelp_NoAsteriskWithoutRequired(t *testing.T) {
 	t.Parallel()
@@ -5183,8 +5185,8 @@ type maskCmd struct {
 	Secret string `flag:"secret" default:"hunter2" mask:"****" help:"A secret"`
 }
 
-func (c *maskCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *maskCmd) Name() string                            { return "app" }
+func (c *maskCmd) Run(_ context.Context) error { return nil }
+func (c *maskCmd) Name() string                { return "app" }
 
 func TestMask_InHelpOutput(t *testing.T) {
 	t.Parallel()
@@ -5211,8 +5213,8 @@ type argEnumCmd struct {
 	Mode string `arg:"mode" enum:"a,b,c" help:"Mode"`
 }
 
-func (c *argEnumCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *argEnumCmd) Name() string                            { return "app" }
+func (c *argEnumCmd) Run(_ context.Context) error { return nil }
+func (c *argEnumCmd) Name() string                { return "app" }
 
 func TestArgEnum_ValidValue(t *testing.T) {
 	t.Parallel()
@@ -5236,7 +5238,7 @@ type argDefaultCmd struct {
 	Mode string `arg:"mode" default:"x" required:"false" help:"Mode"`
 }
 
-func (c *argDefaultCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *argDefaultCmd) Run(_ context.Context) error { return nil }
 
 func TestArgDefault_NoPositional(t *testing.T) {
 	t.Parallel()
@@ -5260,7 +5262,7 @@ type argEnvCmd struct {
 	Target string `arg:"target" env:"DEPLOY_TARGET" required:"false" help:"Deploy target"`
 }
 
-func (c *argEnvCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *argEnvCmd) Run(_ context.Context) error { return nil }
 
 func TestArgEnv_EnvUsed(t *testing.T) {
 	t.Setenv("DEPLOY_TARGET", "from-env")
@@ -5284,7 +5286,7 @@ type argPriorityCmd struct {
 	Mode string `arg:"mode" env:"TEST_ARG_MODE" default:"def" required:"false" help:"Mode"`
 }
 
-func (c *argPriorityCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *argPriorityCmd) Run(_ context.Context) error { return nil }
 
 func TestArgPriority_PositionalOverEnvOverDefault(t *testing.T) {
 	t.Setenv("TEST_ARG_MODE", "from-env")
@@ -5318,8 +5320,8 @@ type argHelpCmd struct {
 	Target string `arg:"target" env:"DEPLOY_TARGET" required:"false" help:"Deploy target"`
 }
 
-func (c *argHelpCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *argHelpCmd) Name() string                            { return "app" }
+func (c *argHelpCmd) Run(_ context.Context) error { return nil }
+func (c *argHelpCmd) Name() string                { return "app" }
 
 func TestArgHelp_ShowsEnumDefaultEnv(t *testing.T) {
 	t.Parallel()
@@ -5349,8 +5351,8 @@ type sepCmd struct {
 	Tags []string `flag:"tag" sep:"," help:"Tags"`
 }
 
-func (c *sepCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *sepCmd) Name() string                            { return "app" }
+func (c *sepCmd) Run(_ context.Context) error { return nil }
+func (c *sepCmd) Name() string                { return "app" }
 
 func TestSep_CommaSeparated(t *testing.T) {
 	t.Parallel()
@@ -5419,7 +5421,7 @@ type sepPipeCmd struct {
 	Items []string `flag:"item" sep:"|" help:"Items"`
 }
 
-func (c *sepPipeCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *sepPipeCmd) Run(_ context.Context) error { return nil }
 
 func TestSep_PipeSeparator(t *testing.T) {
 	t.Parallel()
@@ -5454,7 +5456,7 @@ type altCmd struct {
 	Format string `flag:"format" alt:"output,out" short:"f" help:"Output format"`
 }
 
-func (c *altCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *altCmd) Run(_ context.Context) error { return nil }
 
 func TestAlt_PrimaryFlag(t *testing.T) {
 	t.Parallel()
@@ -5535,7 +5537,7 @@ type altEnumCmd struct {
 	Format string `flag:"format" alt:"output" enum:"json,yaml"`
 }
 
-func (c *altEnumCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *altEnumCmd) Run(_ context.Context) error { return nil }
 
 func TestAlt_WithEnum(t *testing.T) {
 	t.Parallel()
@@ -5557,7 +5559,7 @@ type embeddedListCmd struct {
 	Limit int `flag:"limit" default:"50" help:"Max results"`
 }
 
-func (c *embeddedListCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *embeddedListCmd) Run(_ context.Context) error { return nil }
 
 func TestEmbedded_Promoted(t *testing.T) {
 	t.Parallel()
@@ -5638,7 +5640,7 @@ type embeddedDeployCmd struct {
 	Force bool `flag:"force" help:"Force deploy"`
 }
 
-func (c *embeddedDeployCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *embeddedDeployCmd) Run(_ context.Context) error { return nil }
 
 func TestEmbedded_ArgPromotion(t *testing.T) {
 	t.Parallel()
@@ -5661,7 +5663,7 @@ type prefixServeCmd struct {
 	Port int           `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *prefixServeCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *prefixServeCmd) Run(_ context.Context) error { return nil }
 
 func TestPrefix_Flags(t *testing.T) {
 	t.Parallel()
@@ -5751,7 +5753,7 @@ type prefixNestedCmd struct {
 	Outer prefixOuterFlags `prefix:"a-"`
 }
 
-func (c *prefixNestedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *prefixNestedCmd) Run(_ context.Context) error { return nil }
 
 func TestPrefix_Nested(t *testing.T) {
 	t.Parallel()
@@ -5778,7 +5780,7 @@ type embeddedPrefixCmd struct {
 	DB prefixDBFlags `prefix:"db-"`
 }
 
-func (c *embeddedPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *embeddedPrefixCmd) Run(_ context.Context) error { return nil }
 
 func TestEmbeddedAndPrefix_Combined(t *testing.T) {
 	t.Parallel()
@@ -5801,7 +5803,7 @@ type embeddedShadowCmd struct {
 	Format string `flag:"format" default:"outer"`
 }
 
-func (c *embeddedShadowCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *embeddedShadowCmd) Run(_ context.Context) error { return nil }
 
 func TestEmbedded_OuterShadows(t *testing.T) {
 	t.Parallel()
@@ -5823,7 +5825,7 @@ type prefixAltCmd struct {
 	Out prefixAltFlags `prefix:"out-"`
 }
 
-func (c *prefixAltCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *prefixAltCmd) Run(_ context.Context) error { return nil }
 
 func TestPrefix_AltNames(t *testing.T) {
 	t.Parallel()

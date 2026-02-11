@@ -11,9 +11,9 @@ import (
 
 type rootCmd struct{}
 
-func (r *rootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (r *rootCmd) Name() string                            { return "myapp" }
-func (r *rootCmd) Description() string                     { return "My test app" }
+func (r *rootCmd) Run(_ context.Context) error { return nil }
+func (r *rootCmd) Name() string                { return "myapp" }
+func (r *rootCmd) Description() string         { return "My test app" }
 
 func TestBash_RuntimeScript(t *testing.T) {
 	t.Parallel()
@@ -101,16 +101,16 @@ type rootWithSubs struct {
 	cli.Runner
 }
 
-func (r *rootWithSubs) Run(_ context.Context, _ []string) error { return nil }
-func (r *rootWithSubs) Name() string                            { return "myapp" }
+func (r *rootWithSubs) Run(_ context.Context) error { return nil }
+func (r *rootWithSubs) Name() string                { return "myapp" }
 func (r *rootWithSubs) Subcommands() []cli.Runner {
 	return []cli.Runner{&subCmd{}}
 }
 
 type subCmd struct{}
 
-func (s *subCmd) Run(_ context.Context, _ []string) error { return nil }
-func (s *subCmd) Name() string                            { return "serve" }
+func (s *subCmd) Run(_ context.Context) error { return nil }
+func (s *subCmd) Name() string                { return "serve" }
 
 func TestBash_NoStaticSubcommands(t *testing.T) {
 	t.Parallel()

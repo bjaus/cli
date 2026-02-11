@@ -21,7 +21,7 @@ func (r *exRoot) Subcommands() []cli.Runner {
 	return []cli.Runner{&exHello{}}
 }
 
-func (r *exRoot) Run(_ context.Context, _ []string) error {
+func (r *exRoot) Run(_ context.Context) error {
 	return cli.ErrShowHelp
 }
 
@@ -31,7 +31,7 @@ type exHello struct {
 
 func (h *exHello) Name() string        { return "hello" }
 func (h *exHello) Description() string { return "Say hello" }
-func (h *exHello) Run(_ context.Context, _ []string) error {
+func (h *exHello) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "Hello, %s!\n", h.Recipient) //nolint:errcheck // example output
 	return nil
 }
@@ -79,7 +79,7 @@ func ExampleErrShowHelp() {
 
 // A minimal command using RunFunc.
 func ExampleRunFunc() {
-	hello := cli.RunFunc(func(_ context.Context, _ []string) error {
+	hello := cli.RunFunc(func(_ context.Context) error {
 		fmt.Fprintln(os.Stdout, "Hello, world!") //nolint:errcheck // example output
 		return nil
 	})
@@ -94,7 +94,7 @@ type GreetCmd struct {
 	Excited bool   `flag:"excited" short:"e" help:"Add exclamation mark"`
 }
 
-func (g *GreetCmd) Run(_ context.Context, _ []string) error {
+func (g *GreetCmd) Run(_ context.Context) error {
 	punct := "."
 	if g.Excited {
 		punct = "!"
@@ -112,7 +112,7 @@ func ExampleExecute_flags() {
 // A parent command with subcommands demonstrating the tree structure.
 type App struct{}
 
-func (a *App) Run(_ context.Context, _ []string) error {
+func (a *App) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "Use a subcommand. Try --help.") //nolint:errcheck // example output
 	return nil
 }
@@ -125,7 +125,7 @@ func (a *App) Subcommands() []cli.Runner {
 
 type VersionCmd struct{}
 
-func (v *VersionCmd) Run(_ context.Context, _ []string) error {
+func (v *VersionCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "v1.0.0") //nolint:errcheck // example output
 	return nil
 }
@@ -144,9 +144,9 @@ type SetupApp struct {
 	child *WorkerCmd
 }
 
-func (s *SetupApp) Run(_ context.Context, _ []string) error { return nil }
-func (s *SetupApp) Name() string                            { return "app" }
-func (s *SetupApp) Subcommands() []cli.Runner               { return []cli.Runner{s.child} }
+func (s *SetupApp) Run(_ context.Context) error { return nil }
+func (s *SetupApp) Name() string                { return "app" }
+func (s *SetupApp) Subcommands() []cli.Runner   { return []cli.Runner{s.child} }
 
 func (s *SetupApp) Before(ctx context.Context) (context.Context, error) {
 	fmt.Fprintln(os.Stdout, "setup: before") //nolint:errcheck // example output
@@ -160,7 +160,7 @@ func (s *SetupApp) After(_ context.Context) error {
 
 type WorkerCmd struct{}
 
-func (w *WorkerCmd) Run(_ context.Context, _ []string) error {
+func (w *WorkerCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "worker: run") //nolint:errcheck // example output
 	return nil
 }
@@ -178,7 +178,7 @@ func ExampleExecute_lifecycle() {
 
 // Demonstrating error handling with Exit.
 func ExampleExit() {
-	cmd := cli.RunFunc(func(_ context.Context, _ []string) error {
+	cmd := cli.RunFunc(func(_ context.Context) error {
 		return cli.Exit("port already in use", 2)
 	})
 
@@ -198,7 +198,7 @@ func ExampleExit() {
 // Demonstrating middleware wrapping around Run.
 type LoggedCmd struct{}
 
-func (l *LoggedCmd) Run(_ context.Context, _ []string) error {
+func (l *LoggedCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "executing") //nolint:errcheck // example output
 	return nil
 }
@@ -206,9 +206,9 @@ func (l *LoggedCmd) Run(_ context.Context, _ []string) error {
 func (l *LoggedCmd) Middleware() []func(next cli.RunFunc) cli.RunFunc {
 	return []func(next cli.RunFunc) cli.RunFunc{
 		func(next cli.RunFunc) cli.RunFunc {
-			return func(ctx context.Context, args []string) error {
+			return func(ctx context.Context) error {
 				fmt.Fprintln(os.Stdout, "middleware: before") //nolint:errcheck // example output
-				err := next(ctx, args)
+				err := next(ctx)
 				fmt.Fprintln(os.Stdout, "middleware: after") //nolint:errcheck // example output
 				return err
 			}
@@ -233,7 +233,7 @@ type BuildCmd struct {
 	Tags []string `flag:"tag" short:"t" help:"Tags to apply"`
 }
 
-func (b *BuildCmd) Run(_ context.Context, _ []string) error {
+func (b *BuildCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "tags: %s\n", strings.Join(b.Tags, ", ")) //nolint:errcheck // example output
 	return nil
 }
@@ -250,7 +250,7 @@ type DeployCmd struct {
 	Env map[string]string `flag:"env" short:"e" help:"Environment variables"`
 }
 
-func (d *DeployCmd) Run(_ context.Context, _ []string) error {
+func (d *DeployCmd) Run(_ context.Context) error {
 	for k, v := range d.Env {
 		fmt.Fprintf(os.Stdout, "%s=%s\n", k, v) //nolint:errcheck // example output
 	}
@@ -270,7 +270,7 @@ type ColorCmd struct {
 	Color bool `flag:"color" default:"true" negate:"true" help:"Colorize output"`
 }
 
-func (c *ColorCmd) Run(_ context.Context, _ []string) error {
+func (c *ColorCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "color: %v\n", c.Color) //nolint:errcheck // example output
 	return nil
 }
@@ -285,9 +285,9 @@ func ExampleExecute_negatableBool() {
 // Implement on your root command to report the application version.
 type MyApp struct{}
 
-func (a *MyApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *MyApp) Name() string                            { return "myapp" }
-func (a *MyApp) Version() string                         { return "2.1.0" }
+func (a *MyApp) Run(_ context.Context) error { return nil }
+func (a *MyApp) Name() string                { return "myapp" }
+func (a *MyApp) Version() string             { return "2.1.0" }
 
 func ExampleExecute_versioner() {
 	app := &MyApp{}
@@ -299,7 +299,7 @@ func ExampleExecute_versioner() {
 // Use when retiring a command — keep it functional but warn users to migrate.
 type OldCmd struct{}
 
-func (o *OldCmd) Run(_ context.Context, _ []string) error {
+func (o *OldCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "still works") //nolint:errcheck // example output
 	return nil
 }
@@ -320,22 +320,22 @@ func ExampleExecute_deprecated() {
 // Use to organize large CLIs with many subcommands into logical groups.
 type AdminCmd struct{}
 
-func (a *AdminCmd) Run(_ context.Context, _ []string) error { return nil }
-func (a *AdminCmd) Name() string                            { return "users" }
-func (a *AdminCmd) Description() string                     { return "Manage users" }
-func (a *AdminCmd) Category() string                        { return "Admin Commands" }
+func (a *AdminCmd) Run(_ context.Context) error { return nil }
+func (a *AdminCmd) Name() string                { return "users" }
+func (a *AdminCmd) Description() string         { return "Manage users" }
+func (a *AdminCmd) Category() string            { return "Admin Commands" }
 
 type CoreCmd struct{}
 
-func (c *CoreCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *CoreCmd) Name() string                            { return "run" }
-func (c *CoreCmd) Description() string                     { return "Run the app" }
+func (c *CoreCmd) Run(_ context.Context) error { return nil }
+func (c *CoreCmd) Name() string                { return "run" }
+func (c *CoreCmd) Description() string         { return "Run the app" }
 
 type CategorizedApp struct{}
 
-func (a *CategorizedApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *CategorizedApp) Name() string                            { return "myapp" }
-func (a *CategorizedApp) Description() string                     { return "Categorized example" }
+func (a *CategorizedApp) Run(_ context.Context) error { return nil }
+func (a *CategorizedApp) Name() string                { return "myapp" }
+func (a *CategorizedApp) Description() string         { return "Categorized example" }
 func (a *CategorizedApp) Subcommands() []cli.Runner {
 	return []cli.Runner{&CoreCmd{}, &AdminCmd{}}
 }
@@ -365,7 +365,7 @@ type OutputCmd struct {
 	Format string `flag:"format" short:"f" default:"text" enum:"text,json,yaml" help:"Output format"`
 }
 
-func (o *OutputCmd) Run(_ context.Context, _ []string) error {
+func (o *OutputCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "format: %s\n", o.Format) //nolint:errcheck // example output
 	return nil
 }
@@ -388,7 +388,7 @@ type VerboseCmd struct {
 	Verbosity int `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
 }
 
-func (c *VerboseCmd) Run(_ context.Context, _ []string) error {
+func (c *VerboseCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "verbosity: %d\n", c.Verbosity) //nolint:errcheck // example output
 	return nil
 }
@@ -408,7 +408,7 @@ type CompactCmd struct {
 	Reverse bool `flag:"reverse" short:"r" help:"Reverse order"`
 }
 
-func (c *CompactCmd) Run(_ context.Context, _ []string) error {
+func (c *CompactCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "all=%v long=%v reverse=%v\n", c.All, c.Long, c.Reverse) //nolint:errcheck // example output
 	return nil
 }
@@ -427,7 +427,7 @@ func ExampleExecute_shortOptionHandling() {
 // Ambiguous prefixes (matching multiple commands) produce an error.
 type StatusCmd struct{}
 
-func (s *StatusCmd) Run(_ context.Context, _ []string) error {
+func (s *StatusCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "all systems go") //nolint:errcheck // example output
 	return nil
 }
@@ -436,9 +436,9 @@ func (s *StatusCmd) Name() string { return "status" }
 
 type PrefixApp struct{}
 
-func (a *PrefixApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *PrefixApp) Name() string                            { return "app" }
-func (a *PrefixApp) Subcommands() []cli.Runner               { return []cli.Runner{&StatusCmd{}} }
+func (a *PrefixApp) Run(_ context.Context) error { return nil }
+func (a *PrefixApp) Name() string                { return "app" }
+func (a *PrefixApp) Subcommands() []cli.Runner   { return []cli.Runner{&StatusCmd{}} }
 
 func ExampleExecute_prefixMatching() {
 	app := &PrefixApp{}
@@ -453,7 +453,7 @@ func ExampleExecute_prefixMatching() {
 // Use for CLIs where the "main" action shouldn't require a subcommand name.
 type ServeCmd struct{}
 
-func (s *ServeCmd) Run(_ context.Context, _ []string) error {
+func (s *ServeCmd) Run(_ context.Context) error {
 	fmt.Fprintln(os.Stdout, "serving on :8080") //nolint:errcheck // example output
 	return nil
 }
@@ -462,10 +462,10 @@ func (s *ServeCmd) Name() string { return "serve" }
 
 type DefaultApp struct{}
 
-func (a *DefaultApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *DefaultApp) Name() string                            { return "app" }
-func (a *DefaultApp) Subcommands() []cli.Runner               { return []cli.Runner{&ServeCmd{}} }
-func (a *DefaultApp) Fallback() cli.Runner                    { return &ServeCmd{} }
+func (a *DefaultApp) Run(_ context.Context) error { return nil }
+func (a *DefaultApp) Name() string                { return "app" }
+func (a *DefaultApp) Subcommands() []cli.Runner   { return []cli.Runner{&ServeCmd{}} }
+func (a *DefaultApp) Fallback() cli.Runner        { return &ServeCmd{} }
 
 func ExampleExecute_defaultCommand() {
 	app := &DefaultApp{}
@@ -480,9 +480,9 @@ type InheritApp struct {
 	Env string `flag:"env" help:"Target environment"`
 }
 
-func (a *InheritApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *InheritApp) Name() string                            { return "app" }
-func (a *InheritApp) Subcommands() []cli.Runner               { return []cli.Runner{&InheritServe{}} }
+func (a *InheritApp) Run(_ context.Context) error { return nil }
+func (a *InheritApp) Name() string                { return "app" }
+func (a *InheritApp) Subcommands() []cli.Runner   { return []cli.Runner{&InheritServe{}} }
 
 type InheritServe struct {
 	Env  string `flag:"env" help:"Target environment"`
@@ -490,7 +490,7 @@ type InheritServe struct {
 }
 
 func (s *InheritServe) Name() string { return "serve" }
-func (s *InheritServe) Run(_ context.Context, _ []string) error {
+func (s *InheritServe) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "env=%s port=%d\n", s.Env, s.Port) //nolint:errcheck // example output
 	return nil
 }
@@ -509,9 +509,9 @@ type HiddenInheritApp struct {
 	Env string `flag:"env" help:"Target environment"`
 }
 
-func (a *HiddenInheritApp) Run(_ context.Context, _ []string) error { return nil }
-func (a *HiddenInheritApp) Name() string                            { return "app" }
-func (a *HiddenInheritApp) Subcommands() []cli.Runner               { return []cli.Runner{&HiddenInheritServe{}} }
+func (a *HiddenInheritApp) Run(_ context.Context) error { return nil }
+func (a *HiddenInheritApp) Name() string                { return "app" }
+func (a *HiddenInheritApp) Subcommands() []cli.Runner   { return []cli.Runner{&HiddenInheritServe{}} }
 
 type HiddenInheritServe struct {
 	Env  string `flag:"env" hidden:"true"`
@@ -519,7 +519,7 @@ type HiddenInheritServe struct {
 }
 
 func (s *HiddenInheritServe) Name() string { return "serve" }
-func (s *HiddenInheritServe) Run(_ context.Context, _ []string) error {
+func (s *HiddenInheritServe) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "env=%s port=%d\n", s.Env, s.Port) //nolint:errcheck // example output
 	return nil
 }
@@ -539,7 +539,7 @@ type ConfigServeCmd struct {
 	Host string `flag:"host" default:"localhost" help:"Host to bind to"`
 }
 
-func (c *ConfigServeCmd) Run(_ context.Context, _ []string) error {
+func (c *ConfigServeCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "host=%s port=%d\n", c.Host, c.Port) //nolint:errcheck // example output
 	return nil
 }
@@ -565,7 +565,7 @@ type ConfigProviderCmd struct {
 	Port int `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *ConfigProviderCmd) Run(_ context.Context, _ []string) error {
+func (c *ConfigProviderCmd) Run(_ context.Context) error {
 	fmt.Fprintf(os.Stdout, "port=%d\n", c.Port) //nolint:errcheck // example output
 	return nil
 }

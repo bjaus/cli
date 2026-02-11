@@ -317,4 +317,3 @@ type FlagDef struct {
 	IsCounter   bool
 	Negate      bool
 }
-

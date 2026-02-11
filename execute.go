@@ -310,6 +310,11 @@ func expandShortOptions(args []string, fi flagIndex) []string {
 }
 
 func execute(ctx context.Context, root Runner, args []string, opts *options) error {
+	// Strip program name if args[0] looks like a binary path.
+	// This allows callers to pass os.Args directly.
+	cmdName := resolveInfo(root).name
+	args = stripProgramName(args, cmdName)
+
 	// Intercept __complete before any lifecycle hooks, flag parsing, or validation.
 	if len(args) > 0 && args[0] == "__complete" {
 		RuntimeComplete(ctx, root, args[1:], opts.stdout)
@@ -378,6 +383,15 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	// Store parsed flag values in context for Get/Lookup access.
 	ctx = storeFlags(ctx, chain)
 
+	// Inject bound dependencies into command structs.
+	// Auto-bind positional args so commands can declare an Args field.
+	bindings := make([]binding, len(opts.bindings), len(opts.bindings)+1)
+	copy(bindings, opts.bindings)
+	bindings = append(bindings, binding{value: Args(resolved.positional)})
+	if err := injectBindings(chain, bindings); err != nil {
+		return err
+	}
+
 	// Print deprecation warnings.
 	printDeprecationWarnings(chain, provided, opts)
 
@@ -406,7 +420,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 		fn = applyMiddleware(fn, m.Middleware())
 	}
 
-	runErr := fn(ctx, resolved.positional)
+	runErr := fn(ctx)
 
 	// After hooks (child-first, always runs).
 	afterErr := runAfterHooks(ctx, afterHooks)

@@ -11,15 +11,15 @@ import (
 
 // Runner is the core interface every command must implement.
 type Runner interface {
-	Run(ctx context.Context, args []string) error
+	Run(ctx context.Context) error
 }
 
 // RunFunc adapts a plain function into a [Runner].
-type RunFunc func(ctx context.Context, args []string) error
+type RunFunc func(ctx context.Context) error
 
 // Run implements [Runner].
-func (f RunFunc) Run(ctx context.Context, args []string) error {
-	return f(ctx, args)
+func (f RunFunc) Run(ctx context.Context) error {
+	return f(ctx)
 }
 
 // Option configures the execution environment.
@@ -34,6 +34,7 @@ type options struct {
 	configResolver      ConfigResolver
 	flagNormalizer      func(string) string
 	envVarPrefix        string
+	bindings            []binding
 	suggest             bool
 	shortOptionHandling bool
 	prefixMatching      bool

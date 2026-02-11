@@ -211,8 +211,8 @@ func TestExternalCommand_Run(t *testing.T) {
 	writePlugin(t, path, `#!/bin/sh
 echo "hello $@"`)
 
-	cmd := &cli.ExternalCommand{Path: path, Cmd: "hello"}
-	err := cmd.Run(context.Background(), []string{"world"})
+	cmd := &cli.ExternalCommand{Path: path, Cmd: "hello", Args: cli.Args{"world"}}
+	err := cmd.Run(context.Background())
 	assert.NoError(t, err)
 }
 
@@ -229,7 +229,7 @@ func TestExternalCommand_RunFailure(t *testing.T) {
 exit 42`)
 
 	cmd := &cli.ExternalCommand{Path: path, Cmd: "fail"}
-	err := cmd.Run(context.Background(), nil)
+	err := cmd.Run(context.Background())
 	assert.Error(t, err)
 }
 
@@ -256,7 +256,7 @@ func TestAllSubcommands(t *testing.T) {
 	t.Parallel()
 
 	parent := &discoverApp{
-		builtins:   []cli.Runner{cli.RunFunc(func(_ context.Context, _ []string) error { return nil })},
+		builtins:   []cli.Runner{cli.RunFunc(func(_ context.Context) error { return nil })},
 		discovered: []cli.Runner{&cli.ExternalCommand{Cmd: "plugin-cmd"}},
 	}
 
@@ -391,9 +391,9 @@ type discoverApp struct {
 	discovered []cli.Runner
 }
 
-func (d *discoverApp) Run(_ context.Context, _ []string) error { return nil }
-func (d *discoverApp) Name() string                            { return "myapp" }
-func (d *discoverApp) Subcommands() []cli.Runner               { return d.builtins }
+func (d *discoverApp) Run(_ context.Context) error { return nil }
+func (d *discoverApp) Name() string                { return "myapp" }
+func (d *discoverApp) Subcommands() []cli.Runner   { return d.builtins }
 
 func (d *discoverApp) Discover() ([]cli.Runner, error) {
 	return d.discovered, nil
@@ -404,8 +404,8 @@ type discoverFromDirApp struct {
 	prefix string
 }
 
-func (d *discoverFromDirApp) Run(_ context.Context, _ []string) error { return nil }
-func (d *discoverFromDirApp) Name() string                            { return d.prefix }
+func (d *discoverFromDirApp) Run(_ context.Context) error { return nil }
+func (d *discoverFromDirApp) Name() string                { return d.prefix }
 
 func (d *discoverFromDirApp) Discover() ([]cli.Runner, error) {
 	return cli.Discover(d.prefix, cli.WithDir(d.dir))

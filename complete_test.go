@@ -15,8 +15,8 @@ import (
 
 type compRootCmd struct{}
 
-func (c *compRootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compRootCmd) Name() string                            { return "myapp" }
+func (c *compRootCmd) Run(_ context.Context) error { return nil }
+func (c *compRootCmd) Name() string                { return "myapp" }
 func (c *compRootCmd) Subcommands() []cli.Runner {
 	return []cli.Runner{&compServeCmd{}, &compDeployCmd{}, &compHiddenCmd{}}
 }
@@ -29,45 +29,45 @@ type compServeCmd struct {
 	Output string `flag:"output" alt:"out" help:"Output file"`
 }
 
-func (c *compServeCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compServeCmd) Name() string                            { return "serve" }
-func (c *compServeCmd) Description() string                     { return "Start the server" }
+func (c *compServeCmd) Run(_ context.Context) error { return nil }
+func (c *compServeCmd) Name() string                { return "serve" }
+func (c *compServeCmd) Description() string         { return "Start the server" }
 
 type compDeployCmd struct{}
 
-func (c *compDeployCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compDeployCmd) Name() string                            { return "deploy" }
-func (c *compDeployCmd) Description() string                     { return "Deploy the app" }
-func (c *compDeployCmd) Aliases() []string                       { return []string{"d", "dep"} }
+func (c *compDeployCmd) Run(_ context.Context) error { return nil }
+func (c *compDeployCmd) Name() string                { return "deploy" }
+func (c *compDeployCmd) Description() string         { return "Deploy the app" }
+func (c *compDeployCmd) Aliases() []string           { return []string{"d", "dep"} }
 
 type compHiddenCmd struct{}
 
-func (c *compHiddenCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compHiddenCmd) Name() string                            { return "internal" }
-func (c *compHiddenCmd) Hidden() bool                            { return true }
+func (c *compHiddenCmd) Run(_ context.Context) error { return nil }
+func (c *compHiddenCmd) Name() string                { return "internal" }
+func (c *compHiddenCmd) Hidden() bool                { return true }
 
 type compDeprecatedFlagCmd struct {
 	Old string `flag:"old" deprecated:"use --new" help:"Old flag"`
 	New string `flag:"new" help:"New flag"`
 }
 
-func (c *compDeprecatedFlagCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compDeprecatedFlagCmd) Name() string                            { return "myapp" }
+func (c *compDeprecatedFlagCmd) Run(_ context.Context) error { return nil }
+func (c *compDeprecatedFlagCmd) Name() string                { return "myapp" }
 
 // Nested command tree for deep resolution.
 type compNestedRoot struct{}
 
-func (c *compNestedRoot) Run(_ context.Context, _ []string) error { return nil }
-func (c *compNestedRoot) Name() string                            { return "myapp" }
+func (c *compNestedRoot) Run(_ context.Context) error { return nil }
+func (c *compNestedRoot) Name() string                { return "myapp" }
 func (c *compNestedRoot) Subcommands() []cli.Runner {
 	return []cli.Runner{&compClusterCmd{}}
 }
 
 type compClusterCmd struct{}
 
-func (c *compClusterCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compClusterCmd) Name() string                            { return "cluster" }
-func (c *compClusterCmd) Description() string                     { return "Manage clusters" }
+func (c *compClusterCmd) Run(_ context.Context) error { return nil }
+func (c *compClusterCmd) Name() string                { return "cluster" }
+func (c *compClusterCmd) Description() string         { return "Manage clusters" }
 func (c *compClusterCmd) Subcommands() []cli.Runner {
 	return []cli.Runner{&compClusterListCmd{}}
 }
@@ -76,26 +76,27 @@ type compClusterListCmd struct {
 	Region string `flag:"region" short:"r" help:"AWS region"`
 }
 
-func (c *compClusterListCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compClusterListCmd) Name() string                            { return "list" }
-func (c *compClusterListCmd) Description() string                     { return "List clusters" }
+func (c *compClusterListCmd) Run(_ context.Context) error { return nil }
+func (c *compClusterListCmd) Name() string                { return "list" }
+func (c *compClusterListCmd) Description() string         { return "List clusters" }
 
 // Completer implementation.
 type compCompleterCmd struct{}
 
-func (c *compCompleterCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compCompleterCmd) Name() string                            { return "myapp" }
+func (c *compCompleterCmd) Run(_ context.Context) error { return nil }
+func (c *compCompleterCmd) Name() string                { return "myapp" }
 func (c *compCompleterCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
 	return []string{"alpha", "beta", "gamma"}, cli.ShellCompDirectiveNoFileComp
 }
 
 type compCompleterNilCmd struct{}
 
-func (c *compCompleterNilCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compCompleterNilCmd) Name() string                            { return "myapp" }
+func (c *compCompleterNilCmd) Run(_ context.Context) error { return nil }
+func (c *compCompleterNilCmd) Name() string                { return "myapp" }
 func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
 	return nil, cli.ShellCompDirectiveDefault
 }
+
 func (c *compCompleterNilCmd) Subcommands() []cli.Runner {
 	return []cli.Runner{&compServeCmd{}}
 }
@@ -224,8 +225,8 @@ func TestComputeCompletions_CompleterNilFallback(t *testing.T) {
 // Completer returning NoSpace directive.
 type compCompleterNoSpaceCmd struct{}
 
-func (c *compCompleterNoSpaceCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *compCompleterNoSpaceCmd) Name() string                            { return "myapp" }
+func (c *compCompleterNoSpaceCmd) Run(_ context.Context) error { return nil }
+func (c *compCompleterNoSpaceCmd) Name() string                { return "myapp" }
 func (c *compCompleterNoSpaceCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
 	return []string{"alpha", "beta"}, cli.ShellCompDirectiveNoSpace
 }

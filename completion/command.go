@@ -28,7 +28,7 @@ type completionCmd struct {
 	out     io.Writer
 }
 
-func (c *completionCmd) Run(_ context.Context, _ []string) error {
+func (c *completionCmd) Run(_ context.Context) error {
 	return cli.ErrShowHelp
 }
 
@@ -52,7 +52,7 @@ type shellCmd struct {
 	out     io.Writer
 }
 
-func (s *shellCmd) Run(_ context.Context, _ []string) error {
+func (s *shellCmd) Run(_ context.Context) error {
 	var script string
 	switch s.shell {
 	case "bash":

@@ -22,8 +22,8 @@ type PluginInfo struct {
 }
 
 // ExternalCommand wraps an external executable as a [Runner]. When Run
-// is called, it executes the binary with the given args, wiring stdin,
-// stdout, and stderr to the parent process.
+// is called, it executes the binary, wiring stdin, stdout, and stderr
+// to the parent process.
 //
 // ExternalCommand implements [Namer], [Describer], and [Aliaser].
 type ExternalCommand struct {
@@ -38,6 +38,9 @@ type ExternalCommand struct {
 
 	// CommandAliases are alternate names for the command.
 	CommandAliases []string
+
+	// Args receives positional arguments via injection.
+	Args Args
 }
 
 // Name implements [Namer].
@@ -49,9 +52,9 @@ func (e *ExternalCommand) Description() string { return e.Desc }
 // Aliases implements [Aliaser].
 func (e *ExternalCommand) Aliases() []string { return e.CommandAliases }
 
-// Run implements [Runner]. It executes the plugin binary with the given args.
-func (e *ExternalCommand) Run(ctx context.Context, args []string) error {
-	cmd := exec.CommandContext(ctx, e.Path, args...) //nolint:gosec // path is from directory scan or user-configured PATH
+// Run implements [Runner].
+func (e *ExternalCommand) Run(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, e.Path, e.Args...) //nolint:gosec // path is from directory scan or user-configured PATH
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -362,5 +365,5 @@ func isExecutable(path string) bool {
 		ext := strings.ToLower(filepath.Ext(path))
 		return ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ".com"
 	}
-	return info.Mode()&0111 != 0
+	return info.Mode()&0o111 != 0
 }

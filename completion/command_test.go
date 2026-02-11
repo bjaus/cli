@@ -63,7 +63,7 @@ func TestCommand_ShowsHelp(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
-	err := cmd.Run(context.Background(), nil)
+	err := cmd.Run(context.Background())
 	assert.ErrorIs(t, err, cli.ErrShowHelp)
 }
 
@@ -81,7 +81,7 @@ func TestCommand_UsesWriter(t *testing.T) {
 	require.NotEmpty(t, subs)
 
 	// Run bash subcommand.
-	err := subs[0].Run(t.Context(), nil)
+	err := subs[0].Run(t.Context())
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, buf.String())
@@ -114,7 +114,7 @@ func TestCommand_ShellOutput(t *testing.T) {
 			}
 			require.NotNil(t, target)
 
-			err := target.Run(t.Context(), nil)
+			err := target.Run(t.Context())
 			require.NoError(t, err)
 
 			assert.NotEmpty(t, buf.String())

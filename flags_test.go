@@ -15,13 +15,13 @@ type flaggedCmd struct {
 	Verbose bool   `flag:"verbose" short:"v" help:"Enable verbose logging"`
 }
 
-func (c *flaggedCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *flaggedCmd) Run(_ context.Context) error { return nil }
 
 type requiredFlagCmd struct {
 	Name string `flag:"name" required:"true" help:"Your name"`
 }
 
-func (c *requiredFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *requiredFlagCmd) Run(_ context.Context) error { return nil }
 
 func TestScanFlags(t *testing.T) {
 	t.Parallel()

@@ -17,10 +17,10 @@ type rootCmd struct {
 	hidden *hiddenCmd
 }
 
-func (r *rootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (r *rootCmd) Name() string                            { return "myapp" }
-func (r *rootCmd) Description() string                     { return "My test application" }
-func (r *rootCmd) Subcommands() []cli.Runner               { return []cli.Runner{r.serve, r.hidden} }
+func (r *rootCmd) Run(_ context.Context) error { return nil }
+func (r *rootCmd) Name() string                { return "myapp" }
+func (r *rootCmd) Description() string         { return "My test application" }
+func (r *rootCmd) Subcommands() []cli.Runner   { return []cli.Runner{r.serve, r.hidden} }
 
 type serveCmd struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
@@ -28,9 +28,9 @@ type serveCmd struct {
 	Secret string `flag:"secret" hidden:"true" help:"Secret key"`
 }
 
-func (s *serveCmd) Run(_ context.Context, _ []string) error { return nil }
-func (s *serveCmd) Name() string                            { return "serve" }
-func (s *serveCmd) Description() string                     { return "Start the server" }
+func (s *serveCmd) Run(_ context.Context) error { return nil }
+func (s *serveCmd) Name() string                { return "serve" }
+func (s *serveCmd) Description() string         { return "Start the server" }
 func (s *serveCmd) Examples() []cli.Example {
 	return []cli.Example{
 		{Description: "Start on port 9090", Command: "myapp serve --port 9090"},
@@ -39,9 +39,9 @@ func (s *serveCmd) Examples() []cli.Example {
 
 type hiddenCmd struct{}
 
-func (h *hiddenCmd) Run(_ context.Context, _ []string) error { return nil }
-func (h *hiddenCmd) Name() string                            { return "internal" }
-func (h *hiddenCmd) Hidden() bool                            { return true }
+func (h *hiddenCmd) Run(_ context.Context) error { return nil }
+func (h *hiddenCmd) Name() string                { return "internal" }
+func (h *hiddenCmd) Hidden() bool                { return true }
 
 func newRoot() *rootCmd {
 	return &rootCmd{serve: &serveCmd{}, hidden: &hiddenCmd{}}
@@ -141,19 +141,19 @@ func TestGenManPage_DefaultSection(t *testing.T) {
 
 type pluginCmd struct{}
 
-func (p *pluginCmd) Run(_ context.Context, _ []string) error { return nil }
-func (p *pluginCmd) Name() string                            { return "deploy-plugin" }
-func (p *pluginCmd) Description() string                     { return "Deploy via plugin" }
+func (p *pluginCmd) Run(_ context.Context) error { return nil }
+func (p *pluginCmd) Name() string                { return "deploy-plugin" }
+func (p *pluginCmd) Description() string         { return "Deploy via plugin" }
 
 type discovererRoot struct {
 	serve *serveCmd
 }
 
-func (d *discovererRoot) Run(_ context.Context, _ []string) error { return nil }
-func (d *discovererRoot) Name() string                            { return "myapp" }
-func (d *discovererRoot) Description() string                     { return "App with plugins" }
-func (d *discovererRoot) Subcommands() []cli.Runner               { return []cli.Runner{d.serve} }
-func (d *discovererRoot) Discover() ([]cli.Runner, error)         { return []cli.Runner{&pluginCmd{}}, nil }
+func (d *discovererRoot) Run(_ context.Context) error     { return nil }
+func (d *discovererRoot) Name() string                    { return "myapp" }
+func (d *discovererRoot) Description() string             { return "App with plugins" }
+func (d *discovererRoot) Subcommands() []cli.Runner       { return []cli.Runner{d.serve} }
+func (d *discovererRoot) Discover() ([]cli.Runner, error) { return []cli.Runner{&pluginCmd{}}, nil }
 
 func newDiscovererRoot() *discovererRoot {
 	return &discovererRoot{serve: &serveCmd{}}
@@ -201,9 +201,9 @@ func TestGenMarkdownTree_IncludesDiscoveredCommands(t *testing.T) {
 
 type longDescDocCmd struct{}
 
-func (c *longDescDocCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *longDescDocCmd) Name() string                            { return "longdesc" }
-func (c *longDescDocCmd) Description() string                     { return "Short description" }
+func (c *longDescDocCmd) Run(_ context.Context) error { return nil }
+func (c *longDescDocCmd) Name() string                { return "longdesc" }
+func (c *longDescDocCmd) Description() string         { return "Short description" }
 func (c *longDescDocCmd) LongDescription() string {
 	return "This is a detailed multi-paragraph description for documentation."
 }

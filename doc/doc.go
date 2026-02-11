@@ -49,13 +49,15 @@ func GenMarkdown(cmd cli.Runner, chain ...cli.Runner) string {
 // GenMarkdownTree generates markdown files for all commands in the tree,
 // writing one file per command into dir.
 func GenMarkdownTree(root cli.Runner, dir string) error {
-	if err := os.MkdirAll(dir, 0o750); err != nil {		return err
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
 	}
 	return walkTree(root, []cli.Runner{root}, func(cmd cli.Runner, chain []cli.Runner) error {
 		name := commandPath(chain)
 		filename := strings.ReplaceAll(name, " ", "_") + ".md"
 		content := genMarkdown(cmd, chain)
-		return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600)	})
+		return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600)
+	})
 }
 
 // GenManPage generates a troff-formatted man page for a single command.
@@ -69,14 +71,16 @@ func GenManPage(cmd cli.Runner, header *ManHeader, chain ...cli.Runner) string {
 // GenManTree generates man page files for all commands in the tree,
 // writing one file per command into dir.
 func GenManTree(root cli.Runner, dir string, header *ManHeader) error {
-	if err := os.MkdirAll(dir, 0o750); err != nil {		return err
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
 	}
 	section := manSection(header)
 	return walkTree(root, []cli.Runner{root}, func(cmd cli.Runner, chain []cli.Runner) error {
 		name := commandPath(chain)
 		filename := strings.ReplaceAll(name, " ", "-") + "." + section
 		content := genManPage(cmd, chain, header)
-		return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600)	})
+		return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o600)
+	})
 }
 
 func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {

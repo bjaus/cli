@@ -22,8 +22,8 @@ func TestCustomHelper(t *testing.T) {
 
 type customHelpCmd struct{}
 
-func (c *customHelpCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *customHelpCmd) Help() string                            { return "Custom help text!" }
+func (c *customHelpCmd) Run(_ context.Context) error { return nil }
+func (c *customHelpCmd) Help() string                { return "Custom help text!" }
 
 func TestCustomHelpRenderer(t *testing.T) {
 	t.Parallel()
@@ -49,18 +49,18 @@ func (r *testRenderer) RenderHelp(_ cli.Runner, _ []cli.Runner, _ []cli.FlagDef,
 
 type longDescCmd struct{}
 
-func (c *longDescCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *longDescCmd) Name() string                            { return "longdesc" }
-func (c *longDescCmd) Description() string                     { return "Short description" }
+func (c *longDescCmd) Run(_ context.Context) error { return nil }
+func (c *longDescCmd) Name() string                { return "longdesc" }
+func (c *longDescCmd) Description() string         { return "Short description" }
 func (c *longDescCmd) LongDescription() string {
 	return "This is a much longer description that spans\nmultiple lines and provides detailed information."
 }
 
 type longDescParent struct{}
 
-func (p *longDescParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *longDescParent) Name() string                            { return "myapp" }
-func (p *longDescParent) Subcommands() []cli.Runner               { return []cli.Runner{&longDescCmd{}} }
+func (p *longDescParent) Run(_ context.Context) error { return nil }
+func (p *longDescParent) Name() string                { return "myapp" }
+func (p *longDescParent) Subcommands() []cli.Runner   { return []cli.Runner{&longDescCmd{}} }
 
 func TestLongDescription_ShownInHelp(t *testing.T) {
 	t.Parallel()

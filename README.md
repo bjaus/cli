@@ -32,13 +32,13 @@ type GreetCmd struct {
     Name string `flag:"name" short:"n" default:"World" help:"Who to greet"`
 }
 
-func (g *GreetCmd) Run(_ context.Context, _ []string) error {
+func (g *GreetCmd) Run(_ context.Context) error {
     fmt.Printf("Hello, %s!\n", g.Name)
     return nil
 }
 
 func main() {
-    cli.ExecuteAndExit(context.Background(), &GreetCmd{}, os.Args[1:])
+    cli.ExecuteAndExit(context.Background(), &GreetCmd{}, os.Args)
 }
 ```
 
@@ -60,14 +60,16 @@ Every command must implement `Runner`:
 
 ```go
 type Runner interface {
-    Run(ctx context.Context, args []string) error
+    Run(ctx context.Context) error
 }
 ```
+
+Positional arguments are available via the `Args` field (see [Positional Arguments](#positional-arguments)).
 
 For simple cases, `RunFunc` adapts a plain function:
 
 ```go
-cmd := cli.RunFunc(func(ctx context.Context, args []string) error {
+cmd := cli.RunFunc(func(ctx context.Context) error {
     fmt.Println("Hello!")
     return nil
 })
@@ -246,8 +248,8 @@ Implement `Parent` to declare subcommands:
 ```go
 type App struct{}
 
-func (a *App) Run(_ context.Context, _ []string) error { return nil }
-func (a *App) Name() string                            { return "myapp" }
+func (a *App) Run(_ context.Context) error { return nil }
+func (a *App) Name() string                { return "myapp" }
 func (a *App) Subcommands() []cli.Runner {
     return []cli.Runner{&ServeCmd{}, &MigrateCmd{}}
 }
@@ -372,9 +374,9 @@ Implement `Middlewarer` to wrap the run function:
 func (c *Cmd) Middleware() []func(next cli.RunFunc) cli.RunFunc {
     return []func(next cli.RunFunc) cli.RunFunc{
         func(next cli.RunFunc) cli.RunFunc {
-            return func(ctx context.Context, args []string) error {
+            return func(ctx context.Context) error {
                 start := time.Now()
-                err := next(ctx, args)
+                err := next(ctx)
                 log.Printf("took %s", time.Since(start))
                 return err
             }
@@ -398,16 +400,69 @@ $ app -vvv    # works with counters too
 
 All flags except the last must be bool or counter (no value). The last flag may take a value from the next argument.
 
+## Positional Arguments
+
+Commands that need positional arguments declare an `Args` field:
+
+```go
+type CopyCmd struct {
+    Args    cli.Args
+    Verbose bool `flag:"verbose" short:"v"`
+}
+
+func (c *CopyCmd) Run(_ context.Context) error {
+    for _, file := range c.Args {
+        fmt.Println("copying", file)
+    }
+    return nil
+}
+```
+
+```
+$ copy -v file1.txt file2.txt
+copying file1.txt
+copying file2.txt
+```
+
+## Dependency Injection with Bind
+
+Use `cli.Bind` to inject dependencies into commands by type:
+
+```go
+func main() {
+    db := openDB()
+    cache := redis.New()
+
+    cli.ExecuteAndExit(ctx, &App{}, os.Args,
+        cli.Bind(db),                        // inject *sql.DB
+        cli.BindTo(cache, (*Cache)(nil)),    // inject as interface
+    )
+}
+
+type ServeCmd struct {
+    DB    *sql.DB  // injected by type match
+    Cache Cache    // injected as interface
+    Port  int      `flag:"port" default:"8080"`
+}
+
+func (s *ServeCmd) Run(_ context.Context) error {
+    // s.DB and s.Cache are ready to use
+    return nil
+}
+```
+
+Fields with `flag:`, `arg:`, or `env:` tags are not eligible for injection.
+
 ## Error Handling
 
 `Execute` returns errors. `ExecuteAndExit` wraps it with `os.Exit`:
 
 ```go
-// In main:
-cli.ExecuteAndExit(ctx, root, os.Args[1:])
+// In main — pass os.Args directly, the framework strips the program name:
+cli.ExecuteAndExit(ctx, root, os.Args)
 
 // Or handle errors yourself:
-if err := cli.Execute(ctx, root, os.Args[1:]); err != nil {
+if err := cli.Execute(ctx, root, os.Args); err != nil {
     log.Fatal(err)
 }
 ```
@@ -439,9 +494,9 @@ cli.Execute(ctx, root, args,
 )
 ```
 
-## Dependency Injection
+## Manual Dependency Injection
 
-No framework magic. Two patterns:
+Beyond `cli.Bind`, two manual patterns work well:
 
 **Constructor wiring** — parent builds children with dependencies:
 
@@ -484,6 +539,8 @@ func (a *App) Before(ctx context.Context) (context.Context, error) {
 | `WithSuggest(bool)` | `true` | "Did you mean?" suggestions |
 | `WithShortOptionHandling(bool)` | `false` | POSIX short option combining |
 | `WithPrefixMatching(bool)` | `false` | Unique prefix subcommand matching |
+| `Bind(v)` | — | Inject dependency by concrete type |
+| `BindTo(v, iface)` | — | Inject dependency as interface type |
 
 ## Contributing
 

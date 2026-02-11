@@ -19,26 +19,27 @@ import (
 
 type bareCmd struct{}
 
-func (c *bareCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *bareCmd) Run(_ context.Context) error { return nil }
 
 type rootCmd struct {
 	serve *serveCmd
 }
 
-func (r *rootCmd) Run(_ context.Context, _ []string) error { return nil }
-func (r *rootCmd) Name() string                            { return "app" }
-func (r *rootCmd) Description() string                     { return "Test application" }
-func (r *rootCmd) Subcommands() []cli.Runner               { return []cli.Runner{r.serve} }
+func (r *rootCmd) Run(_ context.Context) error { return nil }
+func (r *rootCmd) Name() string                { return "app" }
+func (r *rootCmd) Description() string         { return "Test application" }
+func (r *rootCmd) Subcommands() []cli.Runner   { return []cli.Runner{r.serve} }
 
 type serveCmd struct {
 	Port int    `flag:"port" short:"p" default:"8080" help:"Port"`
 	Host string `flag:"host" default:"localhost" help:"Host"`
+	Args cli.Args
 
 	gotArgs []string
 }
 
-func (s *serveCmd) Run(_ context.Context, args []string) error {
-	s.gotArgs = args
+func (s *serveCmd) Run(_ context.Context) error {
+	s.gotArgs = s.Args
 	return nil
 }
 
@@ -47,24 +48,29 @@ func (s *serveCmd) Description() string { return "Start the server" }
 
 // --- Simple execution tests ---
 
+type simpleCmd struct {
+	Args    cli.Args
+	gotArgs []string
+}
+
+func (c *simpleCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
+	return nil
+}
+
 func TestExecute_SimpleCommand(t *testing.T) {
 	t.Parallel()
 
-	var gotArgs []string
-	cmd := cli.RunFunc(func(_ context.Context, args []string) error {
-		gotArgs = args
-		return nil
-	})
-
+	cmd := &simpleCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{"foo", "bar"})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"foo", "bar"}, gotArgs)
+	assert.Equal(t, []string{"foo", "bar"}, cmd.gotArgs)
 }
 
 func TestExecute_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
-	cmd := cli.RunFunc(func(_ context.Context, _ []string) error {
+	cmd := cli.RunFunc(func(_ context.Context) error {
 		return errors.New("boom")
 	})
 
@@ -131,9 +137,9 @@ type trackedRoot struct {
 	child   *trackedChild
 }
 
-func (r *trackedRoot) Run(_ context.Context, _ []string) error { return nil }
-func (r *trackedRoot) Name() string                            { return "root" }
-func (r *trackedRoot) Subcommands() []cli.Runner               { return []cli.Runner{r.child} }
+func (r *trackedRoot) Run(_ context.Context) error { return nil }
+func (r *trackedRoot) Name() string                { return "root" }
+func (r *trackedRoot) Subcommands() []cli.Runner   { return []cli.Runner{r.child} }
 
 func (r *trackedRoot) Before(ctx context.Context) (context.Context, error) {
 	r.tracker.order = append(r.tracker.order, "root-before")
@@ -149,7 +155,7 @@ type trackedChild struct {
 	tracker *lifecycleTracker
 }
 
-func (c *trackedChild) Run(ctx context.Context, _ []string) error {
+func (c *trackedChild) Run(ctx context.Context) error {
 	c.tracker.order = append(c.tracker.order, "child-run")
 	val, ok := ctx.Value(ctxKey("root")).(string)
 	if ok {
@@ -211,7 +217,7 @@ type failingChild struct {
 	tracker *lifecycleTracker
 }
 
-func (c *failingChild) Run(_ context.Context, _ []string) error {
+func (c *failingChild) Run(_ context.Context) error {
 	c.tracker.order = append(c.tracker.order, "fail-run")
 	return errors.New("child failed")
 }
@@ -223,9 +229,9 @@ type parentWithCustomChild struct {
 	child   cli.Runner
 }
 
-func (p *parentWithCustomChild) Run(_ context.Context, _ []string) error { return nil }
-func (p *parentWithCustomChild) Name() string                            { return "wrapper" }
-func (p *parentWithCustomChild) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *parentWithCustomChild) Run(_ context.Context) error { return nil }
+func (p *parentWithCustomChild) Name() string                { return "wrapper" }
+func (p *parentWithCustomChild) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
 
 func (p *parentWithCustomChild) After(_ context.Context) error {
 	p.tracker.order = append(p.tracker.order, "wrapper-after")
@@ -243,7 +249,7 @@ type validatingCmd struct {
 	Name string `flag:"name" required:"true"`
 }
 
-func (c *validatingCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *validatingCmd) Run(_ context.Context) error { return nil }
 
 func (c *validatingCmd) Validate(_ map[string]bool) error {
 	if len(c.Name) < 3 {
@@ -311,7 +317,7 @@ type middlewareCmd struct {
 	order *[]string
 }
 
-func (c *middlewareCmd) Run(_ context.Context, _ []string) error {
+func (c *middlewareCmd) Run(_ context.Context) error {
 	*c.order = append(*c.order, "run")
 	return nil
 }
@@ -319,9 +325,9 @@ func (c *middlewareCmd) Run(_ context.Context, _ []string) error {
 func (c *middlewareCmd) Middleware() []func(next cli.RunFunc) cli.RunFunc {
 	return []func(next cli.RunFunc) cli.RunFunc{
 		func(next cli.RunFunc) cli.RunFunc {
-			return func(ctx context.Context, args []string) error {
+			return func(ctx context.Context) error {
 				*c.order = append(*c.order, "mw-before")
-				err := next(ctx, args)
+				err := next(ctx)
 				*c.order = append(*c.order, "mw-after")
 				return err
 			}
@@ -346,7 +352,7 @@ func TestWithStderr(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	cmd := cli.RunFunc(func(_ context.Context, _ []string) error { return nil })
+	cmd := cli.RunFunc(func(_ context.Context) error { return nil })
 	err := cli.Execute(context.Background(), cmd, nil, cli.WithStderr(&buf))
 	require.NoError(t, err)
 }
@@ -413,15 +419,15 @@ func TestWithSuggest_Enabled(t *testing.T) {
 
 type aliasedCmd struct{}
 
-func (c *aliasedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *aliasedCmd) Name() string                            { return "deploy" }
-func (c *aliasedCmd) Aliases() []string                       { return []string{"d", "dep"} }
+func (c *aliasedCmd) Run(_ context.Context) error { return nil }
+func (c *aliasedCmd) Name() string                { return "deploy" }
+func (c *aliasedCmd) Aliases() []string           { return []string{"d", "dep"} }
 
 type aliasParent struct{}
 
-func (p *aliasParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *aliasParent) Name() string                            { return "app" }
-func (p *aliasParent) Subcommands() []cli.Runner               { return []cli.Runner{&aliasedCmd{}} }
+func (p *aliasParent) Run(_ context.Context) error { return nil }
+func (p *aliasParent) Name() string                { return "app" }
+func (p *aliasParent) Subcommands() []cli.Runner   { return []cli.Runner{&aliasedCmd{}} }
 
 func TestExecute_AliasResolution(t *testing.T) {
 	t.Parallel()
@@ -455,10 +461,10 @@ func TestExecuteAndExit(t *testing.T) {
 		wantCode   int
 		wantStderr string
 	}{
-		"success exits 0":        {envMode: "success", wantCode: 0},
-		"exit coder exits code":  {envMode: "exitcoder", wantCode: 42},
-		"generic error exits 1":  {envMode: "error", wantCode: 1},
-		"exiter is called": {envMode: "exiter", wantCode: 1, wantStderr: "handled: boom"},
+		"success exits 0":       {envMode: "success", wantCode: 0},
+		"exit coder exits code": {envMode: "exitcoder", wantCode: 42},
+		"generic error exits 1": {envMode: "error", wantCode: 1},
+		"exiter is called":      {envMode: "exiter", wantCode: 1, wantStderr: "handled: boom"},
 	}
 
 	for name, tt := range tests {
@@ -492,7 +498,7 @@ type exiterCmd struct {
 	runErr error
 }
 
-func (c *exiterCmd) Run(_ context.Context, _ []string) error { return c.runErr }
+func (c *exiterCmd) Run(_ context.Context) error { return c.runErr }
 
 func (c *exiterCmd) Exit(err error) {
 	fmt.Fprintf(os.Stderr, "handled: %s\n", err)
@@ -510,13 +516,13 @@ func TestExecuteAndExitHelper(t *testing.T) {
 	switch mode {
 	case "success":
 		cli.ExecuteAndExit(context.Background(),
-			cli.RunFunc(func(_ context.Context, _ []string) error { return nil }), nil)
+			cli.RunFunc(func(_ context.Context) error { return nil }), nil)
 	case "exitcoder":
 		cli.ExecuteAndExit(context.Background(),
-			cli.RunFunc(func(_ context.Context, _ []string) error { return cli.Exit("fail", 42) }), nil)
+			cli.RunFunc(func(_ context.Context) error { return cli.Exit("fail", 42) }), nil)
 	case "error":
 		cli.ExecuteAndExit(context.Background(),
-			cli.RunFunc(func(_ context.Context, _ []string) error { return errors.New("boom") }), nil)
+			cli.RunFunc(func(_ context.Context) error { return errors.New("boom") }), nil)
 	case "exiter":
 		cli.ExecuteAndExit(context.Background(), &exiterCmd{runErr: errors.New("boom")}, nil)
 	}
@@ -561,8 +567,8 @@ type afterErrorParent struct {
 	errMsg string
 }
 
-func (p *afterErrorParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *afterErrorParent) Name() string                            { return "app" }
+func (p *afterErrorParent) Run(_ context.Context) error { return nil }
+func (p *afterErrorParent) Name() string                { return "app" }
 
 func (p *afterErrorParent) After(_ context.Context) error {
 	return fmt.Errorf("%s", p.errMsg)
@@ -582,7 +588,7 @@ func TestExecute_AfterHookError(t *testing.T) {
 func TestExecute_ExitCoderFromRun(t *testing.T) {
 	t.Parallel()
 
-	cmd := cli.RunFunc(func(_ context.Context, _ []string) error {
+	cmd := cli.RunFunc(func(_ context.Context) error {
 		return cli.Exit("port in use", 2)
 	})
 
@@ -599,7 +605,7 @@ func TestExecute_ExitCoderFromRun(t *testing.T) {
 func TestScanFlags_RunFunc(t *testing.T) {
 	t.Parallel()
 
-	cmd := cli.RunFunc(func(_ context.Context, _ []string) error { return nil })
+	cmd := cli.RunFunc(func(_ context.Context) error { return nil })
 	defs := cli.ScanFlags(cmd)
 	assert.Nil(t, defs)
 }
@@ -611,7 +617,7 @@ type envRequiredCmd struct {
 	Name string `flag:"name" required:"true"`
 }
 
-func (c *envRequiredCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envRequiredCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_EnvSatisfiesRequired(t *testing.T) {
 	t.Setenv("TEST_REQ_PORT", "9090")
@@ -662,10 +668,10 @@ type versionedRoot struct {
 	serve *serveCmd
 }
 
-func (v *versionedRoot) Run(_ context.Context, _ []string) error { return nil }
-func (v *versionedRoot) Name() string                            { return "myapp" }
-func (v *versionedRoot) Version() string                         { return "v2.1.0" }
-func (v *versionedRoot) Subcommands() []cli.Runner               { return []cli.Runner{v.serve} }
+func (v *versionedRoot) Run(_ context.Context) error { return nil }
+func (v *versionedRoot) Name() string                { return "myapp" }
+func (v *versionedRoot) Version() string             { return "v2.1.0" }
+func (v *versionedRoot) Subcommands() []cli.Runner   { return []cli.Runner{v.serve} }
 
 func TestExecute_Version(t *testing.T) {
 	t.Parallel()
@@ -695,24 +701,19 @@ func TestExecute_VersionNoVersioner(t *testing.T) {
 	t.Parallel()
 
 	// --version on a non-Versioner becomes positional.
-	var gotArgs []string
-	cmd := cli.RunFunc(func(_ context.Context, args []string) error {
-		gotArgs = args
-		return nil
-	})
-
+	cmd := &simpleCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{"--version"})
 	require.NoError(t, err)
-	assert.Contains(t, gotArgs, "--version")
+	assert.Contains(t, cmd.gotArgs, "--version")
 }
 
 // --- Deprecator interface ---
 
 type deprecatedCmd struct{}
 
-func (c *deprecatedCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *deprecatedCmd) Name() string                            { return "oldcmd" }
-func (c *deprecatedCmd) Deprecated() string                      { return "use newcmd instead" }
+func (c *deprecatedCmd) Run(_ context.Context) error { return nil }
+func (c *deprecatedCmd) Name() string                { return "oldcmd" }
+func (c *deprecatedCmd) Deprecated() string          { return "use newcmd instead" }
 
 func TestExecute_Deprecated(t *testing.T) {
 	t.Parallel()
@@ -732,16 +733,16 @@ type defaultParentCmd struct {
 	child      *serveCmd
 }
 
-func (p *defaultParentCmd) Run(_ context.Context, _ []string) error { return nil }
-func (p *defaultParentCmd) Name() string                            { return "app" }
-func (p *defaultParentCmd) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
-func (p *defaultParentCmd) Fallback() cli.Runner                    { return p.defaultCmd }
+func (p *defaultParentCmd) Run(_ context.Context) error { return nil }
+func (p *defaultParentCmd) Name() string                { return "app" }
+func (p *defaultParentCmd) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *defaultParentCmd) Fallback() cli.Runner        { return p.defaultCmd }
 
 func TestExecute_Fallback(t *testing.T) {
 	t.Parallel()
 
 	var defaultRan bool
-	def := cli.RunFunc(func(_ context.Context, _ []string) error {
+	def := cli.RunFunc(func(_ context.Context) error {
 		defaultRan = true
 		return nil
 	})
@@ -756,7 +757,7 @@ func TestExecute_FallbackNotUsedWhenSubcommandMatches(t *testing.T) {
 	t.Parallel()
 
 	var defaultRan bool
-	def := cli.RunFunc(func(_ context.Context, _ []string) error {
+	def := cli.RunFunc(func(_ context.Context) error {
 		defaultRan = true
 		return nil
 	})
@@ -785,15 +786,10 @@ func TestExecute_PrefixMatching(t *testing.T) {
 func TestExecute_PrefixMatchingDisabled(t *testing.T) {
 	t.Parallel()
 
-	var gotArgs []string
-	root := cli.RunFunc(func(_ context.Context, args []string) error {
-		gotArgs = args
-		return nil
-	})
-
-	err := cli.Execute(context.Background(), root, []string{"ser"})
+	cmd := &simpleCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"ser"})
 	require.NoError(t, err)
-	assert.Contains(t, gotArgs, "ser")
+	assert.Contains(t, cmd.gotArgs, "ser")
 }
 
 // --- Short option handling ---
@@ -802,12 +798,13 @@ type shortOptCmd struct {
 	Verbose bool `flag:"verbose" short:"v"`
 	Debug   bool `flag:"debug" short:"d"`
 	Port    int  `flag:"port" short:"p" default:"8080"`
+	Args    cli.Args
 
 	gotArgs []string
 }
 
-func (c *shortOptCmd) Run(_ context.Context, args []string) error {
-	c.gotArgs = args
+func (c *shortOptCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
 	return nil
 }
 
@@ -854,15 +851,15 @@ type catSubCmd struct {
 	cat string
 }
 
-func (c *catSubCmd) Run(_ context.Context, _ []string) error { return nil }
-func (c *catSubCmd) Name() string                            { return c.n }
-func (c *catSubCmd) Description() string                     { return c.n + " desc" }
-func (c *catSubCmd) Category() string                        { return c.cat }
+func (c *catSubCmd) Run(_ context.Context) error { return nil }
+func (c *catSubCmd) Name() string                { return c.n }
+func (c *catSubCmd) Description() string         { return c.n + " desc" }
+func (c *catSubCmd) Category() string            { return c.cat }
 
 type catParentCmd struct{}
 
-func (p *catParentCmd) Run(_ context.Context, _ []string) error { return nil }
-func (p *catParentCmd) Name() string                            { return "app" }
+func (p *catParentCmd) Run(_ context.Context) error { return nil }
+func (p *catParentCmd) Name() string                { return "app" }
 
 func (p *catParentCmd) Subcommands() []cli.Runner {
 	return []cli.Runner{
@@ -886,12 +883,13 @@ func TestExecute_HelpWithCategories(t *testing.T) {
 
 type sliceCmd struct {
 	Tags []string `flag:"tag" short:"t"`
+	Args cli.Args
 
 	gotArgs []string
 }
 
-func (c *sliceCmd) Run(_ context.Context, args []string) error {
-	c.gotArgs = args
+func (c *sliceCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
 	return nil
 }
 
@@ -911,7 +909,7 @@ type negatableExtCmd struct {
 	Color bool `flag:"color" negate:"true" default:"true"`
 }
 
-func (c *negatableExtCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *negatableExtCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_Negatable(t *testing.T) {
 	t.Parallel()
@@ -943,7 +941,7 @@ type counterExtCmd struct {
 	Verbosity int `flag:"verbose" short:"v" counter:"true"`
 }
 
-func (c *counterExtCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *counterExtCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_Counter(t *testing.T) {
 	t.Parallel()
@@ -971,7 +969,7 @@ type enumExtCmd struct {
 	Format string `flag:"format" enum:"json,yaml,text" default:"json"`
 }
 
-func (c *enumExtCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *enumExtCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_Enum(t *testing.T) {
 	t.Parallel()
@@ -1002,7 +1000,7 @@ type mapExtCmd struct {
 	Headers map[string]string `flag:"header" short:"H"`
 }
 
-func (c *mapExtCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *mapExtCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_MapFlags(t *testing.T) {
 	t.Parallel()
@@ -1022,7 +1020,7 @@ type flagScanTestCmd struct {
 	Tags    []string `flag:"tag"`
 }
 
-func (c *flagScanTestCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *flagScanTestCmd) Run(_ context.Context) error { return nil }
 
 func TestScanFlags_NewFields(t *testing.T) {
 	t.Parallel()
@@ -1056,17 +1054,17 @@ type inheritParent struct {
 	child cli.Runner
 }
 
-func (p *inheritParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *inheritParent) Name() string                            { return "app" }
-func (p *inheritParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *inheritParent) Run(_ context.Context) error { return nil }
+func (p *inheritParent) Name() string                { return "app" }
+func (p *inheritParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
 
 type inheritChild struct {
 	Env  string `flag:"env" help:"Target environment"`
 	Port int    `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *inheritChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *inheritChild) Name() string                            { return "serve" }
+func (c *inheritChild) Run(_ context.Context) error { return nil }
+func (c *inheritChild) Name() string                { return "serve" }
 
 func TestExecute_FlagInheritance_ParentToChild(t *testing.T) {
 	t.Parallel()
@@ -1096,8 +1094,8 @@ type inheritChildEnv struct {
 	Port int    `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *inheritChildEnv) Run(_ context.Context, _ []string) error { return nil }
-func (c *inheritChildEnv) Name() string                            { return "serve" }
+func (c *inheritChildEnv) Run(_ context.Context) error { return nil }
+func (c *inheritChildEnv) Name() string                { return "serve" }
 
 func TestExecute_FlagInheritance_ChildEnvOverrides(t *testing.T) {
 	t.Setenv("TEST_INHERIT_ENV", "fromenv")
@@ -1115,8 +1113,8 @@ type inheritRequiredChild struct {
 	Env string `flag:"env" required:"true" help:"Target environment"`
 }
 
-func (c *inheritRequiredChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *inheritRequiredChild) Name() string                            { return "serve" }
+func (c *inheritRequiredChild) Run(_ context.Context) error { return nil }
+func (c *inheritRequiredChild) Name() string                { return "serve" }
 
 func TestExecute_FlagInheritance_SatisfiesRequired(t *testing.T) {
 	t.Parallel()
@@ -1134,8 +1132,8 @@ type inheritEnumChild struct {
 	Env string `flag:"env" enum:"dev,qa,prod" help:"Target environment"`
 }
 
-func (c *inheritEnumChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *inheritEnumChild) Name() string                            { return "serve" }
+func (c *inheritEnumChild) Run(_ context.Context) error { return nil }
+func (c *inheritEnumChild) Name() string                { return "serve" }
 
 func TestExecute_FlagInheritance_ValidatedAgainstEnum(t *testing.T) {
 	t.Parallel()
@@ -1161,17 +1159,17 @@ type inheritGrandparent struct {
 	child cli.Runner
 }
 
-func (p *inheritGrandparent) Run(_ context.Context, _ []string) error { return nil }
-func (p *inheritGrandparent) Name() string                            { return "root" }
-func (p *inheritGrandparent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *inheritGrandparent) Run(_ context.Context) error { return nil }
+func (p *inheritGrandparent) Name() string                { return "root" }
+func (p *inheritGrandparent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
 
 type inheritMiddle struct {
 	child cli.Runner
 }
 
-func (m *inheritMiddle) Run(_ context.Context, _ []string) error { return nil }
-func (m *inheritMiddle) Name() string                            { return "middle" }
-func (m *inheritMiddle) Subcommands() []cli.Runner               { return []cli.Runner{m.child} }
+func (m *inheritMiddle) Run(_ context.Context) error { return nil }
+func (m *inheritMiddle) Name() string                { return "middle" }
+func (m *inheritMiddle) Subcommands() []cli.Runner   { return []cli.Runner{m.child} }
 
 func TestExecute_FlagInheritance_MultiLevel(t *testing.T) {
 	t.Parallel()
@@ -1191,9 +1189,9 @@ type inheritIntParent struct {
 	child cli.Runner
 }
 
-func (p *inheritIntParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *inheritIntParent) Name() string                            { return "app" }
-func (p *inheritIntParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *inheritIntParent) Run(_ context.Context) error { return nil }
+func (p *inheritIntParent) Name() string                { return "app" }
+func (p *inheritIntParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
 
 func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 	t.Parallel()
@@ -1214,17 +1212,17 @@ type hiddenInheritParent struct {
 	child cli.Runner
 }
 
-func (p *hiddenInheritParent) Run(_ context.Context, _ []string) error { return nil }
-func (p *hiddenInheritParent) Name() string                            { return "app" }
-func (p *hiddenInheritParent) Subcommands() []cli.Runner               { return []cli.Runner{p.child} }
+func (p *hiddenInheritParent) Run(_ context.Context) error { return nil }
+func (p *hiddenInheritParent) Name() string                { return "app" }
+func (p *hiddenInheritParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
 
 type hiddenInheritChild struct {
 	Env  string `flag:"env" hidden:"true"`
 	Port int    `flag:"port" default:"8080" help:"Listen port"`
 }
 
-func (c *hiddenInheritChild) Run(_ context.Context, _ []string) error { return nil }
-func (c *hiddenInheritChild) Name() string                            { return "serve" }
+func (c *hiddenInheritChild) Run(_ context.Context) error { return nil }
+func (c *hiddenInheritChild) Name() string                { return "serve" }
 
 func TestExecute_HiddenInherit_Basic(t *testing.T) {
 	t.Parallel()
@@ -1244,9 +1242,9 @@ type hiddenInheritMiddle struct {
 	child cli.Runner
 }
 
-func (m *hiddenInheritMiddle) Run(_ context.Context, _ []string) error { return nil }
-func (m *hiddenInheritMiddle) Name() string                            { return "middle" }
-func (m *hiddenInheritMiddle) Subcommands() []cli.Runner               { return []cli.Runner{m.child} }
+func (m *hiddenInheritMiddle) Run(_ context.Context) error { return nil }
+func (m *hiddenInheritMiddle) Name() string                { return "middle" }
+func (m *hiddenInheritMiddle) Subcommands() []cli.Runner   { return []cli.Runner{m.child} }
 
 func TestExecute_HiddenInherit_NearestAncestorWins(t *testing.T) {
 	t.Parallel()
@@ -1280,7 +1278,7 @@ type configCmd struct {
 	Host string `flag:"host" default:"localhost" help:"Host"`
 }
 
-func (c *configCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *configCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_ConfigResolver_Applied(t *testing.T) {
 	t.Parallel()
@@ -1302,7 +1300,7 @@ type envConfigCmd struct {
 	Port int `flag:"port" default:"8080" env:"CFG_PORT"`
 }
 
-func (c *envConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envConfigCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_EnvOverridesConfig(t *testing.T) {
 	t.Setenv("CFG_PORT", "5555")
@@ -1340,7 +1338,7 @@ type reqConfigCmd struct {
 	Name string `flag:"name" required:"true"`
 }
 
-func (c *reqConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *reqConfigCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_ConfigSatisfiesRequired(t *testing.T) {
 	t.Parallel()
@@ -1361,7 +1359,7 @@ type enumConfigCmd struct {
 	Format string `flag:"format" enum:"json,yaml,text"`
 }
 
-func (c *enumConfigCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *enumConfigCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_ConfigValidatedAgainstEnum(t *testing.T) {
 	t.Parallel()
@@ -1397,7 +1395,7 @@ type configProviderCmd struct {
 	Port int `flag:"port" default:"8080"`
 }
 
-func (c *configProviderCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *configProviderCmd) Run(_ context.Context) error { return nil }
 
 func (c *configProviderCmd) ConfigResolver() cli.ConfigResolver {
 	return func(key cli.ConfigKey) (string, bool) {
@@ -1431,7 +1429,7 @@ type hiddenFlagCmd struct {
 	Debug bool `flag:"debug" hidden:"true" help:"Debug mode"`
 }
 
-func (c *hiddenFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *hiddenFlagCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_HiddenFlagStillWorks(t *testing.T) {
 	t.Parallel()
@@ -1460,7 +1458,7 @@ type deprecatedFlagCmd struct {
 	OldPort int `flag:"old-port" deprecated:"use --port instead" help:"Legacy port"`
 }
 
-func (c *deprecatedFlagCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *deprecatedFlagCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_DeprecatedFlagWarning(t *testing.T) {
 	t.Parallel()
@@ -1503,7 +1501,7 @@ type flagCategoryCmd struct {
 	Format string `flag:"format" default:"text" help:"Output format"`
 }
 
-func (c *flagCategoryCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *flagCategoryCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_FlagCategoriesInHelp(t *testing.T) {
 	t.Parallel()
@@ -1525,7 +1523,7 @@ type autoNameCmd struct {
 	Port         int    `flag:"port" default:"8080" help:"Port"`
 }
 
-func (c *autoNameCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *autoNameCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_AutoFlagName(t *testing.T) {
 	t.Parallel()
@@ -1555,7 +1553,7 @@ type envPrefixCmd struct {
 	Host string `flag:"host" default:"localhost" env:"HOST" help:"Host"`
 }
 
-func (c *envPrefixCmd) Run(_ context.Context, _ []string) error { return nil }
+func (c *envPrefixCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_EnvVarPrefix(t *testing.T) {
 	t.Setenv("MYAPP_PORT", "4444")
@@ -1595,7 +1593,7 @@ type argCopyCmd struct {
 	Port   int    `flag:"port" default:"8080" help:"Port"`
 }
 
-func (c *argCopyCmd) Run(_ context.Context, args []string) error { return nil }
+func (c *argCopyCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_ArgFields_Populated(t *testing.T) {
 	t.Parallel()
@@ -1631,7 +1629,7 @@ type argSliceCmd struct {
 	Files []string `arg:"files" help:"Files to process"`
 }
 
-func (c *argSliceCmd) Run(_ context.Context, args []string) error { return nil }
+func (c *argSliceCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_ArgFields_Slice(t *testing.T) {
 	t.Parallel()
@@ -1656,7 +1654,7 @@ type validatedCmd struct {
 	ran bool
 }
 
-func (c *validatedCmd) Run(_ context.Context, _ []string) error {
+func (c *validatedCmd) Run(_ context.Context) error {
 	c.ran = true
 	return nil
 }
@@ -1688,7 +1686,7 @@ type noArgsCmd struct {
 	ran bool
 }
 
-func (c *noArgsCmd) Run(_ context.Context, _ []string) error {
+func (c *noArgsCmd) Run(_ context.Context) error {
 	c.ran = true
 	return nil
 }
@@ -1723,8 +1721,8 @@ type mutexFormatCmd struct {
 	ran  bool
 }
 
-func (c *mutexFormatCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
-func (c *mutexFormatCmd) Name() string                            { return "fmt" }
+func (c *mutexFormatCmd) Run(_ context.Context) error { c.ran = true; return nil }
+func (c *mutexFormatCmd) Name() string                { return "fmt" }
 func (c *mutexFormatCmd) FlagGroups() []cli.FlagGroup {
 	return []cli.FlagGroup{cli.MutuallyExclusive("json", "yaml")}
 }
@@ -1751,8 +1749,8 @@ type togetherLoginCmd struct {
 	ran      bool
 }
 
-func (c *togetherLoginCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
-func (c *togetherLoginCmd) Name() string                            { return "login" }
+func (c *togetherLoginCmd) Run(_ context.Context) error { c.ran = true; return nil }
+func (c *togetherLoginCmd) Name() string                { return "login" }
 func (c *togetherLoginCmd) FlagGroups() []cli.FlagGroup {
 	return []cli.FlagGroup{cli.RequiredTogether("username", "password")}
 }
@@ -1779,8 +1777,8 @@ type oneRequiredInputCmd struct {
 	ran   bool
 }
 
-func (c *oneRequiredInputCmd) Run(_ context.Context, _ []string) error { c.ran = true; return nil }
-func (c *oneRequiredInputCmd) Name() string                            { return "read" }
+func (c *oneRequiredInputCmd) Run(_ context.Context) error { c.ran = true; return nil }
+func (c *oneRequiredInputCmd) Name() string                { return "read" }
 func (c *oneRequiredInputCmd) FlagGroups() []cli.FlagGroup {
 	return []cli.FlagGroup{cli.OneRequired("file", "stdin")}
 }
@@ -1813,11 +1811,12 @@ func TestExecute_OneRequired_TooMany(t *testing.T) {
 
 type passthroughWithFlagsCmd struct {
 	Verbose bool `flag:"verbose" short:"v" help:"Enable verbose output"`
+	Args    cli.Args
 	gotArgs []string
 }
 
-func (c *passthroughWithFlagsCmd) Run(_ context.Context, args []string) error {
-	c.gotArgs = args
+func (c *passthroughWithFlagsCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
 	return nil
 }
 
@@ -1834,11 +1833,12 @@ func TestExecute_Passthrough_RecognizedFlagsParsed(t *testing.T) {
 }
 
 type passthroughBareCmd struct {
+	Args    cli.Args
 	gotArgs []string
 }
 
-func (c *passthroughBareCmd) Run(_ context.Context, args []string) error {
-	c.gotArgs = args
+func (c *passthroughBareCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
 	return nil
 }
 

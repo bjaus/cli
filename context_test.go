@@ -102,8 +102,8 @@ type contextParent struct {
 	t   *testing.T
 }
 
-func (c *contextParent) Run(_ context.Context, _ []string) error { return nil }
-func (c *contextParent) Name() string                            { return "app" }
+func (c *contextParent) Run(_ context.Context) error { return nil }
+func (c *contextParent) Name() string                { return "app" }
 func (c *contextParent) Subcommands() []cli.Runner {
 	return []cli.Runner{&contextChild{t: c.t}}
 }
@@ -113,7 +113,7 @@ type contextChild struct {
 	t    *testing.T
 }
 
-func (c *contextChild) Run(ctx context.Context, _ []string) error {
+func (c *contextChild) Run(ctx context.Context) error {
 	assert.Equal(c.t, "prod", cli.Get[string](ctx, "env"))
 	assert.Equal(c.t, 9090, cli.Get[int](ctx, "port"))
 	return nil
