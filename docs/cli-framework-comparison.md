@@ -295,11 +295,11 @@ calls.
 | --------------- | ------------- | ------------- | --------------------------- | -------------------- |
 | string          | Y             | Y             | Y                           | Y                    |
 | int/int64       | Y (int8-64)   | Y             | Y                           | Y (int, int64)       |
-| uint/uint64     | Y (uint8-64)  | Y             | Y                           | -                    |
+| uint/uint64     | Y (uint8-64)  | Y             | Y                           | Y (uint, uint64)     |
 | float32/float64 | Y             | Y             | Y                           | Y (float64)          |
 | bool            | Y             | Y             | Y                           | Y                    |
 | time.Duration   | Y             | Y             | Y                           | Y                    |
-| time.Time       | -             | Y (Timestamp) | Y                           | -                    |
+| time.Time       | -             | Y (Timestamp) | Y                           | Y (RFC3339/date)     |
 | string slice    | Y             | Y             | Y                           | Y                    |
 | int slice       | Y             | Y             | Y                           | Y                    |
 | map[K]V         | -             | Y (StringMap) | Y                           | Y                    |
@@ -385,7 +385,7 @@ All four frameworks support declarative flag relationship constraints:
 | Feature              | cobra     | urfave/cli               | kong            | bjaus/cli                   |
 | -------------------- | --------- | ------------------------ | --------------- | --------------------------- |
 | Per-flag env binding | Via Viper | `Sources: cli.EnvVars()` | `env:"VAR"` tag | `env:"VAR"` tag             |
-| Multiple env vars    | Via Viper | `EnvVars("A","B")`       | `env:"A,B"`     | -                           |
+| Multiple env vars    | Via Viper | `EnvVars("A","B")`       | `env:"A,B"`     | `env:"A,B"` (first found)   |
 | Global env prefix    | Via Viper | -                        | `envprefix:""`  | `WithEnvVarPrefix()`        |
 | Env-only fields      | -         | -                        | -               | `env:"VAR"` (no `flag` tag) |
 
@@ -731,6 +731,8 @@ Default renderer produces formatted output with multiple customization points:
 - `HelpAppender` / `HelpPrepender`: add sections without replacing the renderer
 - `LongDescriber`: multi-paragraph descriptions in help mode
 - `WithSortedHelp`: alphabetical sorting for subcommands and flags
+- Variable interpolation: `${default}`, `${enum}`, `${env}` in help strings
+- `HelpCommand(root, w)`: pre-built hidden `help` subcommand
 
 Sections in order: description, prepended sections, usage, examples, subcommands
 (by category), flags (by category, hidden filtered, required marked with `*`),
@@ -741,9 +743,9 @@ positional args, appended sections, global flags, footer.
 | Feature                | cobra           | urfave/cli     | kong               | bjaus/cli            |
 | ---------------------- | --------------- | -------------- | ------------------ | -------------------- |
 | Auto `--help`          | Yes             | Yes            | Yes                | Yes                  |
-| Auto `help` subcommand | Yes             | Yes            | No                 | No                   |
+| Auto `help` subcommand | Yes             | Yes            | No                 | Yes (`HelpCommand`)  |
 | Template system        | Go templates    | Go templates   | No                 | No                   |
-| Variable interpolation | No              | No             | Yes (`${default}`) | No                   |
+| Variable interpolation | No              | No             | Yes (`${default}`) | Yes (`${default}`, `${enum}`, `${env}`) |
 | Compact/Tree modes     | No              | No             | Yes                | No                   |
 | Section injection      | No              | No             | No                 | Yes (Prepend/Append) |
 | Per-command override   | SetHelpFunc     | HelpFunc field | Help interface     | Helper interface     |
@@ -793,12 +795,12 @@ Custom completions via `ShellCompleteFunc` per command.
 Built-in runtime completion via hidden `__complete` protocol. Supports Bash, Zsh,
 Fish, PowerShell.
 
-**Sources**: Custom completions via `Completer` interface, static flag completion
-(including negatable, alt names, short flags), enum value completion, subcommand name
+**Sources**: Custom completions via `Completer` interface, dynamic flag value
+completion via `FlagCompleter` interface, static flag completion (including negatable,
+alt names, short flags), enum value completion, subcommand name + alias completion.
 
-- alias completion.
-
-**Directives**: `ShellCompDirectiveNoSpace`, `NoFileComp`, `Error`.
+**Directives**: `ShellCompDirectiveNoSpace`, `NoFileComp`, `Error`, `FilterFileExt`,
+`FilterDirs`.
 
 **Pre-built command**: `completion.Command(root, appName, os.Stdout)` returns a
 hidden `Runner` with bash/zsh/fish/powershell subcommands for script generation.
@@ -810,10 +812,10 @@ hidden `Runner` with bash/zsh/fish/powershell subcommands for script generation.
 | Built-in                  | Yes          | Yes           | **No**      | Yes                    |
 | Shells                    | 4            | 4             | (3rd party) | 4                      |
 | Dynamic completions       | Yes          | Yes (limited) | (3rd party) | Yes                    |
-| Completion descriptions   | Yes          | No            | (3rd party) | No                     |
+| Completion descriptions   | Yes          | No            | (3rd party) | Yes (Zsh/Fish/PS)      |
 | Active help in completion | Yes          | No            | No          | No                     |
-| Flag-level completion     | Yes          | No            | (3rd party) | Yes (enum)             |
-| Directive control         | 7 directives | Basic         | -           | 3 directives           |
+| Flag-level completion     | Yes          | No            | (3rd party) | Yes (enum + `FlagCompleter`) |
+| Directive control         | 7 directives | Basic         | -           | 5 directives           |
 | Debug support             | `__complete` | No            | -           | `__complete`           |
 | Pre-built command         | -            | Built-in      | -           | `completion.Command()` |
 
@@ -939,9 +941,10 @@ Built-in `config` subpackage:
 
 - `FromMap(map[string]string)` — universal adapter
 - `FromJSON(io.Reader)` — flat JSON objects
+- `FromEnvFile(io.Reader)` — .env file parser (zero dependencies)
 - `Chain(resolvers...)` — first match wins
 
-Docs include copy-paste adapters for YAML, TOML, HCL, .env, and Consul.
+Docs include copy-paste adapters for YAML, TOML, HCL, and Consul.
 
 Priority: `CLI flag > env var > config > default > zero value`.
 
@@ -1008,6 +1011,8 @@ Built-in DI via execution options:
 
 - `Bind(v)` — register value matched by concrete type
 - `BindTo(v, iface)` — register as interface: `cli.BindTo(myDB, (*Database)(nil))`
+- `BindProvider[T](func() (T, error))` — lazy factory called per execution
+- `BindSingleton[T](func() (T, error))` — singleton factory, called once and cached
 
 Injected into struct fields across the entire command chain. Fields with `flag:`,
 `arg:`, or `env:` tags are skipped. Matching: exact type first, then interface check.
@@ -1022,8 +1027,8 @@ Injected into struct fields across the entire command chain. Fields with `flag:`
 | Built-in DI         | No    | No         | Yes                  | Yes                |
 | Type binding        | -     | -          | Yes                  | Yes                |
 | Interface binding   | -     | -          | Yes (`BindTo`)       | Yes (`BindTo`)     |
-| Provider functions  | -     | -          | Yes                  | No                 |
-| Singleton providers | -     | -          | Yes                  | No                 |
+| Provider functions  | -     | -          | Yes                  | Yes (`BindProvider`)   |
+| Singleton providers | -     | -          | Yes                  | Yes (`BindSingleton`)  |
 | Runtime binding     | -     | -          | Yes (`Context.Bind`) | No                 |
 | Auto-bound types    | -     | -          | `*Context`, `*Kong`  | `cli.Args`         |
 | Inject into hooks   | -     | -          | Yes                  | Yes (bound values) |
@@ -1224,10 +1229,10 @@ func TestServe(t *testing.T) {
 | **Flag groups**           | 3 types            | 1 type             | 2 types          | 3 types              |
 | **Env var binding**       | Via Viper          | Built-in           | Built-in         | Built-in             |
 | **Env-only fields**       | No                 | No                 | No               | Yes                  |
-| **Shell completion**      | Best-in-class      | Good               | 3rd party        | Good                 |
-| **Built-in DI**           | No                 | No                 | Yes (advanced)   | Yes (basic)          |
+| **Shell completion**      | Best-in-class      | Good               | 3rd party        | Full (5 directives)  |
+| **Built-in DI**           | No                 | No                 | Yes (advanced)   | Yes (providers+singleton) |
 | **Plugin system**         | No                 | No                 | Static           | Full (external exec) |
-| **Config files**          | Via Viper          | altsrc module      | Built-in JSON    | Built-in JSON        |
+| **Config files**          | Via Viper          | altsrc module      | Built-in JSON    | JSON + .env          |
 | **Middleware**            | No                 | No                 | No               | Yes                  |
 | **Leaf inspection**       | No                 | No                 | No               | Yes                  |
 | **Interactive prompts**   | No                 | No                 | No               | Yes                  |
@@ -1250,7 +1255,7 @@ func TestServe(t *testing.T) {
 **spf13/cobra** is the right choice when:
 
 - You need the most battle-tested option (kubectl, docker, gh, helm, hugo)
-- Shell completion quality is critical (descriptions, active help, 7 directives)
+- Shell completion quality is critical (active help, 7 directives)
 - You want the largest ecosystem and community knowledge base
 - You need doc generation in 4+ formats
 - You're building a CLI that will be extended by many contributors who likely
@@ -1267,7 +1272,7 @@ func TestServe(t *testing.T) {
 **alecthomas/kong** is the right choice when:
 
 - You want minimal boilerplate — the struct _is_ the CLI spec
-- You need advanced DI (providers, singletons, interface binding)
+- You need advanced DI (runtime binding, interface binding)
 - Branching positional arguments match your command model
 - You prefer tag-driven configuration over imperative wiring
 - Shell completion is not critical (or you're willing to use kongplete)
@@ -1293,7 +1298,7 @@ func TestServe(t *testing.T) {
 | Interface composition          | bjaus/cli                                |
 | Shell completion quality       | cobra                                    |
 | Plugin system                  | bjaus/cli                                |
-| DI sophistication              | kong                                     |
+| DI sophistication              | kong or bjaus/cli                        |
 | Flag flexibility               | bjaus/cli                                |
 | Testing ergonomics             | kong or bjaus/cli (direct struct access) |
 | Configuration management       | cobra + Viper                            |
