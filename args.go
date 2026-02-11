@@ -42,10 +42,7 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 		}
 
 		isSlice := f.Type.Kind() == reflect.Slice
-		required := !isSlice // non-slice args required by default
-		if req, ok := f.Tag.Lookup("required"); ok {
-			required = req == "true"
-		}
+		required := tagBool(f.Tag, "required", !isSlice) // non-slice args required by default
 
 		*defs = append(*defs, ArgDef{
 			Name:     name,
@@ -164,11 +161,7 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 		}
 
 		// Check required.
-		required := true
-		if req, ok := f.Tag.Lookup("required"); ok {
-			required = req == "true"
-		}
-		if required {
+		if tagBool(f.Tag, "required", true) {
 			return fmt.Errorf("missing required argument: %s", name)
 		}
 	}

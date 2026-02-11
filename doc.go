@@ -49,8 +49,8 @@
 //	    Tags    []string      `flag:"tag" short:"t" help:"Tags to apply (repeatable)"`
 //	    Env     map[string]string `flag:"env" help:"Environment variables as key=value"`
 //	    Format  string        `flag:"format" enum:"text,json,yaml" default:"text" help:"Output format"`
-//	    Verbose int           `flag:"verbose" short:"v" counter:"true" help:"Increase verbosity"`
-//	    Color   bool          `flag:"color" default:"true" negate:"true" help:"Colorize output"`
+//	    Verbose int           `flag:"verbose" short:"v" counter:"" help:"Increase verbosity"`
+//	    Color   bool          `flag:"color" default:"true" negate:"" help:"Colorize output"`
 //	}
 //
 // Supported types: string, int, int64, float64, bool, time.Duration,
@@ -65,12 +65,12 @@
 //   - help — description shown in help output
 //   - env — environment variable name; standalone (without flag/arg) for env/config/default-only fields
 //   - enum — comma-separated list of allowed values
-//   - required — "true" to require the flag
-//   - counter — "true" to increment an int on each occurrence (-vvv)
-//   - negate — "true" to add a --no- prefix that sets a bool to false
+//   - required — require the flag (presence-based: `required:""`)
+//   - counter — increment an int on each occurrence (-vvv) (presence-based)
+//   - negate — add a --no- prefix that sets a bool to false (presence-based)
 //   - alt — comma-separated additional long flag names (e.g. "output,out")
 //   - sep — separator for splitting a single value into slice elements (e.g. ",")
-//   - hidden — "true" to hide the flag from help output (flag still works)
+//   - hidden — hide the flag from help output (presence-based)
 //   - deprecated — message shown when the flag is used; prints a warning to stderr
 //   - category — group heading for the flag in help output
 //   - mask — displayed instead of default in help (e.g. "****" for secrets)
@@ -96,7 +96,7 @@
 // history:
 //
 //	type DeployCmd struct {
-//	    Token string `env:"DEPLOY_TOKEN" required:"true"`
+//	    Token string `env:"DEPLOY_TOKEN" required:""`
 //	    Env   string `flag:"env" enum:"prod,staging,dev" help:"Target environment"`
 //	}
 //
@@ -142,7 +142,7 @@
 // The child's flag still appears in help output and accepts CLI args normally.
 //
 //	type App struct {
-//	    Env string `flag:"env" required:"true" enum:"dev,qa,prod" help:"Target environment"`
+//	    Env string `flag:"env" required:"" enum:"dev,qa,prod" help:"Target environment"`
 //	}
 //	type ServeCmd struct {
 //	    Env  string `flag:"env" help:"Target environment"`
@@ -153,7 +153,7 @@
 // hidden flag with the same name:
 //
 //	type ServeCmd struct {
-//	    Env  string `flag:"env" hidden:"true"`
+//	    Env  string `flag:"env" hidden:""`
 //	    Port int    `flag:"port" default:"8080" help:"Listen port"`
 //	}
 //

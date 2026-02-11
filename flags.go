@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+// tagBool checks a boolean struct tag. Returns true if the tag exists with
+// any value except "false". This allows concise syntax like `required:""`
+// instead of `required:"true"`, while still supporting explicit `required:"false"`
+// to override defaults. Boolean tags: required, hidden, counter, negate.
+func tagBool(tag reflect.StructTag, key string, defaultVal ...bool) bool {
+	val, ok := tag.Lookup(key)
+	if !ok {
+		if len(defaultVal) > 0 {
+			return defaultVal[0]
+		}
+		return false
+	}
+	return val != "false"
+}
+
 // ScanFlags inspects a command's struct tags and returns flag definitions.
 // This is exported so custom [HelpRenderer] and [FlagParser] implementations
 // can inspect a command's flags.
@@ -63,7 +78,7 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 			}
 		}
 
-		isCounter := f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+		isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
 			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
 
 		*defs = append(*defs, FlagDef{
@@ -79,12 +94,12 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 			Category:    f.Tag.Get("category"),
 			Deprecated:  f.Tag.Get("deprecated"),
 			Placeholder: f.Tag.Get("placeholder"),
-			Required:    f.Tag.Get("required") == "true",
-			Hidden:      f.Tag.Get("hidden") == "true",
+			Required:    tagBool(f.Tag, "required"),
+			Hidden:      tagBool(f.Tag, "hidden"),
 			TypeName:    flagTypeName(f.Type),
 			IsBool:      f.Type.Kind() == reflect.Bool,
 			IsCounter:   isCounter,
-			Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
+			Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
 		})
 	}
 }
@@ -312,7 +327,7 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 			continue
 		}
 
-		isCounter := f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+		isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
 			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
 
 		fi := &fieldInfo{
@@ -331,11 +346,11 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 				Category:    f.Tag.Get("category"),
 				Deprecated:  f.Tag.Get("deprecated"),
 				Placeholder: f.Tag.Get("placeholder"),
-				Required:    f.Tag.Get("required") == "true",
-				Hidden:      f.Tag.Get("hidden") == "true",
+				Required:    tagBool(f.Tag, "required"),
+				Hidden:      tagBool(f.Tag, "hidden"),
 				IsBool:      f.Type.Kind() == reflect.Bool,
 				IsCounter:   isCounter,
-				Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
+				Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
 			},
 		}
 
@@ -926,7 +941,9 @@ func validateFieldTags(f reflect.StructField) error {
 	_, hasArg := f.Tag.Lookup("arg")
 	envTag := f.Tag.Get("env")
 	_, hasDefault := f.Tag.Lookup("default")
-	hasRequired := f.Tag.Get("required") == "true"
+	_, hasRequired := f.Tag.Lookup("required")
+	// Check if field is actually required (tag exists and isn't "false")
+	isRequired := tagBool(f.Tag, "required")
 	_, hasEnum := f.Tag.Lookup("enum")
 	_, hasHelp := f.Tag.Lookup("help")
 	_, hasMask := f.Tag.Lookup("mask")
@@ -954,34 +971,31 @@ func validateFieldTags(f reflect.StructField) error {
 	}
 
 	// Contradictory constraints.
-	if hasRequired && hasDefault {
+	if isRequired && hasDefault {
 		return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
 	}
 
-	// Tags that require flag.
-	flagOnlyTags := map[string]string{
-		"short":       f.Tag.Get("short"),
-		"counter":     f.Tag.Get("counter"),
-		"negate":      f.Tag.Get("negate"),
-		"alt":         f.Tag.Get("alt"),
-		"sep":         f.Tag.Get("sep"),
-		"placeholder": f.Tag.Get("placeholder"),
-		"hidden":      f.Tag.Get("hidden"),
-		"deprecated":  f.Tag.Get("deprecated"),
-		"category":    f.Tag.Get("category"),
+	// Tags that require flag (value-based tags).
+	flagOnlyValueTags := []string{"short", "alt", "sep", "placeholder", "deprecated", "category"}
+	for _, tag := range flagOnlyValueTags {
+		if f.Tag.Get(tag) != "" && !hasFlag {
+			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
+		}
 	}
-	for tag, val := range flagOnlyTags {
-		if val != "" && !hasFlag {
+	// Tags that require flag (boolean tags — existence-based).
+	flagOnlyBoolTags := []string{"counter", "negate", "hidden"}
+	for _, tag := range flagOnlyBoolTags {
+		if _, ok := f.Tag.Lookup(tag); ok && !hasFlag {
 			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
 		}
 	}
 
 	// Type-specific constraints.
-	if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 &&
+	if tagBool(f.Tag, "counter") && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 &&
 		f.Type.Kind() != reflect.Uint && f.Type.Kind() != reflect.Uint64 {
 		return fmt.Errorf("%w: field %s: counter requires int or uint type", ErrInvalidTag, f.Name)
 	}
-	if f.Tag.Get("negate") == "true" && f.Type.Kind() != reflect.Bool {
+	if tagBool(f.Tag, "negate") && f.Type.Kind() != reflect.Bool {
 		return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)
 	}
 	if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {

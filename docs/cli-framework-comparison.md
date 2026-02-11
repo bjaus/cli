@@ -357,7 +357,7 @@ cmd := &ServeCmd{
 | \*url.URL       | -             | -             | Y                           | -                    |
 | net.IP          | Y             | -             | -                           | -                    |
 | Custom types    | pflag.Value   | cli.Value     | TextUnmarshaler/MapperValue | FlagUnmarshaler      |
-| Counter (-vvv)  | Y (Count)     | -             | Y (`type:"counter"`)        | Y (`counter:"true"`) |
+| Counter (-vvv)  | Y (Count)     | -             | Y (`type:"counter"`)        | Y (`counter:""`)     |
 
 ### Definition Style
 
@@ -403,7 +403,7 @@ type ServeCmd struct {
 
 ```go
 type ServeCmd struct {
-    Host string `flag:"host" short:"H" default:"localhost" help:"Server hostname" required:"true"`
+    Host string `flag:"host" short:"H" default:"localhost" help:"Server hostname" required:""`
     Port int    `flag:"port" default:"8080" help:"Server port"`
 }
 ```
@@ -457,10 +457,10 @@ secrets that should never appear in shell history.
 
 | Feature                    | cobra              | urfave/cli                      | kong                 | bjaus/cli              |
 | -------------------------- | ------------------ | ------------------------------- | -------------------- | ---------------------- |
-| Negatable bools (`--no-X`) | -                  | `BoolWithInverseFlag`           | `negatable:""`       | `negate:"true"`        |
+| Negatable bools (`--no-X`) | -                  | `BoolWithInverseFlag`           | `negatable:""`       | `negate:""`        |
 | Flag aliases               | Flag normalization | `Aliases` field                 | `aliases:""` tag     | `alt:""` tag           |
 | Enum validation            | -                  | -                               | `enum:"a,b,c"`       | `enum:"a,b,c"`         |
-| Hidden flags               | `MarkHidden()`     | `Hidden: true`                  | `hidden:""`          | `hidden:"true"`        |
+| Hidden flags               | `MarkHidden()`     | `Hidden: true`                  | `hidden:""`          | `hidden:""`        |
 | Deprecated flags           | `MarkDeprecated()` | -                               | -                    | `deprecated:"message"` |
 | Placeholder in help        | -                  | -                               | `placeholder:"HOST"` | `placeholder:"HOST"`   |
 | Secret masking             | -                  | -                               | -                    | `mask:"****"`          |
