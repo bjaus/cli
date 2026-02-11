@@ -24,6 +24,12 @@ type internalBareCmd struct{}
 
 func (c *internalBareCmd) Run(_ context.Context) error { return nil }
 
+type internalMetaEmptyCmd struct {
+	Meta
+}
+
+func (c *internalMetaEmptyCmd) Run(_ context.Context) error { return nil }
+
 type internalFullCmd struct{}
 
 func (c *internalFullCmd) Run(_ context.Context) error { return nil }
@@ -60,6 +66,10 @@ func TestResolveInfo(t *testing.T) {
 			wantAliases: []string{"s", "srv"},
 			wantHidden:  true,
 			wantExCount: 1,
+		},
+		"embedded Meta with empty name falls back to struct name": {
+			cmd:      &internalMetaEmptyCmd{},
+			wantName: "internalmetaemptycmd",
 		},
 	}
 
@@ -609,7 +619,7 @@ type internalRootCmd struct {
 func (r *internalRootCmd) Run(_ context.Context) error { return nil }
 func (r *internalRootCmd) Name() string                { return "app" }
 func (r *internalRootCmd) Description() string         { return "Test application" }
-func (r *internalRootCmd) Subcommands() []Commander       { return []Commander{r.serve} }
+func (r *internalRootCmd) Subcommands() []Commander    { return []Commander{r.serve} }
 
 func TestDefaultRenderHelp_Basic(t *testing.T) {
 	t.Parallel()
@@ -655,7 +665,7 @@ type internalParentWithHidden struct {
 
 func (p *internalParentWithHidden) Run(_ context.Context) error { return nil }
 func (p *internalParentWithHidden) Name() string                { return "app" }
-func (p *internalParentWithHidden) Subcommands() []Commander       { return []Commander{p.child} }
+func (p *internalParentWithHidden) Subcommands() []Commander    { return []Commander{p.child} }
 
 func TestDefaultRenderHelp_HiddenSubcommands(t *testing.T) {
 	t.Parallel()
@@ -940,7 +950,7 @@ type internalEmptyParent struct{}
 
 func (p *internalEmptyParent) Run(_ context.Context) error { return nil }
 func (p *internalEmptyParent) Name() string                { return "empty" }
-func (p *internalEmptyParent) Subcommands() []Commander       { return nil }
+func (p *internalEmptyParent) Subcommands() []Commander    { return nil }
 
 func TestResolveCommand(t *testing.T) {
 	t.Parallel()
@@ -1277,7 +1287,7 @@ type internalBeforeParent struct {
 
 func (c *internalBeforeParent) Run(_ context.Context) error { return nil }
 func (c *internalBeforeParent) Name() string                { return "parent" }
-func (c *internalBeforeParent) Subcommands() []Commander       { return []Commander{c.child} }
+func (c *internalBeforeParent) Subcommands() []Commander    { return []Commander{c.child} }
 
 func (c *internalBeforeParent) Before(ctx context.Context) (context.Context, error) {
 	return ctx, nil
@@ -2127,8 +2137,8 @@ type internalDefaultParent struct {
 
 func (p *internalDefaultParent) Run(_ context.Context) error { return nil }
 func (p *internalDefaultParent) Name() string                { return "app" }
-func (p *internalDefaultParent) Subcommands() []Commander       { return []Commander{p.child} }
-func (p *internalDefaultParent) Fallback() Commander            { return p.def }
+func (p *internalDefaultParent) Subcommands() []Commander    { return []Commander{p.child} }
+func (p *internalDefaultParent) Fallback() Commander         { return p.def }
 
 func TestResolveCommand_Fallback(t *testing.T) {
 	t.Parallel()
@@ -2230,7 +2240,7 @@ type internalCatParent struct {
 
 func (p *internalCatParent) Run(_ context.Context) error { return nil }
 func (p *internalCatParent) Name() string                { return "app" }
-func (p *internalCatParent) Subcommands() []Commander       { return p.subs }
+func (p *internalCatParent) Subcommands() []Commander    { return p.subs }
 
 func TestDefaultRenderHelp_Categories(t *testing.T) {
 	t.Parallel()
@@ -2434,7 +2444,7 @@ type internalShortOptParent struct {
 
 func (p *internalShortOptParent) Run(_ context.Context) error { return nil }
 func (p *internalShortOptParent) Name() string                { return "app" }
-func (p *internalShortOptParent) Subcommands() []Commander       { return []Commander{p.child} }
+func (p *internalShortOptParent) Subcommands() []Commander    { return []Commander{p.child} }
 
 func TestResolveCommand_ShortOptionHandlingInScanPhase(t *testing.T) {
 	t.Parallel()
@@ -2606,7 +2616,7 @@ type internalDiscoverParent struct {
 
 func (d *internalDiscoverParent) Run(_ context.Context) error { return nil }
 func (d *internalDiscoverParent) Name() string                { return "root" }
-func (d *internalDiscoverParent) Subcommands() []Commander       { return d.subs }
+func (d *internalDiscoverParent) Subcommands() []Commander    { return d.subs }
 
 func (d *internalDiscoverParent) Discover() ([]Commander, error) {
 	if d.discoverFn != nil {
@@ -2669,7 +2679,7 @@ type internalParentOnlyCmd struct{ subs []Commander }
 
 func (p *internalParentOnlyCmd) Run(_ context.Context) error { return nil }
 func (p *internalParentOnlyCmd) Name() string                { return "root" }
-func (p *internalParentOnlyCmd) Subcommands() []Commander       { return p.subs }
+func (p *internalParentOnlyCmd) Subcommands() []Commander    { return p.subs }
 
 func TestAllSubcommands_ParentOnly(t *testing.T) {
 	t.Parallel()
@@ -4160,7 +4170,7 @@ type globalFlagParent struct {
 
 func (c *globalFlagParent) Run(_ context.Context) error { return nil }
 func (c *globalFlagParent) Name() string                { return "app" }
-func (c *globalFlagParent) Subcommands() []Commander       { return []Commander{&globalFlagChild{}} }
+func (c *globalFlagParent) Subcommands() []Commander    { return []Commander{&globalFlagChild{}} }
 
 type globalFlagChild struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`

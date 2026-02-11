@@ -19,7 +19,9 @@ func resolveInfo(cmd Commander) commandInfo {
 		name: defaultName(cmd),
 	}
 	if n, ok := cmd.(Namer); ok {
-		info.name = n.Name()
+		if name := n.Name(); name != "" {
+			info.name = name
+		}
 	}
 	if d, ok := cmd.(Descriptor); ok {
 		info.description = d.Description()

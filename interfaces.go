@@ -2,6 +2,75 @@ package cli
 
 import "context"
 
+// Interfaces documents all optional interfaces a [Commander] may implement.
+// This type exists for documentation and IDE discoverability; it is never
+// instantiated. Each interface is checked via type assertion at runtime —
+// implement only what you need.
+//
+// See also [Meta] for an embeddable struct that provides default implementations
+// for common metadata interfaces.
+//
+// # Meta
+//
+//   - [Namer] — override command name (default: lowercase struct name)
+//   - [Descriptor] — one-line description for help listings
+//   - [LongDescriptor] — extended description in command's own help
+//   - [Aliaser] — alternate names for the command
+//   - [Categorizer] — group commands under headings in help
+//   - [Hider] — hide command from help output
+//   - [Deprecator] — mark as deprecated with warning message
+//   - [Versioner] — version string for --version flag
+//   - [Exampler] — usage examples in help output
+//
+// # Structure
+//
+//   - [Subcommander] — declare child subcommands
+//   - [Fallbacker] — default subcommand when none matches
+//   - [Discoverer] — runtime-discovered commands (plugins)
+//
+// # Lifecycle
+//
+//   - [Beforer] — setup logic before Run (parent-first)
+//   - [Afterer] — teardown logic after Run (child-first, always runs)
+//   - [Validator] — validate command state after flag parsing
+//   - [Middlewarer] — wrap Run with middleware functions
+//
+// # Completion
+//
+//   - [Completer] — shell completion candidates for arguments
+//   - [FlagCompleter] — dynamic completion for flag values
+//   - [Suggester] — custom "did you mean?" algorithm
+//
+// # Configuration
+//
+//   - [ConfigProvider] — per-command config resolver
+//
+// # Arguments
+//
+//   - [ArgsValidator] — validate positional arguments
+//   - [Passthrougher] — pass unknown flags as positional args
+//
+// # Flags
+//
+//   - [FlagGrouper] — flag relationship constraints (mutually exclusive, etc.)
+//
+// # Interactive
+//
+//   - [Prompter] — customize prompts for missing required flags
+//
+// # Help
+//
+//   - [Helper] — override help text entirely
+//   - [HelpAppender] — add sections after main help content
+//   - [HelpPrepender] — add sections before main help content
+//   - [HelpRenderer] — replace the help rendering engine
+//
+// # Extensibility
+//
+//   - [FlagParser] — replace the flag parsing engine
+//   - [Exiter] — control process exit behavior
+type Interfaces any
+
 // --- Discovery interfaces (all optional) ---
 
 // Namer overrides the command name. The default is the lowercase struct type name.

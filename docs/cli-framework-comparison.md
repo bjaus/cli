@@ -142,12 +142,14 @@ type Commander interface {
 ```
 
 Every command is a plain Go struct implementing `Commander`. All other capabilities are
-opt-in through ~25 small interfaces (each with a single method), discovered at
+opt-in through ~30 small interfaces (most with a single method), discovered at
 runtime via type assertions. There is no base struct to embed, no configuration DSL,
 and no global state.
 
 ```go
-type Root struct{}
+type Root struct{
+    Env string `flag:"env" short:"e" default:"dev" help:"Target environment"`
+}
 
 func (r *Root) Name() string              { return "app" }
 func (r *Root) Description() string       { return "My application" }
@@ -169,7 +171,31 @@ func main() {
 The design is analogous to how `io.Reader`, `io.Writer`, and `fmt.Stringer` work in
 the standard library: small interfaces that compose. A command "has a description" by
 implementing `Descriptor`. It "has subcommands" by implementing `Subcommander`. It "has
-aliases" by implementing `Aliaser`. No method is mandatory beyond `Run`.
+aliases" by implementing `Aliaser`. No method is mandatory beyond `Run`. The
+`Interfaces` type documents all ~30 optional interfaces in one place for IDE
+discoverability.
+
+For rapid prototyping, the embeddable `Meta` struct provides default implementations
+for common metadata interfaces (`Namer`, `Descriptor`, `Aliaser`, `Categorizer`,
+`Hider`, `Deprecator`). The zero value is useful — omit the name to use the struct
+name default:
+
+```go
+type ServeCmd struct {
+    cli.Meta
+    Port int `flag:"port" default:"8080" help:"Port to listen on"`
+}
+
+// Initialize with builder methods
+cmd := &ServeCmd{
+    Meta: cli.Meta{}.
+        WithName("serve").
+        WithDescription("Start the server").
+        WithAliases("s"),
+}
+
+func (s *ServeCmd) Run(ctx context.Context) error { return startServer(s.Port) }
+```
 
 **Philosophy**: Composition over configuration. Think `io.Reader` for CLIs. The
 framework discovers what a command can do rather than the command declaring it in a
@@ -184,7 +210,7 @@ monolithic struct.
 | **Registration**       | `AddCommand()` calls        | Nested struct literals       | Nested struct fields        | `Subcommands()` method         |
 | **Flag definition**    | `cmd.Flags().StringVar()`   | `[]cli.Flag{&StringFlag{}}`  | Struct tag `default:"8080"` | Struct tag `flag:"port"`       |
 | **Execution**          | `cmd.Execute()`             | `cmd.Run(ctx, args)`         | `ctx.Run()`                 | `cli.Execute(ctx, root, args)` |
-| **Framework coupling** | High (embed framework type) | Medium (use framework types) | Low (plain structs + tags)  | Low (implement interfaces)     |
+| **Framework coupling** | High (embed framework type) | Medium (use framework types) | Low (plain structs + tags)  | Lowest (plain structs, no framework types) |
 
 ---
 
@@ -740,20 +766,20 @@ positional args, appended sections, global flags, footer.
 
 ### Comparison
 
-| Feature                | cobra           | urfave/cli     | kong               | bjaus/cli            |
-| ---------------------- | --------------- | -------------- | ------------------ | -------------------- |
-| Auto `--help`          | Yes             | Yes            | Yes                | Yes                  |
-| Auto `help` subcommand | Yes             | Yes            | No                 | Yes (`HelpCommand`)  |
-| Template system        | Go templates    | Go templates   | No                 | No                   |
+| Feature                | cobra           | urfave/cli     | kong               | bjaus/cli                               |
+| ---------------------- | --------------- | -------------- | ------------------ | --------------------------------------- |
+| Auto `--help`          | Yes             | Yes            | Yes                | Yes                                     |
+| Auto `help` subcommand | Yes             | Yes            | No                 | Yes (`HelpCommand`)                     |
+| Template system        | Go templates    | Go templates   | No                 | No                                      |
 | Variable interpolation | No              | No             | Yes (`${default}`) | Yes (`${default}`, `${enum}`, `${env}`) |
-| Compact/Tree modes     | No              | No             | Yes                | No                   |
-| Section injection      | No              | No             | No                 | Yes (Prepend/Append) |
-| Per-command override   | SetHelpFunc     | HelpFunc field | Help interface     | Helper interface     |
-| Global override        | SetHelpTemplate | HelpPrinter    | Help option        | WithHelpRenderer     |
-| Required flag marker   | No              | No             | No                 | Yes (`*`)            |
-| Flag categories        | No              | Yes            | Yes                | Yes                  |
-| Command categories     | Yes (GroupID)   | Yes (Category) | Yes (group)        | Yes (Category)       |
-| Global flags section   | Yes             | Yes            | No                 | Yes                  |
+| Compact/Tree modes     | No              | No             | Yes                | No                                      |
+| Section injection      | No              | No             | No                 | Yes (Prepend/Append)                    |
+| Per-command override   | SetHelpFunc     | HelpFunc field | Help interface     | Helper interface                        |
+| Global override        | SetHelpTemplate | HelpPrinter    | Help option        | WithHelpRenderer                        |
+| Required flag marker   | No              | No             | No                 | Yes (`*`)                               |
+| Flag categories        | No              | Yes            | Yes                | Yes                                     |
+| Command categories     | Yes (GroupID)   | Yes (Category) | Yes (group)        | Yes (Category)                          |
+| Global flags section   | Yes             | Yes            | No                 | Yes                                     |
 
 ---
 
@@ -807,17 +833,17 @@ hidden `Commander` with bash/zsh/fish/powershell subcommands for script generati
 
 ### Comparison
 
-| Feature                   | cobra        | urfave/cli    | kong        | bjaus/cli              |
-| ------------------------- | ------------ | ------------- | ----------- | ---------------------- |
-| Built-in                  | Yes          | Yes           | **No**      | Yes                    |
-| Shells                    | 4            | 4             | (3rd party) | 4                      |
-| Dynamic completions       | Yes          | Yes (limited) | (3rd party) | Yes                    |
-| Completion descriptions   | Yes          | No            | (3rd party) | Yes (Zsh/Fish/PS)      |
-| Active help in completion | Yes          | No            | No          | No                     |
+| Feature                   | cobra        | urfave/cli    | kong        | bjaus/cli                    |
+| ------------------------- | ------------ | ------------- | ----------- | ---------------------------- |
+| Built-in                  | Yes          | Yes           | **No**      | Yes                          |
+| Shells                    | 4            | 4             | (3rd party) | 4                            |
+| Dynamic completions       | Yes          | Yes (limited) | (3rd party) | Yes                          |
+| Completion descriptions   | Yes          | No            | (3rd party) | Yes (Zsh/Fish/PS)            |
+| Active help in completion | Yes          | No            | No          | No                           |
 | Flag-level completion     | Yes          | No            | (3rd party) | Yes (enum + `FlagCompleter`) |
-| Directive control         | 7 directives | Basic         | -           | 5 directives           |
-| Debug support             | `__complete` | No            | -           | `__complete`           |
-| Pre-built command         | -            | Built-in      | -           | `completion.Command()` |
+| Directive control         | 7 directives | Basic         | -           | 5 directives                 |
+| Debug support             | `__complete` | No            | -           | `__complete`                 |
+| Pre-built command         | -            | Built-in      | -           | `completion.Command()`       |
 
 ---
 
@@ -1022,16 +1048,16 @@ Injected into struct fields across the entire command chain. Fields with `flag:`
 
 ### Comparison
 
-| Feature             | cobra | urfave/cli | kong                 | bjaus/cli          |
-| ------------------- | ----- | ---------- | -------------------- | ------------------ |
-| Built-in DI         | No    | No         | Yes                  | Yes                |
-| Type binding        | -     | -          | Yes                  | Yes                |
-| Interface binding   | -     | -          | Yes (`BindTo`)       | Yes (`BindTo`)     |
-| Provider functions  | -     | -          | Yes                  | Yes (`BindProvider`)   |
-| Singleton providers | -     | -          | Yes                  | Yes (`BindSingleton`)  |
-| Runtime binding     | -     | -          | Yes (`Context.Bind`) | No                 |
-| Auto-bound types    | -     | -          | `*Context`, `*Kong`  | `cli.Args`         |
-| Inject into hooks   | -     | -          | Yes                  | Yes (bound values) |
+| Feature             | cobra | urfave/cli | kong                 | bjaus/cli             |
+| ------------------- | ----- | ---------- | -------------------- | --------------------- |
+| Built-in DI         | No    | No         | Yes                  | Yes                   |
+| Type binding        | -     | -          | Yes                  | Yes                   |
+| Interface binding   | -     | -          | Yes (`BindTo`)       | Yes (`BindTo`)        |
+| Provider functions  | -     | -          | Yes                  | Yes (`BindProvider`)  |
+| Singleton providers | -     | -          | Yes                  | Yes (`BindSingleton`) |
+| Runtime binding     | -     | -          | Yes (`Context.Bind`) | No                    |
+| Auto-bound types    | -     | -          | `*Context`, `*Kong`  | `cli.Args`            |
+| Inject into hooks   | -     | -          | Yes                  | Yes (bound values)    |
 
 ---
 
@@ -1219,32 +1245,32 @@ func TestServe(t *testing.T) {
 
 ## 15. Feature Matrix
 
-| Feature                   | cobra              | urfave/cli         | kong             | bjaus/cli            |
-| ------------------------- | ------------------ | ------------------ | ---------------- | -------------------- |
-| **Runtime dependencies**  | 4                  | 0                  | 0                | 0                    |
-| **Flags via struct tags** | No                 | No                 | Yes              | Yes                  |
-| **Typed positional args** | No                 | Yes (v3)           | Yes              | Yes                  |
-| **Flags anywhere**        | Opt-in             | No                 | No               | Yes (default)        |
-| **Auto flag inheritance** | Persistent flags   | Root flags inherit | Embed            | By name+type match   |
-| **Flag groups**           | 3 types            | 1 type             | 2 types          | 3 types              |
-| **Env var binding**       | Via Viper          | Built-in           | Built-in         | Built-in             |
-| **Env-only fields**       | No                 | No                 | No               | Yes                  |
-| **Shell completion**      | Best-in-class      | Good               | 3rd party        | Full (5 directives)  |
+| Feature                   | cobra              | urfave/cli         | kong             | bjaus/cli                 |
+| ------------------------- | ------------------ | ------------------ | ---------------- | ------------------------- |
+| **Runtime dependencies**  | 4                  | 0                  | 0                | 0                         |
+| **Flags via struct tags** | No                 | No                 | Yes              | Yes                       |
+| **Typed positional args** | No                 | Yes (v3)           | Yes              | Yes                       |
+| **Flags anywhere**        | Opt-in             | No                 | No               | Yes (default)             |
+| **Auto flag inheritance** | Persistent flags   | Root flags inherit | Embed            | By name+type match        |
+| **Flag groups**           | 3 types            | 1 type             | 2 types          | 3 types                   |
+| **Env var binding**       | Via Viper          | Built-in           | Built-in         | Built-in                  |
+| **Env-only fields**       | No                 | No                 | No               | Yes                       |
+| **Shell completion**      | Best-in-class      | Good               | 3rd party        | Full (5 directives)       |
 | **Built-in DI**           | No                 | No                 | Yes (advanced)   | Yes (providers+singleton) |
-| **Plugin system**         | No                 | No                 | Static           | Full (external exec) |
-| **Config files**          | Via Viper          | altsrc module      | Built-in JSON    | JSON + .env          |
-| **Middleware**            | No                 | No                 | No               | Yes                  |
-| **Leaf inspection**       | No                 | No                 | No               | Yes                  |
-| **Interactive prompts**   | No                 | No                 | No               | Yes                  |
-| **Doc generation**        | 4 formats          | 2 formats          | No               | 2 formats            |
-| **Strict tag validation** | No                 | No                 | No               | Yes                  |
-| **"Did you mean?"**       | Yes                | Opt-in             | No               | Yes                  |
-| **Negatable bools**       | No                 | Yes                | Yes              | Yes                  |
-| **Counter flags**         | Yes                | No                 | Yes              | Yes                  |
-| **Flag auto-naming**      | No                 | No                 | Yes              | Yes                  |
-| **Secret masking**        | No                 | No                 | No               | Yes                  |
-| **`ErrShowHelp`**         | No                 | No                 | No               | Yes                  |
-| **Passthrough mode**      | DisableFlagParsing | No                 | `passthrough:""` | `Passthrougher`      |
+| **Plugin system**         | No                 | No                 | Static           | Full (external exec)      |
+| **Config files**          | Via Viper          | altsrc module      | Built-in JSON    | JSON + .env               |
+| **Middleware**            | No                 | No                 | No               | Yes                       |
+| **Leaf inspection**       | No                 | No                 | No               | Yes                       |
+| **Interactive prompts**   | No                 | No                 | No               | Yes                       |
+| **Doc generation**        | 4 formats          | 2 formats          | No               | 2 formats                 |
+| **Strict tag validation** | No                 | No                 | No               | Yes                       |
+| **"Did you mean?"**       | Yes                | Opt-in             | No               | Yes                       |
+| **Negatable bools**       | No                 | Yes                | Yes              | Yes                       |
+| **Counter flags**         | Yes                | No                 | Yes              | Yes                       |
+| **Flag auto-naming**      | No                 | No                 | Yes              | Yes                       |
+| **Secret masking**        | No                 | No                 | No               | Yes                       |
+| **`ErrShowHelp`**         | No                 | No                 | No               | Yes                       |
+| **Passthrough mode**      | DisableFlagParsing | No                 | `passthrough:""` | `Passthrougher`           |
 
 ---
 
