@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 )
 
 // Args is a slice of positional arguments. Commands can declare an Args field
@@ -25,6 +27,10 @@ type Args []string
 type binding struct {
 	value      any
 	targetType reflect.Type // interface type for BindTo, nil for Bind
+	provider   func() (any, error)
+	once       *sync.Once // non-nil for singleton providers
+	cached     any
+	cachedErr  error
 }
 
 // Bind registers a dependency for injection into command structs.
@@ -76,6 +82,52 @@ func BindTo(v any, iface any) Option {
 	}
 }
 
+// BindProvider registers a lazy dependency that is resolved by calling fn each
+// time bindings are injected. The provider is called once per [Execute] call.
+// If fn returns an error, execution is aborted.
+//
+//	cli.Execute(ctx, root, args,
+//	    cli.BindProvider(func() (*sql.DB, error) {
+//	        return sql.Open("postgres", dsn)
+//	    }),
+//	)
+func BindProvider[T any](fn func() (T, error)) Option {
+	var target reflect.Type
+	target = reflect.TypeFor[T]()
+	return func(o *options) {
+		o.bindings = append(o.bindings, binding{
+			targetType: target,
+			provider: func() (any, error) {
+				return fn()
+			},
+		})
+	}
+}
+
+// BindSingleton registers a lazy dependency that is resolved at most once.
+// The first call to fn caches the result; subsequent injections reuse the
+// cached value. If fn returns an error, the error is cached and execution
+// is aborted.
+//
+//	cli.Execute(ctx, root, args,
+//	    cli.BindSingleton(func() (*sql.DB, error) {
+//	        return sql.Open("postgres", dsn)
+//	    }),
+//	)
+func BindSingleton[T any](fn func() (T, error)) Option {
+	var target reflect.Type
+	target = reflect.TypeFor[T]()
+	return func(o *options) {
+		o.bindings = append(o.bindings, binding{
+			targetType: target,
+			once:       &sync.Once{},
+			provider: func() (any, error) {
+				return fn()
+			},
+		})
+	}
+}
+
 // injectBindings populates injectable fields on all commands in the chain.
 // A field is injectable if it has no flag:, arg:, or env: tag.
 func injectBindings(chain []Runner, bindings []binding) error {
@@ -83,10 +135,21 @@ func injectBindings(chain []Runner, bindings []binding) error {
 		return nil
 	}
 
-	// Build type -> value index for fast lookup.
+	// Build type -> value index for fast lookup, resolving providers.
 	byType := make(map[reflect.Type]any, len(bindings))
-	for _, b := range bindings {
+	for i := range bindings {
+		b := &bindings[i]
 		key := b.targetType
+
+		if b.provider != nil {
+			val, err := resolveProvider(b)
+			if err != nil {
+				return fmt.Errorf("bind provider for %s: %w", key, err)
+			}
+			byType[key] = val
+			continue
+		}
+
 		if key == nil {
 			key = reflect.TypeOf(b.value)
 		}
@@ -97,6 +160,16 @@ func injectBindings(chain []Runner, bindings []binding) error {
 		injectIntoStruct(cmd, byType)
 	}
 	return nil
+}
+
+func resolveProvider(b *binding) (any, error) {
+	if b.once != nil {
+		b.once.Do(func() {
+			b.cached, b.cachedErr = b.provider()
+		})
+		return b.cached, b.cachedErr
+	}
+	return b.provider()
 }
 
 func injectIntoStruct(cmd any, byType map[reflect.Type]any) {

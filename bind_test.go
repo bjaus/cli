@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/bjaus/cli"
@@ -217,6 +219,124 @@ type argsFlagsCmd struct {
 
 func (c *argsFlagsCmd) Run(ctx context.Context) error {
 	return nil
+}
+
+// --- BindProvider ---
+
+type providerCmd struct {
+	DB *mockDB
+}
+
+func (c *providerCmd) Run(_ context.Context) error { return nil }
+
+func TestBindProvider(t *testing.T) {
+	calls := 0
+	cmd := &providerCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindProvider(func() (*mockDB, error) {
+			calls++
+			return &mockDB{name: "provided"}, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if cmd.DB == nil || cmd.DB.name != "provided" {
+		t.Error("DB not injected by provider")
+	}
+	if calls != 1 {
+		t.Errorf("provider called %d times, want 1", calls)
+	}
+}
+
+func TestBindProvider_Error(t *testing.T) {
+	cmd := &providerCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindProvider(func() (*mockDB, error) {
+			return nil, fmt.Errorf("connection failed")
+		}),
+	)
+	if err == nil {
+		t.Fatal("expected error from provider")
+	}
+	if !strings.Contains(err.Error(), "connection failed") {
+		t.Errorf("error should contain provider error: %v", err)
+	}
+}
+
+// --- BindSingleton ---
+
+func TestBindSingleton(t *testing.T) {
+	calls := 0
+	db := &mockDB{name: "singleton"}
+	cmd := &providerCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindSingleton(func() (*mockDB, error) {
+			calls++
+			return db, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if cmd.DB != db {
+		t.Error("DB not injected by singleton")
+	}
+	if calls != 1 {
+		t.Errorf("singleton called %d times, want 1", calls)
+	}
+}
+
+type singletonParentCmd struct {
+	DB *mockDB
+}
+
+func (c *singletonParentCmd) Run(_ context.Context) error   { return nil }
+func (c *singletonParentCmd) Subcommands() []cli.Runner     { return []cli.Runner{&singletonChildCmd{}} }
+
+type singletonChildCmd struct {
+	DB *mockDB
+}
+
+func (c *singletonChildCmd) Name() string                { return "child" }
+func (c *singletonChildCmd) Run(_ context.Context) error { return nil }
+
+func TestBindSingleton_CachedAcrossChain(t *testing.T) {
+	calls := 0
+	parent := &singletonParentCmd{}
+
+	err := cli.Execute(context.Background(), parent, []string{"child"},
+		cli.BindSingleton(func() (*mockDB, error) {
+			calls++
+			return &mockDB{name: "shared"}, nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	// Singleton should be called once but injected into both parent and child.
+	if calls != 1 {
+		t.Errorf("singleton called %d times, want 1", calls)
+	}
+	if parent.DB == nil || parent.DB.name != "shared" {
+		t.Error("parent DB not injected")
+	}
+}
+
+func TestBindSingleton_Error(t *testing.T) {
+	cmd := &providerCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.BindSingleton(func() (*mockDB, error) {
+			return nil, fmt.Errorf("init failed")
+		}),
+	)
+	if err == nil {
+		t.Fatal("expected error from singleton")
+	}
+	if !strings.Contains(err.Error(), "init failed") {
+		t.Errorf("error should contain singleton error: %v", err)
+	}
 }
 
 func TestBindArgsWithFlags(t *testing.T) {
