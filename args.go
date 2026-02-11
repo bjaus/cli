@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 )
 
 // ScanArgs inspects a command's struct tags and returns positional arg definitions.
@@ -127,15 +128,26 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 			continue
 		}
 
-		// No positional arg — try env.
-		if envName := f.Tag.Get("env"); envName != "" {
-			if envVal, ok := os.LookupEnv(envPrefix + envName); ok {
+		// No positional arg — try env (supports comma-separated names).
+		if envTag := f.Tag.Get("env"); envTag != "" {
+			found := false
+			for _, envVar := range strings.Split(envTag, ",") {
+				envVar = strings.TrimSpace(envVar)
+				envName := envPrefix + envVar
+				envVal, ok := os.LookupEnv(envName)
+				if !ok {
+					continue
+				}
 				if err := setFieldValue(field, envVal); err != nil {
-					return fmt.Errorf("invalid value for argument %q (from %s): %w", name, envPrefix+envName, err)
+					return fmt.Errorf("invalid value for argument %q (from %s): %w", name, envName, err)
 				}
 				if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
 					return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
 				}
+				found = true
+				break
+			}
+			if found {
 				continue
 			}
 		}

@@ -6176,3 +6176,69 @@ func TestFlagNormalization_InternalParse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "hello", cmd.MyFlag)
 }
+
+// --- Multiple env vars ---
+
+type multiEnvCmd struct {
+	Host string `flag:"host" env:"APP_HOST,SERVICE_HOST"`
+}
+
+func (c *multiEnvCmd) Run(_ context.Context) error { return nil }
+
+func TestApplyEnv_MultipleEnvVars(t *testing.T) {
+	t.Run("first env var takes priority", func(t *testing.T) {
+		t.Setenv("APP_HOST", "first.example.com")
+		t.Setenv("SERVICE_HOST", "second.example.com")
+		c := &multiEnvCmd{}
+		_, _, err := defaultParseFlags(c, nil, defaults())
+		require.NoError(t, err)
+		assert.Equal(t, "first.example.com", c.Host)
+	})
+
+	t.Run("falls back to second env var", func(t *testing.T) {
+		t.Setenv("SERVICE_HOST", "fallback.example.com")
+		c := &multiEnvCmd{}
+		_, _, err := defaultParseFlags(c, nil, defaults())
+		require.NoError(t, err)
+		assert.Equal(t, "fallback.example.com", c.Host)
+	})
+
+	t.Run("no env vars set", func(t *testing.T) {
+		c := &multiEnvCmd{}
+		_, _, err := defaultParseFlags(c, nil, defaults())
+		require.NoError(t, err)
+		assert.Equal(t, "", c.Host)
+	})
+}
+
+type multiEnvPrefixCmd struct {
+	Host string `flag:"host" env:"HOST_A,HOST_B"`
+}
+
+func (c *multiEnvPrefixCmd) Run(_ context.Context) error { return nil }
+
+func TestApplyEnv_MultipleWithPrefix(t *testing.T) {
+	t.Setenv("PFX_HOST_A", "prefixed.example.com")
+
+	c := &multiEnvPrefixCmd{}
+	opts := defaults()
+	opts.envVarPrefix = "PFX_"
+	_, _, err := defaultParseFlags(c, nil, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "prefixed.example.com", c.Host)
+}
+
+type multiEnvSpaceCmd struct {
+	Val string `flag:"val" env:"A_VAR, B_VAR"`
+}
+
+func (c *multiEnvSpaceCmd) Run(_ context.Context) error { return nil }
+
+func TestApplyEnv_MultipleWhitespace(t *testing.T) {
+	t.Setenv("B_VAR", "from-b")
+
+	c := &multiEnvSpaceCmd{}
+	_, _, err := defaultParseFlags(c, nil, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "from-b", c.Val)
+}

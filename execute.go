@@ -569,9 +569,14 @@ func renderHelp(cmd Runner, chain []Runner, opts *options) error {
 			return
 		}
 		for i := range defs {
-			if defs[i].Env != "" {
-				defs[i].Env = opts.envVarPrefix + defs[i].Env
+			if defs[i].Env == "" {
+				continue
 			}
+			parts := strings.Split(defs[i].Env, ",")
+			for j := range parts {
+				parts[j] = opts.envVarPrefix + strings.TrimSpace(parts[j])
+			}
+			defs[i].Env = strings.Join(parts, ", ")
 		}
 	}
 	applyEnvVarPrefix(flags)

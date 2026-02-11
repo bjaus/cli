@@ -383,19 +383,27 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 
 func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) error {
 	for _, fi := range fields {
-		if fi.def.Env != "" {
-			envName := envPrefix + fi.def.Env
-			if envVal, ok := os.LookupEnv(envName); ok {
-				field := v.FieldByIndex(fi.index)
-				if err := setFieldValueSep(field, envVal, fi.def.Sep); err != nil {
-					prefix := "--"
-					if fi.envOnly {
-						prefix = ""
-					}
-					return fmt.Errorf("%w: %s%s (from %s): %w", ErrInvalidFlagValue, prefix, fi.def.Name, envName, err)
-				}
-				fi.provided = true
+		if fi.def.Env == "" {
+			continue
+		}
+		// Support comma-separated env var names: env:"A,B" tries A first, then B.
+		for _, envVar := range strings.Split(fi.def.Env, ",") {
+			envVar = strings.TrimSpace(envVar)
+			envName := envPrefix + envVar
+			envVal, ok := os.LookupEnv(envName)
+			if !ok {
+				continue
 			}
+			field := v.FieldByIndex(fi.index)
+			if err := setFieldValueSep(field, envVal, fi.def.Sep); err != nil {
+				prefix := "--"
+				if fi.envOnly {
+					prefix = ""
+				}
+				return fmt.Errorf("%w: %s%s (from %s): %w", ErrInvalidFlagValue, prefix, fi.def.Name, envName, err)
+			}
+			fi.provided = true
+			break
 		}
 	}
 	return nil

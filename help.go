@@ -165,7 +165,15 @@ func renderArgDefs(b *strings.Builder, args []ArgDef) {
 			parts = append(parts, fmt.Sprintf("(default: %s)", a.Default))
 		}
 		if a.Env != "" {
-			parts = append(parts, fmt.Sprintf("(env: %s)", a.Env))
+			envDisplay := a.Env
+			if strings.Contains(envDisplay, ",") {
+				names := strings.Split(envDisplay, ",")
+				for i := range names {
+					names[i] = strings.TrimSpace(names[i])
+				}
+				envDisplay = strings.Join(names, ", ")
+			}
+			parts = append(parts, fmt.Sprintf("(env: %s)", envDisplay))
 		}
 		right := strings.Join(parts, " ")
 		fmt.Fprintf(b, "  %-*s  %s\n", maxLeft, a.Name, right)
@@ -308,7 +316,16 @@ func flagRight(f *FlagDef) string {
 		parts = append(parts, fmt.Sprintf("(default: %s)", f.Default))
 	}
 	if f.Env != "" {
-		parts = append(parts, fmt.Sprintf("(env: %s)", f.Env))
+		envDisplay := f.Env
+		// Normalize comma-separated env vars to "A, B" display format.
+		if strings.Contains(envDisplay, ",") {
+			names := strings.Split(envDisplay, ",")
+			for i := range names {
+				names[i] = strings.TrimSpace(names[i])
+			}
+			envDisplay = strings.Join(names, ", ")
+		}
+		parts = append(parts, fmt.Sprintf("(env: %s)", envDisplay))
 	}
 	return strings.Join(parts, " ")
 }
