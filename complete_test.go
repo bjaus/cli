@@ -390,6 +390,53 @@ func TestComputeCompletions_FlagCompleterShortFlag(t *testing.T) {
 	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completions)
 }
 
+// --- FilterFileExt / FilterDirs directive tests ---
+
+type compFilterFileExtCmd struct{}
+
+func (c *compFilterFileExtCmd) Run(_ context.Context) error { return nil }
+func (c *compFilterFileExtCmd) Name() string                { return "myapp" }
+func (c *compFilterFileExtCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
+	return []string{".yaml", ".json"}, cli.ShellCompDirectiveFilterFileExt
+}
+
+func TestComputeCompletions_FilterFileExt(t *testing.T) {
+	t.Parallel()
+	cmd := &compFilterFileExtCmd{}
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+
+	assert.Equal(t, cli.ShellCompDirectiveFilterFileExt, directive)
+	assert.Equal(t, []string{".yaml", ".json"}, completions)
+}
+
+type compFilterDirsCmd struct{}
+
+func (c *compFilterDirsCmd) Run(_ context.Context) error { return nil }
+func (c *compFilterDirsCmd) Name() string                { return "myapp" }
+func (c *compFilterDirsCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
+	return []string{"dir-placeholder"}, cli.ShellCompDirectiveFilterDirs
+}
+
+func TestComputeCompletions_FilterDirs(t *testing.T) {
+	t.Parallel()
+	cmd := &compFilterDirsCmd{}
+	_, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+
+	assert.Equal(t, cli.ShellCompDirectiveFilterDirs, directive)
+}
+
+func TestShellCompDirective_Values(t *testing.T) {
+	t.Parallel()
+
+	// Verify the bitfield values are correct.
+	assert.Equal(t, cli.ShellCompDirective(0), cli.ShellCompDirectiveDefault)
+	assert.Equal(t, cli.ShellCompDirective(2), cli.ShellCompDirectiveNoSpace)
+	assert.Equal(t, cli.ShellCompDirective(4), cli.ShellCompDirectiveNoFileComp)
+	assert.Equal(t, cli.ShellCompDirective(8), cli.ShellCompDirectiveError)
+	assert.Equal(t, cli.ShellCompDirective(16), cli.ShellCompDirectiveFilterFileExt)
+	assert.Equal(t, cli.ShellCompDirective(32), cli.ShellCompDirectiveFilterDirs)
+}
+
 func TestComputeCompletions_EnumValuePrefix(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}

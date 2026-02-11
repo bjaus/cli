@@ -20,6 +20,12 @@ const (
 	ShellCompDirectiveNoFileComp
 	// ShellCompDirectiveError indicates an error occurred during completion.
 	ShellCompDirectiveError
+	// ShellCompDirectiveFilterFileExt indicates completions are file extensions
+	// to filter by (e.g. ".yaml", ".json"). Shells will only show files matching
+	// these extensions.
+	ShellCompDirectiveFilterFileExt
+	// ShellCompDirectiveFilterDirs indicates only directories should be completed.
+	ShellCompDirectiveFilterDirs
 )
 
 // RuntimeComplete generates completion candidates for the given args and writes

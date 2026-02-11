@@ -59,11 +59,11 @@ func TestFish_RuntimeScript(t *testing.T) {
 	// Script structure.
 	assert.Contains(t, script, "# fish completion for myapp")
 	assert.Contains(t, script, "complete -c myapp")
+	assert.Contains(t, script, "__myapp_complete")
 
 	// Runtime __complete call.
 	assert.Contains(t, script, "__complete")
 	assert.Contains(t, script, "commandline")
-	assert.Contains(t, script, "string match")
 }
 
 func TestPowerShell_RuntimeScript(t *testing.T) {

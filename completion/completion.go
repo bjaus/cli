@@ -54,11 +54,31 @@ func Bash(_ cli.Runner, appName string) string {
 	// Generate COMPREPLY.
 	b.WriteString("    COMPREPLY=( $(compgen -W \"${candidates}\" -- \"${cur}\") )\n\n")
 
-	// Handle directives.
-	b.WriteString("    case \"$directive\" in\n")
-	b.WriteString("    :2) ;; # NoSpace: noop, compgen handles it\n")
-	b.WriteString("    :4) compopt +o default ;; # NoFileComp\n")
-	b.WriteString("    esac\n")
+	// Handle directives (bitfield).
+	b.WriteString("    local dir_val=${directive#:}\n\n")
+
+	// FilterDirs (32)
+	b.WriteString("    if (( dir_val & 32 )); then\n")
+	b.WriteString("        compopt -o dirnames\n")
+	b.WriteString("        COMPREPLY=( $(compgen -d -- \"${cur}\") )\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
+
+	// FilterFileExt (16) — completions are extensions like .yaml .json
+	b.WriteString("    if (( dir_val & 16 )); then\n")
+	b.WriteString("        local exts=\"\"\n")
+	b.WriteString("        for ext in ${candidates}; do\n")
+	b.WriteString("            exts=\"${exts} -o -name \\\"*${ext}\\\"\"\n")
+	b.WriteString("        done\n")
+	b.WriteString("        compopt -o filenames\n")
+	b.WriteString("        COMPREPLY=( $(compgen -f -- \"${cur}\") )\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
+
+	// NoFileComp (4)
+	b.WriteString("    if (( dir_val & 4 )); then\n")
+	b.WriteString("        compopt +o default\n")
+	b.WriteString("    fi\n")
 
 	b.WriteString("}\n\n")
 	fmt.Fprintf(&b, "complete -o default -F _%s_completions %s\n", safe, appName)
@@ -99,6 +119,25 @@ func Zsh(_ cli.Runner, appName string) string {
 	b.WriteString("        fi\n")
 	b.WriteString("    done <<< \"$out\"\n\n")
 
+	// Handle directives (bitfield).
+	b.WriteString("    local dir_val=${directive#:}\n\n")
+
+	// FilterDirs (32)
+	b.WriteString("    if (( dir_val & 32 )); then\n")
+	b.WriteString("        _files -/\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
+
+	// FilterFileExt (16) — completions are extensions
+	b.WriteString("    if (( dir_val & 16 )); then\n")
+	b.WriteString("        local -a exts\n")
+	b.WriteString("        for comp in ${completions}; do\n")
+	b.WriteString("            exts+=(\"*${comp}\")\n")
+	b.WriteString("        done\n")
+	b.WriteString("        _files -g \"(${(j:|:)exts})\"\n")
+	b.WriteString("        return\n")
+	b.WriteString("    fi\n\n")
+
 	b.WriteString("    _describe 'completion' completions\n")
 
 	b.WriteString("}\n\n")
@@ -110,9 +149,35 @@ func Zsh(_ cli.Runner, appName string) string {
 // Fish generates a fish completion script that calls the binary at runtime.
 func Fish(_ cli.Runner, appName string) string {
 	var b strings.Builder
+	safe := bashSafe(appName)
 
 	fmt.Fprintf(&b, "# fish completion for %s\n\n", appName)
-	fmt.Fprintf(&b, "complete -c %s -f -a '(%s __complete (commandline -cop) 2>/dev/null | string match -v \":*\")'\n", appName, appName)
+
+	fmt.Fprintf(&b, "function __%s_complete\n", safe)
+	fmt.Fprintf(&b, "    set -l out (%s __complete (commandline -cop) 2>/dev/null)\n", appName)
+	b.WriteString("    set -l directive $out[-1]\n")
+	b.WriteString("    set -e out[-1]\n\n")
+
+	b.WriteString("    set -l dir_val (string replace ':' '' $directive)\n\n")
+
+	// FilterDirs (32)
+	b.WriteString("    if test (math \"$dir_val & 32\") -ne 0\n")
+	b.WriteString("        __fish_complete_directories\n")
+	b.WriteString("        return\n")
+	b.WriteString("    end\n\n")
+
+	// FilterFileExt (16) — force file completion
+	b.WriteString("    if test (math \"$dir_val & 16\") -ne 0\n")
+	b.WriteString("        __fish_complete_suffix $out\n")
+	b.WriteString("        return\n")
+	b.WriteString("    end\n\n")
+
+	b.WriteString("    for line in $out\n")
+	b.WriteString("        echo $line\n")
+	b.WriteString("    end\n")
+	fmt.Fprintf(&b, "end\n\n")
+
+	fmt.Fprintf(&b, "complete -c %s -f -a '(__%s_complete)'\n", appName, safe)
 
 	return b.String()
 }
@@ -134,6 +199,27 @@ func PowerShell(_ cli.Runner, appName string) string {
 	b.WriteString("    $lines = $out -split \"`n\"\n")
 	b.WriteString("    $directive = $lines[-1]\n")
 	b.WriteString("    $candidates = $lines[0..($lines.Count - 2)]\n\n")
+
+	// Parse directive value.
+	b.WriteString("    $dirVal = [int]($directive -replace ':', '')\n\n")
+
+	// FilterDirs (32)
+	b.WriteString("    if ($dirVal -band 32) {\n")
+	b.WriteString("        Get-ChildItem -Directory | ForEach-Object {\n")
+	b.WriteString("            [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ProviderContainer', $_.Name)\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return\n")
+	b.WriteString("    }\n\n")
+
+	// FilterFileExt (16)
+	b.WriteString("    if ($dirVal -band 16) {\n")
+	b.WriteString("        foreach ($ext in $candidates) {\n")
+	b.WriteString("            Get-ChildItem -File -Filter \"*$ext\" | ForEach-Object {\n")
+	b.WriteString("                [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ProviderItem', $_.Name)\n")
+	b.WriteString("            }\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return\n")
+	b.WriteString("    }\n\n")
 
 	// Create CompletionResult for each candidate.
 	b.WriteString("    foreach ($line in $candidates) {\n")
