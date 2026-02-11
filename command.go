@@ -24,19 +24,28 @@ func resolveInfo(cmd Commander) commandInfo {
 		}
 	}
 	if d, ok := cmd.(Descriptor); ok {
-		info.description = d.Description()
+		if desc := d.Description(); desc != "" {
+			info.description = desc
+		}
 	}
 	if ld, ok := cmd.(LongDescriptor); ok {
-		info.longDescription = ld.LongDescription()
+		if desc := ld.LongDescription(); desc != "" {
+			info.longDescription = desc
+		}
 	}
 	if a, ok := cmd.(Aliaser); ok {
-		info.aliases = a.Aliases()
+		if aliases := a.Aliases(); len(aliases) > 0 {
+			info.aliases = aliases
+		}
 	}
 	if h, ok := cmd.(Hider); ok {
+		// Note: Hidden() returning false is equivalent to not implementing Hider
 		info.hidden = h.Hidden()
 	}
 	if e, ok := cmd.(Exampler); ok {
-		info.examples = e.Examples()
+		if examples := e.Examples(); len(examples) > 0 {
+			info.examples = examples
+		}
 	}
 	return info
 }

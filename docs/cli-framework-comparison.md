@@ -299,6 +299,30 @@ Only `Run` is required. The rest are implemented only when needed. The command t
 built by returning children from `Subcommands()`. No global state or registration
 calls.
 
+For quick bootstrapping, embed `Meta` to get common interfaces without boilerplate:
+
+```go
+type ServeCmd struct {
+    cli.Meta
+    Port int `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
+}
+
+func (s *ServeCmd) Subcommands() []cli.Commander { return []cli.Commander{&StartCmd{}, &StopCmd{}} }
+func (s *ServeCmd) Run(ctx context.Context) error { /* ... */ }
+
+// Initialize with builder methods:
+cmd := &ServeCmd{
+    Meta: cli.Meta{}.
+        WithName("serve").
+        WithDescription("Start the server").
+        WithAliases("s").
+        WithCategory("Server"),
+}
+```
+
+`Meta` implements `Namer`, `Descriptor`, `LongDescriptor`, `Aliaser`, `Categorizer`,
+`Hider`, `Deprecator`, and `Exampler`. Override any method by defining it on your type.
+
 ### Comparison
 
 | Feature      | cobra                 | urfave/cli       | kong              | bjaus/cli                           |

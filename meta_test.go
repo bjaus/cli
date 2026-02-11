@@ -17,16 +17,24 @@ func TestMeta(t *testing.T) {
 		m := Meta{}.
 			WithName("serve").
 			WithDescription("Start the server").
+			WithLongDescription("Start the HTTP server with the given configuration.").
 			WithAliases("s", "start").
 			WithCategory("Server").
 			WithHidden(true).
-			WithDeprecated("use 'run' instead")
+			WithDeprecated("use 'run' instead").
+			WithExamples(
+				Example{Description: "Start on port 8080", Command: "app serve --port 8080"},
+				Example{Description: "Start with verbose", Command: "app serve -v"},
+			)
 
 		if m.Name() != "serve" {
 			t.Errorf("Name() = %q, want %q", m.Name(), "serve")
 		}
 		if m.Description() != "Start the server" {
 			t.Errorf("Description() = %q, want %q", m.Description(), "Start the server")
+		}
+		if m.LongDescription() != "Start the HTTP server with the given configuration." {
+			t.Errorf("LongDescription() = %q, want %q", m.LongDescription(), "Start the HTTP server with the given configuration.")
 		}
 		if got := m.Aliases(); len(got) != 2 || got[0] != "s" || got[1] != "start" {
 			t.Errorf("Aliases() = %v, want [s start]", got)
@@ -39,6 +47,9 @@ func TestMeta(t *testing.T) {
 		}
 		if m.Deprecated() != "use 'run' instead" {
 			t.Errorf("Deprecated() = %q, want %q", m.Deprecated(), "use 'run' instead")
+		}
+		if got := m.Examples(); len(got) != 2 {
+			t.Errorf("Examples() has %d items, want 2", len(got))
 		}
 	})
 
@@ -72,10 +83,12 @@ func TestMetaEmbed(t *testing.T) {
 	// Verify interface satisfaction via embedding
 	var _ Namer = cmd
 	var _ Descriptor = cmd
+	var _ LongDescriptor = cmd
 	var _ Aliaser = cmd
 	var _ Categorizer = cmd
 	var _ Hider = cmd
 	var _ Deprecator = cmd
+	var _ Exampler = cmd
 
 	if cmd.Name() != "serve" {
 		t.Errorf("Name() = %q, want %q", cmd.Name(), "serve")

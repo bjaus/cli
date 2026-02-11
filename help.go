@@ -363,11 +363,14 @@ func renderSubcommands(b *strings.Builder, subs []Commander, sorted bool) {
 		}
 
 		if c, ok := s.(Categorizer); ok {
-			cat := c.Category()
-			if _, exists := categoryMap[cat]; !exists {
-				categoryOrder = append(categoryOrder, cat)
+			if cat := c.Category(); cat != "" {
+				if _, exists := categoryMap[cat]; !exists {
+					categoryOrder = append(categoryOrder, cat)
+				}
+				categoryMap[cat] = append(categoryMap[cat], s)
+			} else {
+				uncategorized = append(uncategorized, s)
 			}
-			categoryMap[cat] = append(categoryMap[cat], s)
 		} else {
 			uncategorized = append(uncategorized, s)
 		}

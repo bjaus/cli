@@ -2,7 +2,8 @@ package cli
 
 // Meta provides default implementations for common metadata interfaces.
 // Embed it in your command struct to reduce boilerplate for [Namer],
-// [Descriptor], [Aliaser], [Categorizer], [Hider], and [Deprecator].
+// [Descriptor], [LongDescriptor], [Aliaser], [Categorizer], [Hider],
+// [Deprecator], and [Exampler].
 //
 // The zero value is useful — if you don't set a name, the framework's default
 // (lowercase struct name) is used. Use the builder methods to set values:
@@ -31,12 +32,14 @@ package cli
 //
 // See [Interfaces] for a complete list of optional interfaces.
 type Meta struct {
-	name        string
-	description string
-	aliases     []string
-	category    string
-	hidden      bool
-	deprecated  string
+	name            string
+	description     string
+	longDescription string
+	aliases         []string
+	category        string
+	hidden          bool
+	deprecated      string
+	examples        []Example
 }
 
 // WithName sets the command name. If not set, the framework uses the
@@ -49,6 +52,13 @@ func (m Meta) WithName(name string) Meta {
 // WithDescription sets the one-line description for help listings.
 func (m Meta) WithDescription(description string) Meta {
 	m.description = description
+	return m
+}
+
+// WithLongDescription sets the extended description shown in the command's
+// own help output.
+func (m Meta) WithLongDescription(description string) Meta {
+	m.longDescription = description
 	return m
 }
 
@@ -76,12 +86,21 @@ func (m Meta) WithDeprecated(message string) Meta {
 	return m
 }
 
+// WithExamples sets usage examples shown in help output.
+func (m Meta) WithExamples(examples ...Example) Meta {
+	m.examples = examples
+	return m
+}
+
 // Name implements [Namer]. Returns empty string if not set, which signals
 // the framework to use the default (lowercase struct name).
 func (m Meta) Name() string { return m.name }
 
 // Description implements [Descriptor].
 func (m Meta) Description() string { return m.description }
+
+// LongDescription implements [LongDescriptor].
+func (m Meta) LongDescription() string { return m.longDescription }
 
 // Aliases implements [Aliaser].
 func (m Meta) Aliases() []string { return m.aliases }
@@ -94,3 +113,6 @@ func (m Meta) Hidden() bool { return m.hidden }
 
 // Deprecated implements [Deprecator].
 func (m Meta) Deprecated() string { return m.deprecated }
+
+// Examples implements [Exampler].
+func (m Meta) Examples() []Example { return m.examples }
