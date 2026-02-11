@@ -177,11 +177,10 @@ type Afterer interface {
 }
 
 // Validator validates command state after flag parsing and before Run.
-// The provided map contains the names of flags that were explicitly set
-// (via CLI args, env vars, config, or inheritance) — flags with only a
-// default value are not included.
+// Called after all values are resolved (flags, args, env, config, defaults,
+// inheritance) giving full access to the command's final state.
 type Validator interface {
-	Validate(provided map[string]bool) error
+	Validate() error
 }
 
 // --- UX interfaces (all optional) ---

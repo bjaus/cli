@@ -350,7 +350,7 @@ Admin Commands:
 |-----------|--------|------|
 | `Beforer` | `Before(ctx) (ctx, error)` | Before Run, parent-first. Returns modified context. |
 | `Afterer` | `After(ctx) error` | After Run, child-first. Always runs. |
-| `Validator` | `Validate(provided map[string]bool) error` | After flag parsing, before Run. |
+| `Validator` | `Validate() error` | After flag parsing, before Run. |
 
 ```go
 func (a *App) Before(ctx context.Context) (context.Context, error) {

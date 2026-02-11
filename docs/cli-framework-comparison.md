@@ -341,23 +341,23 @@ cmd := &ServeCmd{
 
 ### Type Support
 
-| Type            | cobra (pflag) | urfave/cli    | kong                        | bjaus/cli            |
-| --------------- | ------------- | ------------- | --------------------------- | -------------------- |
-| string          | Y             | Y             | Y                           | Y                    |
-| int/int64       | Y (int8-64)   | Y             | Y                           | Y (int, int64)       |
-| uint/uint64     | Y (uint8-64)  | Y             | Y                           | Y (uint, uint64)     |
-| float32/float64 | Y             | Y             | Y                           | Y (float64)          |
-| bool            | Y             | Y             | Y                           | Y                    |
-| time.Duration   | Y             | Y             | Y                           | Y                    |
-| time.Time       | -             | Y (Timestamp) | Y                           | Y (RFC3339/date)     |
-| string slice    | Y             | Y             | Y                           | Y                    |
-| int slice       | Y             | Y             | Y                           | Y                    |
-| map[K]V         | -             | Y (StringMap) | Y                           | Y                    |
-| \*os.File       | -             | -             | Y                           | -                    |
-| \*url.URL       | -             | -             | Y                           | -                    |
-| net.IP          | Y             | -             | -                           | -                    |
-| Custom types    | pflag.Value   | cli.Value     | TextUnmarshaler/MapperValue | FlagUnmarshaler      |
-| Counter (-vvv)  | Y (Count)     | -             | Y (`type:"counter"`)        | Y (`counter:""`)     |
+| Type            | cobra (pflag) | urfave/cli    | kong                        | bjaus/cli                   |
+| --------------- | ------------- | ------------- | --------------------------- | --------------------------- |
+| string          | Y             | Y             | Y                           | Y                           |
+| int/int64       | Y (int8-64)   | Y             | Y                           | Y (int, int64)              |
+| uint/uint64     | Y (uint8-64)  | Y             | Y                           | Y (uint, uint64)            |
+| float32/float64 | Y             | Y             | Y                           | Y (float64)                 |
+| bool            | Y             | Y             | Y                           | Y                           |
+| time.Duration   | Y             | Y             | Y                           | Y                           |
+| time.Time       | -             | Y (Timestamp) | Y                           | Y (RFC3339/date)            |
+| string slice    | Y             | Y             | Y                           | Y                           |
+| int slice       | Y             | Y             | Y                           | Y                           |
+| map[K]V         | -             | Y (StringMap) | Y                           | Y                           |
+| \*os.File       | -             | -             | Y                           | -                           |
+| \*url.URL       | -             | -             | Y                           | Y                           |
+| net.IP          | Y             | -             | -                           | Y                           |
+| Custom types    | pflag.Value   | cli.Value     | TextUnmarshaler/MapperValue | FlagUnmarshaler             |
+| Counter (-vvv)  | Y (Count)     | -             | Y (`type:"counter"`)        | Y (`counter:""`)            |
 
 ### Definition Style
 

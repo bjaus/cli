@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -6434,4 +6436,120 @@ func TestUintFlags_NegativeValue(t *testing.T) {
 	c := &uintFlagCmd{}
 	_, _, err := defaultParseFlags(c, []string{"--port", "-1"}, defaults())
 	require.Error(t, err)
+}
+
+// --- url.URL and net.IP type support ---
+
+type urlFlagCmd struct {
+	Endpoint *url.URL `flag:"endpoint" help:"API endpoint URL"`
+}
+
+func (c *urlFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestURLFlag_Parse(t *testing.T) {
+	t.Parallel()
+
+	c := &urlFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--endpoint", "https://api.example.com/v1"}, defaults())
+	require.NoError(t, err)
+	require.NotNil(t, c.Endpoint)
+	assert.Equal(t, "https", c.Endpoint.Scheme)
+	assert.Equal(t, "api.example.com", c.Endpoint.Host)
+	assert.Equal(t, "/v1", c.Endpoint.Path)
+}
+
+func TestURLFlag_Invalid(t *testing.T) {
+	t.Parallel()
+
+	c := &urlFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--endpoint", "://invalid"}, defaults())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid url")
+}
+
+func TestURLFlag_TypeName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &urlFlagCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 1)
+	assert.Equal(t, "url", flags[0].TypeName)
+}
+
+type urlSliceCmd struct {
+	URLs []*url.URL `flag:"url" help:"URLs to fetch"`
+}
+
+func (c *urlSliceCmd) Run(_ context.Context) error { return nil }
+
+func TestURLFlag_Slice(t *testing.T) {
+	t.Parallel()
+
+	c := &urlSliceCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--url", "https://a.com", "--url", "https://b.com"}, defaults())
+	require.NoError(t, err)
+	require.Len(t, c.URLs, 2)
+	assert.Equal(t, "a.com", c.URLs[0].Host)
+	assert.Equal(t, "b.com", c.URLs[1].Host)
+}
+
+type ipFlagCmd struct {
+	Host net.IP `flag:"host" help:"Host IP address"`
+}
+
+func (c *ipFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestIPFlag_Parse(t *testing.T) {
+	t.Parallel()
+
+	c := &ipFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--host", "192.168.1.1"}, defaults())
+	require.NoError(t, err)
+	require.NotNil(t, c.Host)
+	assert.Equal(t, "192.168.1.1", c.Host.String())
+}
+
+func TestIPFlag_ParseIPv6(t *testing.T) {
+	t.Parallel()
+
+	c := &ipFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--host", "::1"}, defaults())
+	require.NoError(t, err)
+	require.NotNil(t, c.Host)
+	assert.Equal(t, "::1", c.Host.String())
+}
+
+func TestIPFlag_Invalid(t *testing.T) {
+	t.Parallel()
+
+	c := &ipFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--host", "not-an-ip"}, defaults())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid ip address")
+}
+
+func TestIPFlag_TypeName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &ipFlagCmd{}
+	flags := ScanFlags(cmd)
+	require.Len(t, flags, 1)
+	assert.Equal(t, "ip", flags[0].TypeName)
+}
+
+type ipSliceCmd struct {
+	Hosts []net.IP `flag:"host" help:"Host IP addresses"`
+}
+
+func (c *ipSliceCmd) Run(_ context.Context) error { return nil }
+
+func TestIPFlag_Slice(t *testing.T) {
+	t.Parallel()
+
+	c := &ipSliceCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--host", "192.168.1.1", "--host", "10.0.0.1"}, defaults())
+	require.NoError(t, err)
+	require.Len(t, c.Hosts, 2)
+	assert.Equal(t, "192.168.1.1", c.Hosts[0].String())
+	assert.Equal(t, "10.0.0.1", c.Hosts[1].String())
 }

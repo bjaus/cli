@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -127,7 +129,11 @@ func camelToKebab(s string) string {
 	return string(result)
 }
 
-var timeType = reflect.TypeOf(time.Time{})
+var (
+	timeType = reflect.TypeOf(time.Time{})
+	urlType  = reflect.TypeOf(url.URL{})
+	ipType   = reflect.TypeOf(net.IP{})
+)
 
 func flagTypeName(t reflect.Type) string {
 	if t == reflect.TypeOf(time.Duration(0)) {
@@ -135,6 +141,12 @@ func flagTypeName(t reflect.Type) string {
 	}
 	if t == timeType {
 		return "time"
+	}
+	if t == urlType || t == reflect.PointerTo(urlType) {
+		return "url"
+	}
+	if t == ipType {
+		return "ip"
 	}
 
 	switch t.Kind() {
@@ -548,6 +560,9 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 			continue
 		}
 		seen[fi.def.Name] = true
+
+		field := v.FieldByIndex(fi.index)
+
 		if fi.def.Required && !fi.provided {
 			if fi.envOnly && fi.def.Env != "" {
 				return fmt.Errorf("%w: %s (env: %s)", ErrRequiredFlag, fi.def.Name, fi.def.Env)
@@ -555,7 +570,7 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 			return fmt.Errorf("%w: --%s", ErrRequiredFlag, fi.def.Name)
 		}
 		if fi.def.Enum != "" && (fi.provided || fi.def.Default != "") {
-			val := fmt.Sprint(v.FieldByIndex(fi.index).Interface())
+			val := fmt.Sprint(field.Interface())
 			if !enumContains(fi.def.Enum, val) {
 				if fi.envOnly {
 					return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidFlagValue, fi.def.Name, fi.def.Enum)
@@ -563,6 +578,7 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 				return fmt.Errorf("%w: --%s must be one of [%s]", ErrInvalidFlagValue, fi.def.Name, fi.def.Enum)
 			}
 		}
+
 	}
 	return nil
 }
@@ -686,6 +702,26 @@ func setFieldValue(field reflect.Value, value string) error {
 		return nil
 	}
 
+	// *url.URL handling.
+	if field.Type() == reflect.PointerTo(urlType) {
+		u, err := url.Parse(value)
+		if err != nil {
+			return fmt.Errorf("invalid url: %w", err)
+		}
+		field.Set(reflect.ValueOf(u))
+		return nil
+	}
+
+	// net.IP handling.
+	if field.Type() == ipType {
+		ip := net.ParseIP(value)
+		if ip == nil {
+			return fmt.Errorf("invalid ip address: %q", value)
+		}
+		field.Set(reflect.ValueOf(ip))
+		return nil
+	}
+
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(value)
@@ -766,6 +802,20 @@ func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
 			return reflect.Value{}, err
 		}
 		return reflect.ValueOf(t), nil
+	}
+	if typ == reflect.PointerTo(urlType) {
+		u, err := url.Parse(value)
+		if err != nil {
+			return reflect.Value{}, fmt.Errorf("invalid url: %w", err)
+		}
+		return reflect.ValueOf(u), nil
+	}
+	if typ == ipType {
+		ip := net.ParseIP(value)
+		if ip == nil {
+			return reflect.Value{}, fmt.Errorf("invalid ip address: %q", value)
+		}
+		return reflect.ValueOf(ip), nil
 	}
 
 	switch typ.Kind() {

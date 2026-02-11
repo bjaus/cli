@@ -373,9 +373,8 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	}
 
 	// Validate leaf.
-	leafIdx := len(chain) - 1
 	if v, ok := leaf.(Validator); ok {
-		if err := v.Validate(provided[leafIdx]); err != nil {
+		if err := v.Validate(); err != nil {
 			return err
 		}
 	}

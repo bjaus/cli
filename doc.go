@@ -54,8 +54,8 @@
 //	}
 //
 // Supported types: string, int, int64, float64, bool, time.Duration,
-// slices of any scalar type, map[string]string, and any type implementing
-// [FlagUnmarshaler].
+// time.Time, *url.URL, net.IP, slices of any scalar type, map[string]string,
+// and any type implementing [FlagUnmarshaler].
 //
 // Struct tag keys:
 //

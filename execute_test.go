@@ -25,10 +25,10 @@ type rootCmd struct {
 	serve *serveCmd
 }
 
-func (r *rootCmd) Run(_ context.Context) error { return nil }
-func (r *rootCmd) Name() string                { return "app" }
-func (r *rootCmd) Description() string         { return "Test application" }
-func (r *rootCmd) Subcommands() []cli.Commander   { return []cli.Commander{r.serve} }
+func (r *rootCmd) Run(_ context.Context) error  { return nil }
+func (r *rootCmd) Name() string                 { return "app" }
+func (r *rootCmd) Description() string          { return "Test application" }
+func (r *rootCmd) Subcommands() []cli.Commander { return []cli.Commander{r.serve} }
 
 type serveCmd struct {
 	Port int    `flag:"port" short:"p" default:"8080" help:"Port"`
@@ -137,9 +137,9 @@ type trackedRoot struct {
 	child   *trackedChild
 }
 
-func (r *trackedRoot) Run(_ context.Context) error { return nil }
-func (r *trackedRoot) Name() string                { return "root" }
-func (r *trackedRoot) Subcommands() []cli.Commander   { return []cli.Commander{r.child} }
+func (r *trackedRoot) Run(_ context.Context) error  { return nil }
+func (r *trackedRoot) Name() string                 { return "root" }
+func (r *trackedRoot) Subcommands() []cli.Commander { return []cli.Commander{r.child} }
 
 func (r *trackedRoot) Before(ctx context.Context) (context.Context, error) {
 	r.tracker.order = append(r.tracker.order, "root-before")
@@ -229,9 +229,9 @@ type parentWithCustomChild struct {
 	child   cli.Commander
 }
 
-func (p *parentWithCustomChild) Run(_ context.Context) error { return nil }
-func (p *parentWithCustomChild) Name() string                { return "wrapper" }
-func (p *parentWithCustomChild) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *parentWithCustomChild) Run(_ context.Context) error  { return nil }
+func (p *parentWithCustomChild) Name() string                 { return "wrapper" }
+func (p *parentWithCustomChild) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 func (p *parentWithCustomChild) After(_ context.Context) error {
 	p.tracker.order = append(p.tracker.order, "wrapper-after")
@@ -251,7 +251,7 @@ type validatingCmd struct {
 
 func (c *validatingCmd) Run(_ context.Context) error { return nil }
 
-func (c *validatingCmd) Validate(_ map[string]bool) error {
+func (c *validatingCmd) Validate() error {
 	if len(c.Name) < 3 {
 		return errors.New("name must be at least 3 characters")
 	}
@@ -425,9 +425,9 @@ func (c *aliasedCmd) Aliases() []string           { return []string{"d", "dep"} 
 
 type aliasParent struct{}
 
-func (p *aliasParent) Run(_ context.Context) error { return nil }
-func (p *aliasParent) Name() string                { return "app" }
-func (p *aliasParent) Subcommands() []cli.Commander   { return []cli.Commander{&aliasedCmd{}} }
+func (p *aliasParent) Run(_ context.Context) error  { return nil }
+func (p *aliasParent) Name() string                 { return "app" }
+func (p *aliasParent) Subcommands() []cli.Commander { return []cli.Commander{&aliasedCmd{}} }
 
 func TestExecute_AliasResolution(t *testing.T) {
 	t.Parallel()
@@ -668,10 +668,10 @@ type versionedRoot struct {
 	serve *serveCmd
 }
 
-func (v *versionedRoot) Run(_ context.Context) error { return nil }
-func (v *versionedRoot) Name() string                { return "myapp" }
-func (v *versionedRoot) Version() string             { return "v2.1.0" }
-func (v *versionedRoot) Subcommands() []cli.Commander   { return []cli.Commander{v.serve} }
+func (v *versionedRoot) Run(_ context.Context) error  { return nil }
+func (v *versionedRoot) Name() string                 { return "myapp" }
+func (v *versionedRoot) Version() string              { return "v2.1.0" }
+func (v *versionedRoot) Subcommands() []cli.Commander { return []cli.Commander{v.serve} }
 
 func TestExecute_Version(t *testing.T) {
 	t.Parallel()
@@ -733,10 +733,10 @@ type defaultParentCmd struct {
 	child      *serveCmd
 }
 
-func (p *defaultParentCmd) Run(_ context.Context) error { return nil }
-func (p *defaultParentCmd) Name() string                { return "app" }
-func (p *defaultParentCmd) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
-func (p *defaultParentCmd) Fallback() cli.Commander        { return p.defaultCmd }
+func (p *defaultParentCmd) Run(_ context.Context) error  { return nil }
+func (p *defaultParentCmd) Name() string                 { return "app" }
+func (p *defaultParentCmd) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
+func (p *defaultParentCmd) Fallback() cli.Commander      { return p.defaultCmd }
 
 func TestExecute_Fallback(t *testing.T) {
 	t.Parallel()
@@ -1054,9 +1054,9 @@ type inheritParent struct {
 	child cli.Commander
 }
 
-func (p *inheritParent) Run(_ context.Context) error { return nil }
-func (p *inheritParent) Name() string                { return "app" }
-func (p *inheritParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *inheritParent) Run(_ context.Context) error  { return nil }
+func (p *inheritParent) Name() string                 { return "app" }
+func (p *inheritParent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 type inheritChild struct {
 	Env  string `flag:"env" help:"Target environment"`
@@ -1159,17 +1159,17 @@ type inheritGrandparent struct {
 	child cli.Commander
 }
 
-func (p *inheritGrandparent) Run(_ context.Context) error { return nil }
-func (p *inheritGrandparent) Name() string                { return "root" }
-func (p *inheritGrandparent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *inheritGrandparent) Run(_ context.Context) error  { return nil }
+func (p *inheritGrandparent) Name() string                 { return "root" }
+func (p *inheritGrandparent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 type inheritMiddle struct {
 	child cli.Commander
 }
 
-func (m *inheritMiddle) Run(_ context.Context) error { return nil }
-func (m *inheritMiddle) Name() string                { return "middle" }
-func (m *inheritMiddle) Subcommands() []cli.Commander   { return []cli.Commander{m.child} }
+func (m *inheritMiddle) Run(_ context.Context) error  { return nil }
+func (m *inheritMiddle) Name() string                 { return "middle" }
+func (m *inheritMiddle) Subcommands() []cli.Commander { return []cli.Commander{m.child} }
 
 func TestExecute_FlagInheritance_MultiLevel(t *testing.T) {
 	t.Parallel()
@@ -1189,9 +1189,9 @@ type inheritIntParent struct {
 	child cli.Commander
 }
 
-func (p *inheritIntParent) Run(_ context.Context) error { return nil }
-func (p *inheritIntParent) Name() string                { return "app" }
-func (p *inheritIntParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *inheritIntParent) Run(_ context.Context) error  { return nil }
+func (p *inheritIntParent) Name() string                 { return "app" }
+func (p *inheritIntParent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 	t.Parallel()
@@ -1212,9 +1212,9 @@ type hiddenInheritParent struct {
 	child cli.Commander
 }
 
-func (p *hiddenInheritParent) Run(_ context.Context) error { return nil }
-func (p *hiddenInheritParent) Name() string                { return "app" }
-func (p *hiddenInheritParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *hiddenInheritParent) Run(_ context.Context) error  { return nil }
+func (p *hiddenInheritParent) Name() string                 { return "app" }
+func (p *hiddenInheritParent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 type hiddenInheritChild struct {
 	Env  string `flag:"env" hidden:"true"`
@@ -1242,9 +1242,9 @@ type hiddenInheritMiddle struct {
 	child cli.Commander
 }
 
-func (m *hiddenInheritMiddle) Run(_ context.Context) error { return nil }
-func (m *hiddenInheritMiddle) Name() string                { return "middle" }
-func (m *hiddenInheritMiddle) Subcommands() []cli.Commander   { return []cli.Commander{m.child} }
+func (m *hiddenInheritMiddle) Run(_ context.Context) error  { return nil }
+func (m *hiddenInheritMiddle) Name() string                 { return "middle" }
+func (m *hiddenInheritMiddle) Subcommands() []cli.Commander { return []cli.Commander{m.child} }
 
 func TestExecute_HiddenInherit_NearestAncestorWins(t *testing.T) {
 	t.Parallel()
