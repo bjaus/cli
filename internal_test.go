@@ -5845,3 +5845,334 @@ func TestPrefix_AltInScanFlags(t *testing.T) {
 	assert.Equal(t, "out-format", defs[0].Name)
 	assert.Equal(t, []string{"out-output"}, defs[0].Alt)
 }
+
+// --- flagFieldPath ---
+
+type flagFieldPrefixInner struct {
+	Host string `flag:"host" help:"Database host"`
+}
+
+type flagFieldPrefixCmd struct {
+	DB flagFieldPrefixInner `prefix:"db-"`
+}
+
+func (c *flagFieldPrefixCmd) Run(_ context.Context) error { return nil }
+
+func TestFlagFieldPath_PrefixStruct(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(flagFieldPrefixCmd{})
+	path := flagFieldPath(typ, "db-host", nil, "")
+	require.NotNil(t, path)
+	// Should resolve to DB.Host (indices 0, 0).
+	assert.Equal(t, []int{0, 0}, path)
+}
+
+func TestFlagFieldPath_NoMatch(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(flagFieldPrefixCmd{})
+	path := flagFieldPath(typ, "nonexistent", nil, "")
+	assert.Nil(t, path)
+}
+
+type flagFieldEmbeddedBase struct {
+	Format string `flag:"format" help:"Format"`
+}
+
+type flagFieldEmbeddedCmd struct {
+	flagFieldEmbeddedBase
+}
+
+func (c *flagFieldEmbeddedCmd) Run(_ context.Context) error { return nil }
+
+func TestFlagFieldPath_EmbeddedStruct(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(flagFieldEmbeddedCmd{})
+	path := flagFieldPath(typ, "format", nil, "")
+	require.NotNil(t, path)
+	// Should resolve to embedded.Format (indices 0, 0).
+	assert.Equal(t, []int{0, 0}, path)
+}
+
+type flagFieldAutoNameCmd struct {
+	OutputDir string `flag:"" help:"Output directory"`
+}
+
+func (c *flagFieldAutoNameCmd) Run(_ context.Context) error { return nil }
+
+func TestFlagFieldPath_AutoKebabName(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(flagFieldAutoNameCmd{})
+	path := flagFieldPath(typ, "output-dir", nil, "")
+	require.NotNil(t, path)
+	assert.Equal(t, []int{0}, path)
+}
+
+type flagFieldNoFlagCmd struct {
+	NotAFlag string
+	Port     int `flag:"port"`
+}
+
+func (c *flagFieldNoFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestFlagFieldPath_SkipNonFlagField(t *testing.T) {
+	t.Parallel()
+
+	typ := reflect.TypeOf(flagFieldNoFlagCmd{})
+	path := flagFieldPath(typ, "port", nil, "")
+	require.NotNil(t, path)
+	// NotAFlag at index 0 has no flag tag → skip; Port at index 1 matches.
+	assert.Equal(t, []int{1}, path)
+}
+
+// --- readPrompt ---
+
+func TestReadPrompt_EOF(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	scanner := bufio.NewScanner(strings.NewReader(""))
+	result, err := readPrompt(FlagDef{Name: "token", Help: "API token"}, &buf, scanner)
+	require.NoError(t, err)
+	assert.Equal(t, "", result)
+	assert.Contains(t, buf.String(), "API token: ")
+}
+
+func TestReadPrompt_NoHelp(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	scanner := bufio.NewScanner(strings.NewReader("myval\n"))
+	result, err := readPrompt(FlagDef{Name: "token"}, &buf, scanner)
+	require.NoError(t, err)
+	assert.Equal(t, "myval", result)
+	assert.Contains(t, buf.String(), "token: ")
+}
+
+type errReader struct{ err error }
+
+func (r *errReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestReadPrompt_ScannerError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	scanner := bufio.NewScanner(&errReader{err: fmt.Errorf("read failed")})
+	_, err := readPrompt(FlagDef{Name: "token", Help: "API token"}, &buf, scanner)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read failed")
+}
+
+// --- promptForFlags ---
+
+func TestPromptForFlags_NonStruct(t *testing.T) {
+	t.Parallel()
+
+	cmd := RunFunc(func(_ context.Context) error { return nil })
+	opts := defaults()
+	opts.interactive = true
+	opts.isTerminal = func() bool { return true }
+	opts.stdin = strings.NewReader("")
+
+	provided, err := promptForFlags(cmd, nil, opts)
+	require.NoError(t, err)
+	assert.Nil(t, provided)
+}
+
+type promptSetFieldErrorCmd struct {
+	Count int `flag:"count" required:"true" help:"A count"`
+}
+
+func (c *promptSetFieldErrorCmd) Run(_ context.Context) error { return nil }
+
+func TestPromptForFlags_SetFieldError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &promptSetFieldErrorCmd{}
+	opts := defaults()
+	opts.interactive = true
+	opts.isTerminal = func() bool { return true }
+	opts.stdin = strings.NewReader("not-a-number\n")
+	opts.stderr = &bytes.Buffer{}
+
+	_, err := promptForFlags(cmd, nil, opts)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidFlagValue)
+}
+
+// --- stripProgramName ---
+
+func TestStripProgramName_EmptyArgs(t *testing.T) {
+	t.Parallel()
+	result := stripProgramName(nil, "myapp")
+	assert.Empty(t, result)
+}
+
+func TestStripProgramName_RelativeDotDot(t *testing.T) {
+	t.Parallel()
+	result := stripProgramName([]string{"../bin/myapp", "serve"}, "myapp")
+	assert.Equal(t, []string{"serve"}, result)
+}
+
+func TestStripProgramName_BackslashPath(t *testing.T) {
+	t.Parallel()
+	result := stripProgramName([]string{`C:\bin\myapp.exe`, "serve"}, "myapp")
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, []string{"serve"}, result)
+	} else {
+		// On non-Windows, filepath.Base doesn't split on backslash and
+		// the path doesn't start with /, ./, or ../, so it's not stripped.
+		assert.Equal(t, []string{`C:\bin\myapp.exe`, "serve"}, result)
+	}
+}
+
+func TestStripProgramName_NonPath(t *testing.T) {
+	t.Parallel()
+	result := stripProgramName([]string{"serve", "--port", "8080"}, "myapp")
+	assert.Equal(t, []string{"serve", "--port", "8080"}, result)
+}
+
+func TestStripProgramName_AbsoluteNonMatch(t *testing.T) {
+	t.Parallel()
+	result := stripProgramName([]string{"/usr/bin/other", "serve"}, "myapp")
+	assert.Equal(t, []string{"serve"}, result)
+}
+
+// --- findBinding ---
+
+type testIface interface {
+	DoSomething()
+}
+
+type testIfaceImpl struct{}
+
+func (t *testIfaceImpl) DoSomething() {}
+
+func TestFindBinding_InterfaceMatch(t *testing.T) {
+	t.Parallel()
+
+	impl := &testIfaceImpl{}
+	byType := map[reflect.Type]any{
+		reflect.TypeOf(impl): impl,
+	}
+	target := reflect.TypeOf((*testIface)(nil)).Elem()
+	val, found := findBinding(target, byType)
+	assert.True(t, found)
+	assert.Equal(t, impl, val)
+}
+
+func TestFindBinding_NoMatch(t *testing.T) {
+	t.Parallel()
+
+	byType := map[reflect.Type]any{
+		reflect.TypeOf("hello"): "hello",
+	}
+	target := reflect.TypeOf(0)
+	val, found := findBinding(target, byType)
+	assert.False(t, found)
+	assert.Nil(t, val)
+}
+
+// --- injectIntoStruct ---
+
+func TestInjectIntoStruct_NonPtr(t *testing.T) {
+	t.Parallel()
+
+	type cmd struct {
+		Val string
+	}
+	c := cmd{Val: "original"}
+	byType := map[reflect.Type]any{
+		reflect.TypeOf(""): "injected",
+	}
+	// Should not panic, should be no-op.
+	injectIntoStruct(c, byType)
+	assert.Equal(t, "original", c.Val)
+}
+
+func TestInjectIntoStruct_NonStruct(t *testing.T) {
+	t.Parallel()
+
+	val := "hello"
+	byType := map[reflect.Type]any{
+		reflect.TypeOf(""): "injected",
+	}
+	// Pointer to non-struct — should not panic.
+	injectIntoStruct(&val, byType)
+	assert.Equal(t, "hello", val)
+}
+
+// --- populateArgs env/default/enum ---
+
+type envArgCmd struct {
+	File string `arg:"file" env:"TEST_ARG_FILE"`
+}
+
+func (c *envArgCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_EnvFallback(t *testing.T) {
+	t.Setenv("TEST_ARG_FILE", "/tmp/test.txt")
+
+	cmd := &envArgCmd{}
+	remaining, err := populateArgs(cmd, nil, "")
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+	assert.Equal(t, "/tmp/test.txt", cmd.File)
+}
+
+type defaultArgCmd struct {
+	Mode string `arg:"mode" default:"fast" required:"false"`
+}
+
+func (c *defaultArgCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_DefaultFallback(t *testing.T) {
+	t.Parallel()
+
+	cmd := &defaultArgCmd{}
+	remaining, err := populateArgs(cmd, nil, "")
+	require.NoError(t, err)
+	assert.Empty(t, remaining)
+	assert.Equal(t, "fast", cmd.Mode)
+}
+
+type enumArgCmd struct {
+	Env string `arg:"env" env:"TEST_ENUM_ARG" enum:"dev,staging,prod"`
+}
+
+func (c *enumArgCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_EnumValidation(t *testing.T) {
+	t.Setenv("TEST_ENUM_ARG", "invalid")
+
+	cmd := &enumArgCmd{}
+	_, err := populateArgs(cmd, nil, "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidFlagValue)
+}
+
+// --- flag normalization (internal) ---
+
+type normInternalCmd struct {
+	MyFlag string `flag:"my-flag" help:"A flag"`
+}
+
+func (c *normInternalCmd) Run(_ context.Context) error { return nil }
+
+func TestFlagNormalization_InternalParse(t *testing.T) {
+	t.Parallel()
+
+	cmd := &normInternalCmd{}
+	opts := defaults()
+	opts.flagNormalizer = func(s string) string {
+		return strings.ReplaceAll(s, "_", "-")
+	}
+	// defaultParseFlags applies the normalizer in its lookup function,
+	// so --my_flag normalizes to --my-flag and matches the registered flag.
+	_, _, err := defaultParseFlags(cmd, []string{"--my_flag", "hello"}, opts)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", cmd.MyFlag)
+}

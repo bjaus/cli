@@ -229,3 +229,99 @@ func TestGenManPage_LongDescription(t *testing.T) {
 	// DESCRIPTION section uses long description.
 	assert.Contains(t, man, "detailed multi\\-paragraph description")
 }
+
+// --- args section ---
+
+type docArgsCmd struct {
+	File   string   `arg:"file" help:"Input file"`
+	Output string   `arg:"output" required:"false" help:"Output file"`
+	Extra  []string `arg:"extra" help:"Extra files"`
+}
+
+func (c *docArgsCmd) Run(_ context.Context) error { return nil }
+func (c *docArgsCmd) Name() string                { return "convert" }
+func (c *docArgsCmd) Description() string         { return "Convert files" }
+
+func TestGenMarkdown_Args(t *testing.T) {
+	t.Parallel()
+	cmd := &docArgsCmd{}
+	md := doc.GenMarkdown(cmd)
+
+	assert.Contains(t, md, "## Arguments")
+	assert.Contains(t, md, "`file`")
+	assert.Contains(t, md, "`output`")
+	assert.Contains(t, md, "`extra`")
+	// Usage should show required/optional/slice syntax.
+	assert.Contains(t, md, "<file>")
+	assert.Contains(t, md, "[output]")
+	assert.Contains(t, md, "[extra...]")
+}
+
+// --- flag details (deprecated, required, enum, alt, bool, counter) ---
+
+type docFlagDetailsCmd struct {
+	Format  string `flag:"format" alt:"fmt" enum:"json,yaml" required:"true" help:"Output format"`
+	Verbose int    `flag:"verbose" short:"v" counter:"true" help:"Verbosity level"`
+	Debug   bool   `flag:"debug" help:"Enable debug mode"`
+	Old     string `flag:"old" deprecated:"use --format" help:"Legacy format"`
+}
+
+func (c *docFlagDetailsCmd) Run(_ context.Context) error { return nil }
+func (c *docFlagDetailsCmd) Name() string                { return "flagdetails" }
+
+func TestGenMarkdown_FlagDetails(t *testing.T) {
+	t.Parallel()
+	cmd := &docFlagDetailsCmd{}
+	md := doc.GenMarkdown(cmd)
+
+	// Deprecated flag.
+	assert.Contains(t, md, "DEPRECATED")
+	assert.Contains(t, md, "use --format")
+	// Required flag.
+	assert.Contains(t, md, "required")
+	// Enum values.
+	assert.Contains(t, md, "json")
+	assert.Contains(t, md, "yaml")
+	// Alt flag name.
+	assert.Contains(t, md, "`--fmt`")
+	// Bool/counter flags have empty type column.
+	assert.Contains(t, md, "`--debug`")
+	assert.Contains(t, md, "`-v`")
+}
+
+// --- no-flags command ---
+
+type docNoFlagsCmd struct{}
+
+func (c *docNoFlagsCmd) Run(_ context.Context) error { return nil }
+func (c *docNoFlagsCmd) Name() string                { return "noop" }
+func (c *docNoFlagsCmd) Description() string         { return "Does nothing" }
+
+func TestGenMarkdown_NoFlags(t *testing.T) {
+	t.Parallel()
+	cmd := &docNoFlagsCmd{}
+	md := doc.GenMarkdown(cmd)
+
+	assert.NotContains(t, md, "[flags]")
+	assert.NotContains(t, md, "## Flags")
+}
+
+// --- no-description man page ---
+
+type docNoDescCmd struct{}
+
+func (c *docNoDescCmd) Run(_ context.Context) error { return nil }
+func (c *docNoDescCmd) Name() string                { return "bare" }
+
+func TestGenManPage_NoDescription(t *testing.T) {
+	t.Parallel()
+	cmd := &docNoDescCmd{}
+	header := &doc.ManHeader{Section: "1", Source: "test"}
+
+	man := doc.GenManPage(cmd, header)
+
+	assert.Contains(t, man, ".SH NAME")
+	assert.Contains(t, man, "bare")
+	// Should NOT have a DESCRIPTION section.
+	assert.NotContains(t, man, ".SH DESCRIPTION")
+}

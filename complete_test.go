@@ -267,3 +267,77 @@ func TestExecute_CompleteIntercept(t *testing.T) {
 	assert.Contains(t, output, "deploy")
 	assert.NotContains(t, output, "internal")
 }
+
+func TestComputeCompletions_PrefixFilter(t *testing.T) {
+	t.Parallel()
+	root := &compRootCmd{}
+	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"se"})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	names := completionNames(completions)
+	assert.Contains(t, names, "serve")
+	assert.NotContains(t, names, "deploy")
+}
+
+func TestComputeCompletions_FlagSkipDuringWalk(t *testing.T) {
+	t.Parallel()
+	root := &compRootCmd{}
+	// Flags in contextArgs should be skipped; "serve" should still be resolved.
+	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"--verbose", "serve", "--"})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	names := completionNames(completions)
+	assert.Contains(t, names, "--port")
+	assert.Contains(t, names, "--tls")
+}
+
+type compAltEnumCmd struct {
+	Format string `flag:"format" alt:"fmt" enum:"json,yaml,text" help:"Output format"`
+}
+
+func (c *compAltEnumCmd) Run(_ context.Context) error { return nil }
+func (c *compAltEnumCmd) Name() string                { return "myapp" }
+
+func TestComputeCompletions_AltFlagEnum(t *testing.T) {
+	t.Parallel()
+	cmd := &compAltEnumCmd{}
+	// --fmt is the alt name for --format; should complete enum values.
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--fmt", ""})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Contains(t, completions, "json")
+	assert.Contains(t, completions, "yaml")
+	assert.Contains(t, completions, "text")
+}
+
+func TestComputeCompletions_EmptyArgs(t *testing.T) {
+	t.Parallel()
+	root := &compRootCmd{}
+	completions, directive := cli.ComputeCompletions(context.Background(), root, nil)
+
+	// nil args should return root subcommands.
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	names := completionNames(completions)
+	assert.Contains(t, names, "serve")
+	assert.Contains(t, names, "deploy")
+}
+
+func TestComputeCompletions_CompleterWithPrefix(t *testing.T) {
+	t.Parallel()
+	cmd := &compCompleterCmd{}
+	// "al" is the prefix to complete; Completer returns alpha/beta/gamma.
+	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"al"})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, []string{"alpha"}, completions)
+}
+
+func TestComputeCompletions_EnumValuePrefix(t *testing.T) {
+	t.Parallel()
+	root := &compRootCmd{}
+	// After --format, complete "js" which should match "json".
+	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--format", "js"})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, []string{"json"}, completions)
+}
