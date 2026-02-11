@@ -59,6 +59,89 @@ func TestFromJSON(t *testing.T) {
 	})
 }
 
+func TestFromEnvFile(t *testing.T) {
+	t.Parallel()
+
+	input := `
+# Database config
+DB_HOST=localhost
+DB_PORT=5432
+
+# With quotes
+SECRET="my-secret-value"
+SINGLE='single-quoted'
+
+# With export prefix
+export APP_ENV=production
+
+# Inline comment
+LOG_LEVEL=debug # this is debug mode
+
+# Whitespace around =
+TIMEOUT = 30
+
+# Empty value
+EMPTY=
+`
+	r := strings.NewReader(input)
+	resolver, err := config.FromEnvFile(r)
+	require.NoError(t, err)
+
+	tests := map[string]string{
+		"DB_HOST":   "localhost",
+		"DB_PORT":   "5432",
+		"SECRET":    "my-secret-value",
+		"SINGLE":    "single-quoted",
+		"APP_ENV":   "production",
+		"LOG_LEVEL": "debug",
+		"TIMEOUT":   "30",
+		"EMPTY":     "",
+	}
+
+	for k, want := range tests {
+		val, ok := resolver(key(k))
+		assert.True(t, ok, "key %q should be found", k)
+		assert.Equal(t, want, val, "key %q", k)
+	}
+
+	_, ok := resolver(key("MISSING"))
+	assert.False(t, ok)
+}
+
+func TestFromEnvFile_EmptyInput(t *testing.T) {
+	t.Parallel()
+
+	r := strings.NewReader("")
+	resolver, err := config.FromEnvFile(r)
+	require.NoError(t, err)
+
+	_, ok := resolver(key("anything"))
+	assert.False(t, ok)
+}
+
+func TestFromEnvFile_CommentsOnly(t *testing.T) {
+	t.Parallel()
+
+	r := strings.NewReader("# just a comment\n# another comment\n")
+	resolver, err := config.FromEnvFile(r)
+	require.NoError(t, err)
+
+	_, ok := resolver(key("anything"))
+	assert.False(t, ok)
+}
+
+func TestFromEnvFile_QuotedWithHash(t *testing.T) {
+	t.Parallel()
+
+	r := strings.NewReader(`PASSWORD="p@ss#word"`)
+	resolver, err := config.FromEnvFile(r)
+	require.NoError(t, err)
+
+	val, ok := resolver(key("PASSWORD"))
+	assert.True(t, ok)
+	assert.Equal(t, "p@ss#word", val)
+}
+
 func TestChain(t *testing.T) {
 	t.Parallel()
 

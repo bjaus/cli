@@ -89,8 +89,10 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/bjaus/cli"
 )
@@ -108,6 +110,61 @@ func FromMap(m map[string]string) cli.ConfigResolver {
 func FromJSON(r io.Reader) (cli.ConfigResolver, error) {
 	var m map[string]string
 	if err := json.NewDecoder(r).Decode(&m); err != nil {
+		return nil, err
+	}
+	return FromMap(m), nil
+}
+
+// FromEnvFile parses a .env file from r and returns a [cli.ConfigResolver].
+// The parser handles:
+//   - KEY=VALUE pairs (one per line)
+//   - Quoted values: KEY="VALUE" or KEY='VALUE' (quotes are stripped)
+//   - Comments: lines starting with # and inline comments after unquoted values
+//   - Empty lines (skipped)
+//   - export prefix: export KEY=VALUE
+//
+// This is a zero-dependency .env parser suitable for simple configuration files.
+func FromEnvFile(r io.Reader) (cli.ConfigResolver, error) {
+	m := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments.
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Strip "export " prefix.
+		line = strings.TrimPrefix(line, "export ")
+
+		// Split on first =.
+		eq := strings.IndexByte(line, '=')
+		if eq < 0 {
+			continue
+		}
+
+		key := strings.TrimSpace(line[:eq])
+		val := strings.TrimSpace(line[eq+1:])
+
+		// Handle quoted values.
+		if len(val) >= 2 {
+			if (val[0] == '"' && val[len(val)-1] == '"') ||
+				(val[0] == '\'' && val[len(val)-1] == '\'') {
+				val = val[1 : len(val)-1]
+				m[key] = val
+				continue
+			}
+		}
+
+		// Strip inline comments (only for unquoted values).
+		if idx := strings.IndexByte(val, '#'); idx >= 0 {
+			val = strings.TrimSpace(val[:idx])
+		}
+
+		m[key] = val
+	}
+	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	return FromMap(m), nil
