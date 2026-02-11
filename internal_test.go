@@ -6185,6 +6185,100 @@ type multiEnvCmd struct {
 
 func (c *multiEnvCmd) Run(_ context.Context) error { return nil }
 
+// --- time.Time flag type ---
+
+type timeFlagCmd struct {
+	Since time.Time `flag:"since" help:"Start time"`
+	Until time.Time `flag:"until" default:"2024-06-15T12:00:00Z"`
+}
+
+func (c *timeFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestTimeFlag_RFC3339(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--since", "2024-01-15T10:30:00Z"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), c.Since)
+}
+
+func TestTimeFlag_DateOnly(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--since", "2024-01-15"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), c.Since)
+}
+
+func TestTimeFlag_DateTime(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--since", "2024-01-15 10:30:00"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC), c.Since)
+}
+
+func TestTimeFlag_Default(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	_, _, err := defaultParseFlags(c, nil, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC), c.Until)
+}
+
+func TestTimeFlag_Invalid(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--since", "not-a-time"}, defaults())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot parse")
+}
+
+type timeSliceCmd struct {
+	Dates []time.Time `flag:"date"`
+}
+
+func (c *timeSliceCmd) Run(_ context.Context) error { return nil }
+
+func TestTimeFlag_Slice(t *testing.T) {
+	t.Parallel()
+
+	c := &timeSliceCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--date", "2024-01-01", "--date", "2024-06-15"}, defaults())
+	require.NoError(t, err)
+	require.Len(t, c.Dates, 2)
+	assert.Equal(t, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), c.Dates[0])
+	assert.Equal(t, time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC), c.Dates[1])
+}
+
+func TestTimeFlag_Env(t *testing.T) {
+	t.Setenv("SINCE", "2024-03-20T08:00:00Z")
+
+	type cmd struct {
+		Since time.Time `flag:"since" env:"SINCE"`
+	}
+	c := &cmd{}
+	v := reflect.ValueOf(c).Elem()
+	fields := buildFieldMap(v.Type())
+	require.NoError(t, applyEnv(v, fields, ""))
+	assert.Equal(t, time.Date(2024, 3, 20, 8, 0, 0, 0, time.UTC), c.Since)
+}
+
+func TestTimeFlag_TypeName(t *testing.T) {
+	t.Parallel()
+
+	c := &timeFlagCmd{}
+	defs := ScanFlags(c)
+	for _, d := range defs {
+		assert.Equal(t, "time", d.TypeName)
+	}
+}
+
 func TestApplyEnv_MultipleEnvVars(t *testing.T) {
 	t.Run("first env var takes priority", func(t *testing.T) {
 		t.Setenv("APP_HOST", "first.example.com")

@@ -112,9 +112,14 @@ func camelToKebab(s string) string {
 	return string(result)
 }
 
+var timeType = reflect.TypeOf(time.Time{})
+
 func flagTypeName(t reflect.Type) string {
 	if t == reflect.TypeOf(time.Duration(0)) {
 		return "duration"
+	}
+	if t == timeType {
+		return "time"
 	}
 
 	switch t.Kind() {
@@ -657,6 +662,15 @@ func setFieldValue(field reflect.Value, value string) error {
 		}
 	}
 
+	if field.Type() == timeType {
+		t, err := parseTime(value)
+		if err != nil {
+			return err
+		}
+		field.Set(reflect.ValueOf(t))
+		return nil
+	}
+
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(value)
@@ -730,6 +744,13 @@ func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
 			return reflect.Value{}, err
 		}
 		return reflect.ValueOf(d), nil
+	}
+	if typ == timeType {
+		t, err := parseTime(value)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(t), nil
 	}
 
 	switch typ.Kind() {
@@ -984,4 +1005,20 @@ func validateFieldTags(f reflect.StructField) error {
 		}
 	}
 	return nil
+}
+
+// timeLayouts are the formats tried when parsing time.Time flag values.
+var timeLayouts = []string{
+	time.RFC3339,
+	time.DateOnly,
+	time.DateTime,
+}
+
+func parseTime(value string) (time.Time, error) {
+	for _, layout := range timeLayouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q as time (expected RFC3339, date, or datetime)", value)
 }
