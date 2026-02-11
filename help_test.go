@@ -313,6 +313,103 @@ func TestHelpInterpolation_EnvPrefix(t *testing.T) {
 	assert.Contains(t, output, "Port to listen on (env: APP_PORT)")
 }
 
+// --- HelpCommand ---
+
+type helpCmdRoot struct {
+	out *bytes.Buffer
+}
+
+func (r *helpCmdRoot) Run(_ context.Context) error { return nil }
+func (r *helpCmdRoot) Name() string                { return "myapp" }
+func (r *helpCmdRoot) Description() string         { return "My application" }
+func (r *helpCmdRoot) Subcommands() []cli.Runner {
+	return []cli.Runner{
+		&helpCmdServe{},
+		&helpCmdDeploy{},
+		cli.HelpCommand(r, r.out),
+	}
+}
+
+type helpCmdServe struct {
+	Port int `flag:"port" default:"8080" help:"Port to listen on"`
+}
+
+func (c *helpCmdServe) Run(_ context.Context) error { return nil }
+func (c *helpCmdServe) Name() string                { return "serve" }
+func (c *helpCmdServe) Description() string         { return "Start the server" }
+
+type helpCmdDeploy struct{}
+
+func (c *helpCmdDeploy) Run(_ context.Context) error { return nil }
+func (c *helpCmdDeploy) Name() string                { return "deploy" }
+func (c *helpCmdDeploy) Description() string         { return "Deploy the app" }
+func (c *helpCmdDeploy) Subcommands() []cli.Runner {
+	return []cli.Runner{&helpCmdDeployProd{}}
+}
+
+type helpCmdDeployProd struct{}
+
+func (c *helpCmdDeployProd) Run(_ context.Context) error { return nil }
+func (c *helpCmdDeployProd) Name() string                { return "prod" }
+func (c *helpCmdDeployProd) Description() string         { return "Deploy to production" }
+
+func TestHelpCommand_ShowsSubcommandHelp(t *testing.T) {
+	t.Parallel()
+
+	var helpBuf bytes.Buffer
+	root := &helpCmdRoot{out: &helpBuf}
+
+	var buf bytes.Buffer
+	err := cli.Execute(context.Background(), root, []string{"help", "serve"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := helpBuf.String()
+	assert.Contains(t, output, "Start the server")
+	assert.Contains(t, output, "--port")
+}
+
+func TestHelpCommand_NestedSubcommand(t *testing.T) {
+	t.Parallel()
+
+	var helpBuf bytes.Buffer
+	root := &helpCmdRoot{out: &helpBuf}
+
+	var buf bytes.Buffer
+	err := cli.Execute(context.Background(), root, []string{"help", "deploy", "prod"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := helpBuf.String()
+	assert.Contains(t, output, "Deploy to production")
+}
+
+func TestHelpCommand_UnknownCommand(t *testing.T) {
+	t.Parallel()
+
+	var helpBuf bytes.Buffer
+	root := &helpCmdRoot{out: &helpBuf}
+
+	var buf bytes.Buffer
+	err := cli.Execute(context.Background(), root, []string{"help", "nonexistent"}, cli.WithStdout(&buf))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown command")
+}
+
+func TestHelpCommand_RootHelp(t *testing.T) {
+	t.Parallel()
+
+	var helpBuf bytes.Buffer
+	root := &helpCmdRoot{out: &helpBuf}
+
+	var buf bytes.Buffer
+	err := cli.Execute(context.Background(), root, []string{"help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := helpBuf.String()
+	assert.Contains(t, output, "My application")
+	assert.Contains(t, output, "serve")
+	assert.Contains(t, output, "deploy")
+}
+
 type noInterpolateCmd struct {
 	Port int `flag:"port" default:"8080" help:"Port to listen on"`
 }
