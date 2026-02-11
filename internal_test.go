@@ -4971,7 +4971,7 @@ func TestValidateStructTags(t *testing.T) {
 				}
 				return reflect.TypeOf(cmd{})
 			},
-			wantErr: "counter requires int type",
+			wantErr: "counter requires int or uint type",
 		},
 		"negate without flag": {
 			makeType: func() reflect.Type {
@@ -6241,4 +6241,93 @@ func TestApplyEnv_MultipleWhitespace(t *testing.T) {
 	_, _, err := defaultParseFlags(c, nil, defaults())
 	require.NoError(t, err)
 	assert.Equal(t, "from-b", c.Val)
+}
+
+// --- uint / uint64 flag types ---
+
+type uintFlagCmd struct {
+	Port    uint   `flag:"port" default:"8080"`
+	MaxConn uint64 `flag:"max-conn" default:"1000"`
+}
+
+func (c *uintFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestUintFlags_ParseAndDefault(t *testing.T) {
+	t.Parallel()
+
+	c := &uintFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--port", "3000", "--max-conn", "5000"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, uint(3000), c.Port)
+	assert.Equal(t, uint64(5000), c.MaxConn)
+}
+
+func TestUintFlags_DefaultValues(t *testing.T) {
+	t.Parallel()
+
+	c := &uintFlagCmd{}
+	_, _, err := defaultParseFlags(c, nil, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, uint(8080), c.Port)
+	assert.Equal(t, uint64(1000), c.MaxConn)
+}
+
+func TestUintFlags_EnvVars(t *testing.T) {
+	t.Setenv("TEST_PORT", "9090")
+
+	type cmd struct {
+		Port uint `flag:"port" env:"TEST_PORT"`
+	}
+	c := &cmd{}
+	// cmd doesn't implement Runner, use the struct directly through reflection
+	v := reflect.ValueOf(c).Elem()
+	fields := buildFieldMap(v.Type())
+	require.NoError(t, applyEnv(v, fields, ""))
+	assert.Equal(t, uint(9090), c.Port)
+}
+
+type uintSliceCmd struct {
+	Ports []uint `flag:"port"`
+}
+
+func (c *uintSliceCmd) Run(_ context.Context) error { return nil }
+
+func TestUintFlags_Slice(t *testing.T) {
+	t.Parallel()
+
+	c := &uintSliceCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--port", "80", "--port", "443"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, []uint{80, 443}, c.Ports)
+}
+
+type uintCounterCmd struct {
+	Verbosity uint `flag:"verbose" short:"v" counter:"true"`
+}
+
+func (c *uintCounterCmd) Run(_ context.Context) error { return nil }
+
+func TestUintFlags_Counter(t *testing.T) {
+	t.Parallel()
+
+	c := &uintCounterCmd{}
+	_, _, err := defaultParseFlags(c, []string{"-v", "-v", "-v"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, uint(3), c.Verbosity)
+}
+
+func TestUintFlags_InvalidValue(t *testing.T) {
+	t.Parallel()
+
+	c := &uintFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--port", "abc"}, defaults())
+	require.Error(t, err)
+}
+
+func TestUintFlags_NegativeValue(t *testing.T) {
+	t.Parallel()
+
+	c := &uintFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--port", "-1"}, defaults())
+	require.Error(t, err)
 }

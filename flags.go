@@ -63,6 +63,9 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 			}
 		}
 
+		isCounter := f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
+
 		*defs = append(*defs, FlagDef{
 			Name:        fullName,
 			Short:       f.Tag.Get("short"),
@@ -80,7 +83,7 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 			Hidden:      f.Tag.Get("hidden") == "true",
 			TypeName:    flagTypeName(f.Type),
 			IsBool:      f.Type.Kind() == reflect.Bool,
-			IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
+			IsCounter:   isCounter,
 			Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
 		})
 	}
@@ -119,6 +122,8 @@ func flagTypeName(t reflect.Type) string {
 		return "string"
 	case reflect.Int, reflect.Int64:
 		return "int"
+	case reflect.Uint, reflect.Uint64:
+		return "uint"
 	case reflect.Float64:
 		return "float"
 	case reflect.Bool:
@@ -302,6 +307,9 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 			continue
 		}
 
+		isCounter := f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
+
 		fi := &fieldInfo{
 			index:   currentPath,
 			parts:   fieldParts,
@@ -321,7 +329,7 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 				Required:    f.Tag.Get("required") == "true",
 				Hidden:      f.Tag.Get("hidden") == "true",
 				IsBool:      f.Type.Kind() == reflect.Bool,
-				IsCounter:   f.Tag.Get("counter") == "true" && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64),
+				IsCounter:   isCounter,
 				Negate:      f.Tag.Get("negate") == "true" && f.Type.Kind() == reflect.Bool,
 			},
 		}
@@ -487,6 +495,8 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 
 		if fi.def.IsBool || fi.def.IsCounter {
 			switch {
+			case fi.def.IsCounter && (field.Kind() == reflect.Uint || field.Kind() == reflect.Uint64):
+				field.SetUint(field.Uint() + 1)
 			case fi.def.IsCounter:
 				field.SetInt(field.Int() + 1)
 			case fi.def.Negate && strings.HasPrefix(arg, "--no-"):
@@ -664,6 +674,12 @@ func setFieldValue(field reflect.Value, value string) error {
 			return err
 		}
 		field.SetInt(n)
+	case reflect.Uint, reflect.Uint64:
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return err
+		}
+		field.SetUint(n)
 	case reflect.Float64:
 		n, err := strconv.ParseFloat(value, 64)
 		if err != nil {
@@ -727,6 +743,18 @@ func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
 		return reflect.ValueOf(int(n)), nil
 	case reflect.Int64:
 		n, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(n), nil
+	case reflect.Uint:
+		n, err := strconv.ParseUint(value, 10, 64)
+		if err != nil {
+			return reflect.Value{}, err
+		}
+		return reflect.ValueOf(uint(n)), nil
+	case reflect.Uint64:
+		n, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
 			return reflect.Value{}, err
 		}
@@ -928,8 +956,9 @@ func validateFieldTags(f reflect.StructField) error {
 	}
 
 	// Type-specific constraints.
-	if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 {
-		return fmt.Errorf("%w: field %s: counter requires int type", ErrInvalidTag, f.Name)
+	if f.Tag.Get("counter") == "true" && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 &&
+		f.Type.Kind() != reflect.Uint && f.Type.Kind() != reflect.Uint64 {
+		return fmt.Errorf("%w: field %s: counter requires int or uint type", ErrInvalidTag, f.Name)
 	}
 	if f.Tag.Get("negate") == "true" && f.Type.Kind() != reflect.Bool {
 		return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)

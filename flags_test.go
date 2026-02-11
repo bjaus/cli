@@ -66,3 +66,26 @@ func TestScanFlags_RequiredField(t *testing.T) {
 	assert.True(t, defs[0].Required)
 	assert.Equal(t, "name", defs[0].Name)
 }
+
+type uintFlagScanCmd struct {
+	Port    uint   `flag:"port"`
+	MaxConn uint64 `flag:"max-conn"`
+}
+
+func (c *uintFlagScanCmd) Run(_ context.Context) error { return nil }
+
+func TestScanFlags_UintTypeName(t *testing.T) {
+	t.Parallel()
+
+	cmd := &uintFlagScanCmd{}
+	defs := cli.ScanFlags(cmd)
+	require.Len(t, defs, 2)
+
+	byName := make(map[string]cli.FlagDef)
+	for _, d := range defs {
+		byName[d.Name] = d
+	}
+
+	assert.Equal(t, "uint", byName["port"].TypeName)
+	assert.Equal(t, "uint", byName["max-conn"].TypeName)
+}
