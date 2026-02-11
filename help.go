@@ -151,7 +151,7 @@ func renderArgDefs(b *strings.Builder, args []ArgDef) {
 	for i := range args {
 		a := &args[i]
 		var parts []string
-		parts = append(parts, a.Help)
+		parts = append(parts, interpolateHelp(a.Help, a.Default, a.Mask, a.Enum, a.Env))
 		if a.Required {
 			parts = append(parts, "(required)")
 		}
@@ -293,7 +293,7 @@ func flagLeft(f *FlagDef) string {
 
 func flagRight(f *FlagDef) string {
 	var parts []string
-	parts = append(parts, f.Help)
+	parts = append(parts, interpolateHelp(f.Help, f.Default, f.Mask, f.Enum, f.Env))
 	if f.Deprecated != "" {
 		parts = append(parts, fmt.Sprintf("(DEPRECATED: %s)", f.Deprecated))
 	}
@@ -328,6 +328,21 @@ func flagRight(f *FlagDef) string {
 		parts = append(parts, fmt.Sprintf("(env: %s)", envDisplay))
 	}
 	return strings.Join(parts, " ")
+}
+
+// interpolateHelp replaces ${default}, ${enum}, and ${env} placeholders in help text.
+func interpolateHelp(help, def, mask, enum, env string) string {
+	if !strings.Contains(help, "${") {
+		return help
+	}
+	defaultVal := def
+	if mask != "" {
+		defaultVal = mask
+	}
+	help = strings.ReplaceAll(help, "${default}", defaultVal)
+	help = strings.ReplaceAll(help, "${enum}", enum)
+	help = strings.ReplaceAll(help, "${env}", env)
+	return help
 }
 
 func sortFlags(flags []FlagDef) {

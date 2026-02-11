@@ -259,3 +259,76 @@ func TestWithIgnoreUnknown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 9090, cmd.Port)
 }
+
+// --- Help variable interpolation ---
+
+type interpolateCmd struct {
+	Format string `flag:"format" default:"json" enum:"json,yaml,text" help:"Output format (default: ${default}, options: ${enum})"`
+	Port   int    `flag:"port" default:"8080" env:"PORT" help:"Port to listen on (env: ${env})"`
+	Secret string `flag:"secret" default:"s3cret" mask:"****" help:"Secret value (default: ${default})"`
+}
+
+func (c *interpolateCmd) Run(_ context.Context) error { return nil }
+func (c *interpolateCmd) Name() string                { return "myapp" }
+
+func TestHelpInterpolation_Default(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &interpolateCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Output format (default: json, options: json,yaml,text)")
+	assert.Contains(t, output, "Port to listen on (env: PORT)")
+}
+
+func TestHelpInterpolation_Mask(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &interpolateCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := buf.String()
+	// ${default} with mask should show mask value.
+	assert.Contains(t, output, "Secret value (default: ****)")
+}
+
+func TestHelpInterpolation_EnvPrefix(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &interpolateCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"},
+		cli.WithStdout(&buf),
+		cli.WithEnvVarPrefix("APP_"),
+	)
+	require.NoError(t, err)
+
+	output := buf.String()
+	// Prefix is applied before interpolation, so ${env} resolves to the prefixed name.
+	assert.Contains(t, output, "Port to listen on (env: APP_PORT)")
+}
+
+type noInterpolateCmd struct {
+	Port int `flag:"port" default:"8080" help:"Port to listen on"`
+}
+
+func (c *noInterpolateCmd) Run(_ context.Context) error { return nil }
+func (c *noInterpolateCmd) Name() string                { return "myapp" }
+
+func TestHelpInterpolation_NoPlaceholders(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &noInterpolateCmd{}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Port to listen on")
+	assert.NotContains(t, output, "${")
+}
