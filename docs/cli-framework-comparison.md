@@ -136,12 +136,12 @@ bjaus/cli uses an **interface-driven discovery** model. The only required contra
 a single-method interface:
 
 ```go
-type Runner interface {
+type Commander interface {
     Run(ctx context.Context) error
 }
 ```
 
-Every command is a plain Go struct implementing `Runner`. All other capabilities are
+Every command is a plain Go struct implementing `Commander`. All other capabilities are
 opt-in through ~25 small interfaces (each with a single method), discovered at
 runtime via type assertions. There is no base struct to embed, no configuration DSL,
 and no global state.
@@ -151,7 +151,7 @@ type Root struct{}
 
 func (r *Root) Name() string              { return "app" }
 func (r *Root) Description() string       { return "My application" }
-func (r *Root) Subcommands() []cli.Runner { return []cli.Runner{&ServeCmd{}} }
+func (r *Root) Subcommands() []cli.Commander { return []cli.Commander{&ServeCmd{}} }
 func (r *Root) Run(_ context.Context) error { return cli.ErrShowHelp }
 
 type ServeCmd struct {
@@ -168,7 +168,7 @@ func main() {
 
 The design is analogous to how `io.Reader`, `io.Writer`, and `fmt.Stringer` work in
 the standard library: small interfaces that compose. A command "has a description" by
-implementing `Describer`. It "has subcommands" by implementing `Parent`. It "has
+implementing `Descriptor`. It "has subcommands" by implementing `Subcommander`. It "has
 aliases" by implementing `Aliaser`. No method is mandatory beyond `Run`.
 
 **Philosophy**: Composition over configuration. Think `io.Reader` for CLIs. The
@@ -179,7 +179,7 @@ monolithic struct.
 
 | Approach               | cobra                       | urfave/cli                   | kong                        | bjaus/cli                      |
 | ---------------------- | --------------------------- | ---------------------------- | --------------------------- | ------------------------------ |
-| **Core type**          | `cobra.Command` struct      | `cli.Command` struct         | User-defined struct + tags  | `Runner` interface             |
+| **Core type**          | `cobra.Command` struct      | `cli.Command` struct         | User-defined struct + tags  | `Commander` interface          |
 | **Style**              | Imperative                  | Declarative                  | Declarative (tags)          | Interface composition          |
 | **Registration**       | `AddCommand()` calls        | Nested struct literals       | Nested struct fields        | `Subcommands()` method         |
 | **Flag definition**    | `cmd.Flags().StringVar()`   | `[]cli.Flag{&StringFlag{}}`  | Struct tag `default:"8080"` | Struct tag `flag:"port"`       |
@@ -251,7 +251,7 @@ metadata. The tree is implicit in the struct nesting.
 
 ### bjaus/cli
 
-Commands are Go structs implementing `Runner`. Identity is expressed through
+Commands are Go structs implementing `Commander`. Identity is expressed through
 interfaces:
 
 ```go
@@ -265,7 +265,7 @@ func (s *ServeCmd) Description() string       { return "Start the server" }
 func (s *ServeCmd) Category() string          { return "Server" }
 func (s *ServeCmd) Hidden() bool              { return false }
 func (s *ServeCmd) Deprecated() string        { return "" }
-func (s *ServeCmd) Subcommands() []cli.Runner { return []cli.Runner{&StartCmd{}, &StopCmd{}} }
+func (s *ServeCmd) Subcommands() []cli.Commander { return []cli.Commander{&StartCmd{}, &StopCmd{}} }
 func (s *ServeCmd) Run(ctx context.Context) error { /* ... */ }
 ```
 
@@ -550,8 +550,8 @@ type CLI struct {
 **bjaus/cli**: Interface method:
 
 ```go
-func (s *ServerCmd) Subcommands() []cli.Runner {
-    return []cli.Runner{&StartCmd{}, &StopCmd{}}
+func (s *ServerCmd) Subcommands() []cli.Commander {
+    return []cli.Commander{&StartCmd{}, &StopCmd{}}
 }
 ```
 
@@ -803,7 +803,7 @@ alt names, short flags), enum value completion, subcommand name + alias completi
 `FilterDirs`.
 
 **Pre-built command**: `completion.Command(root, appName, os.Stdout)` returns a
-hidden `Runner` with bash/zsh/fish/powershell subcommands for script generation.
+hidden `Commander` with bash/zsh/fish/powershell subcommands for script generation.
 
 ### Comparison
 
@@ -1056,7 +1056,7 @@ Static plugin support via `kong.Plugins` embed type. Dynamic commands via
 
 First-class plugin system with multiple discovery mechanisms:
 
-**`Discoverer` interface**: `Discover() ([]Runner, error)` for runtime-discovered
+**`Discoverer` interface**: `Discover() ([]Commander, error)` for runtime-discovered
 commands.
 
 **`Discover` function**: Scans directories and optionally `PATH` for plugin
@@ -1072,7 +1072,7 @@ optional JSON metadata:
 Plugins that don't support the flag still work — they just get a name derived from
 the filename.
 
-**`ExternalCommand`**: Wraps an external executable as a `Runner`, wiring
+**`ExternalCommand`**: Wraps an external executable as a `Commander`, wiring
 stdin/stdout/stderr to the parent process.
 
 **Directory scanning**: All executables in configured directories become plugins.

@@ -1,18 +1,18 @@
 // Package cli is a composable CLI framework built on small interfaces.
 //
-// Commands are Go types that implement [Runner]. The framework discovers
+// Commands are Go types that implement [Commander]. The framework discovers
 // capabilities through type assertions on optional interfaces — there is
 // no base struct to embed and no configuration DSL.
 //
 // # Core Interface
 //
-// Every command must implement [Runner]:
+// Every command must implement [Commander]:
 //
-//	type Runner interface {
+//	type Commander interface {
 //	    Run(ctx context.Context, args []string) error
 //	}
 //
-// [RunFunc] adapts a plain function into a Runner for simple cases.
+// [RunFunc] adapts a plain function into a Commander for simple cases.
 //
 // # Discovery Interfaces
 //
@@ -20,10 +20,10 @@
 // metadata, subcommands, aliases, examples, and hidden status:
 //
 //   - [Namer] — override the command name (default: lowercase struct type name)
-//   - [Describer] — provide a one-line description
-//   - [LongDescriber] — provide extended description for help output
+//   - [Descriptor] — provide a one-line description
+//   - [LongDescriptor] — provide extended description for help output
 //   - [Aliaser] — declare alternate names
-//   - [Parent] — return subcommands
+//   - [Subcommander] — return subcommands
 //   - [Hider] — hide the command from help output
 //   - [Exampler] — provide usage examples
 //   - [Versioner] — report a version string via --version / -V
@@ -256,13 +256,13 @@
 //
 // Commands can be extended at runtime with external executables (plugins).
 // A command that implements [Discoverer] provides additional subcommands
-// discovered at runtime, merged with any static subcommands from [Parent].
+// discovered at runtime, merged with any static subcommands from [Subcommander].
 // Built-in commands always take priority on name collisions.
 //
 // The [Discover] function scans directories and optionally the system
 // PATH for plugin executables:
 //
-//	func (a *App) Discover() ([]cli.Runner, error) {
+//	func (a *App) Discover() ([]cli.Commander, error) {
 //	    return cli.Discover("myapp",
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
 //	        cli.WithPATH(),

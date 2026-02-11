@@ -15,7 +15,7 @@ var (
 	ErrInvalidTag       = errors.New("invalid struct tag")
 )
 
-// ErrShowHelp can be returned from [Runner.Run] to make the framework render
+// ErrShowHelp can be returned from [Commander.Run] to make the framework render
 // help for the current command. The error is not propagated to the caller.
 var ErrShowHelp = errors.New("show help")
 

@@ -194,7 +194,7 @@ func TestExternalCommand_Interfaces(t *testing.T) {
 	assert.Equal(t, []string{"d", "dep"}, cmd.Aliases())
 
 	// Verify interface satisfaction at compile time.
-	var _ cli.Runner = cmd
+	var _ cli.Commander = cmd
 }
 
 // --- ExternalCommand.Run ---
@@ -256,8 +256,8 @@ func TestAllSubcommands(t *testing.T) {
 	t.Parallel()
 
 	parent := &discoverApp{
-		builtins:   []cli.Runner{cli.RunFunc(func(_ context.Context) error { return nil })},
-		discovered: []cli.Runner{&cli.ExternalCommand{Cmd: "plugin-cmd"}},
+		builtins:   []cli.Commander{cli.RunFunc(func(_ context.Context) error { return nil })},
+		discovered: []cli.Commander{&cli.ExternalCommand{Cmd: "plugin-cmd"}},
 	}
 
 	subs, err := cli.AllSubcommands(parent)
@@ -387,15 +387,15 @@ true`)
 // --- test helpers ---
 
 type discoverApp struct {
-	builtins   []cli.Runner
-	discovered []cli.Runner
+	builtins   []cli.Commander
+	discovered []cli.Commander
 }
 
 func (d *discoverApp) Run(_ context.Context) error { return nil }
 func (d *discoverApp) Name() string                { return "myapp" }
-func (d *discoverApp) Subcommands() []cli.Runner   { return d.builtins }
+func (d *discoverApp) Subcommands() []cli.Commander   { return d.builtins }
 
-func (d *discoverApp) Discover() ([]cli.Runner, error) {
+func (d *discoverApp) Discover() ([]cli.Commander, error) {
 	return d.discovered, nil
 }
 
@@ -407,7 +407,7 @@ type discoverFromDirApp struct {
 func (d *discoverFromDirApp) Run(_ context.Context) error { return nil }
 func (d *discoverFromDirApp) Name() string                { return d.prefix }
 
-func (d *discoverFromDirApp) Discover() ([]cli.Runner, error) {
+func (d *discoverFromDirApp) Discover() ([]cli.Commander, error) {
 	return cli.Discover(d.prefix, cli.WithDir(d.dir))
 }
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func defaultRenderHelp(cmd Runner, chain []Runner, flags, globalFlags []FlagDef, sorted bool) string {
+func defaultRenderHelp(cmd Commander, chain []Commander, flags, globalFlags []FlagDef, sorted bool) string {
 	var b strings.Builder
 
 	info := resolveInfo(cmd)
@@ -351,9 +351,9 @@ func sortFlags(flags []FlagDef) {
 	})
 }
 
-func renderSubcommands(b *strings.Builder, subs []Runner, sorted bool) {
-	var uncategorized []Runner
-	categoryMap := make(map[string][]Runner)
+func renderSubcommands(b *strings.Builder, subs []Commander, sorted bool) {
+	var uncategorized []Commander
+	categoryMap := make(map[string][]Commander)
 	var categoryOrder []string
 
 	for _, s := range subs {
@@ -378,14 +378,14 @@ func renderSubcommands(b *strings.Builder, subs []Runner, sorted bool) {
 	}
 
 	if sorted {
-		sortRunners := func(rs []Runner) {
-			slices.SortFunc(rs, func(a, b Runner) int {
+		sortCommanders := func(rs []Commander) {
+			slices.SortFunc(rs, func(a, b Commander) int {
 				return strings.Compare(resolveInfo(a).name, resolveInfo(b).name)
 			})
 		}
-		sortRunners(uncategorized)
+		sortCommanders(uncategorized)
 		for cat := range categoryMap {
-			sortRunners(categoryMap[cat])
+			sortCommanders(categoryMap[cat])
 		}
 		slices.Sort(categoryOrder)
 	}
@@ -418,7 +418,7 @@ func renderSubcommands(b *strings.Builder, subs []Runner, sorted bool) {
 	}
 }
 
-func commandChainNames(chain []Runner) string {
+func commandChainNames(chain []Commander) string {
 	names := make([]string, len(chain))
 	for i, cmd := range chain {
 		names[i] = resolveInfo(cmd).name

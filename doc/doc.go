@@ -1,4 +1,4 @@
-// Package doc generates documentation from a [cli.Runner] command tree.
+// Package doc generates documentation from a [cli.Commander] command tree.
 //
 // It supports two output formats:
 //
@@ -39,20 +39,20 @@ type ManHeader struct {
 
 // GenMarkdown generates a markdown document for a single command.
 // The chain parameter provides parent context for breadcrumb-style headings.
-func GenMarkdown(cmd cli.Runner, chain ...cli.Runner) string {
+func GenMarkdown(cmd cli.Commander, chain ...cli.Commander) string {
 	if len(chain) == 0 {
-		chain = []cli.Runner{cmd}
+		chain = []cli.Commander{cmd}
 	}
 	return genMarkdown(cmd, chain)
 }
 
 // GenMarkdownTree generates markdown files for all commands in the tree,
 // writing one file per command into dir.
-func GenMarkdownTree(root cli.Runner, dir string) error {
+func GenMarkdownTree(root cli.Commander, dir string) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
-	return walkTree(root, []cli.Runner{root}, func(cmd cli.Runner, chain []cli.Runner) error {
+	return walkTree(root, []cli.Commander{root}, func(cmd cli.Commander, chain []cli.Commander) error {
 		name := commandPath(chain)
 		filename := strings.ReplaceAll(name, " ", "_") + ".md"
 		content := genMarkdown(cmd, chain)
@@ -61,21 +61,21 @@ func GenMarkdownTree(root cli.Runner, dir string) error {
 }
 
 // GenManPage generates a troff-formatted man page for a single command.
-func GenManPage(cmd cli.Runner, header *ManHeader, chain ...cli.Runner) string {
+func GenManPage(cmd cli.Commander, header *ManHeader, chain ...cli.Commander) string {
 	if len(chain) == 0 {
-		chain = []cli.Runner{cmd}
+		chain = []cli.Commander{cmd}
 	}
 	return genManPage(cmd, chain, header)
 }
 
 // GenManTree generates man page files for all commands in the tree,
 // writing one file per command into dir.
-func GenManTree(root cli.Runner, dir string, header *ManHeader) error {
+func GenManTree(root cli.Commander, dir string, header *ManHeader) error {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 	section := manSection(header)
-	return walkTree(root, []cli.Runner{root}, func(cmd cli.Runner, chain []cli.Runner) error {
+	return walkTree(root, []cli.Commander{root}, func(cmd cli.Commander, chain []cli.Commander) error {
 		name := commandPath(chain)
 		filename := strings.ReplaceAll(name, " ", "-") + "." + section
 		content := genManPage(cmd, chain, header)
@@ -83,7 +83,7 @@ func GenManTree(root cli.Runner, dir string, header *ManHeader) error {
 	})
 }
 
-func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
+func genMarkdown(cmd cli.Commander, chain []cli.Commander) string {
 	var b strings.Builder
 	info := cmdInfo(cmd)
 	path := commandPath(chain)
@@ -199,7 +199,7 @@ func genMarkdown(cmd cli.Runner, chain []cli.Runner) string {
 	return b.String()
 }
 
-func genManPage(cmd cli.Runner, chain []cli.Runner, header *ManHeader) string {
+func genManPage(cmd cli.Commander, chain []cli.Commander, header *ManHeader) string {
 	var b strings.Builder
 	info := cmdInfo(cmd)
 	path := commandPath(chain)
@@ -296,21 +296,21 @@ type simpleInfo struct {
 	longDescription string
 }
 
-func cmdInfo(cmd cli.Runner) simpleInfo {
+func cmdInfo(cmd cli.Commander) simpleInfo {
 	var info simpleInfo
 	if n, ok := cmd.(cli.Namer); ok {
 		info.name = n.Name()
 	}
-	if d, ok := cmd.(cli.Describer); ok {
+	if d, ok := cmd.(cli.Descriptor); ok {
 		info.description = d.Description()
 	}
-	if ld, ok := cmd.(cli.LongDescriber); ok {
+	if ld, ok := cmd.(cli.LongDescriptor); ok {
 		info.longDescription = ld.LongDescription()
 	}
 	return info
 }
 
-func commandPath(chain []cli.Runner) string {
+func commandPath(chain []cli.Commander) string {
 	names := make([]string, len(chain))
 	for i, cmd := range chain {
 		if n, ok := cmd.(cli.Namer); ok {
@@ -320,7 +320,7 @@ func commandPath(chain []cli.Runner) string {
 	return strings.Join(names, " ")
 }
 
-func walkTree(cmd cli.Runner, chain []cli.Runner, fn func(cli.Runner, []cli.Runner) error) error {
+func walkTree(cmd cli.Commander, chain []cli.Commander, fn func(cli.Commander, []cli.Commander) error) error {
 	if err := fn(cmd, chain); err != nil {
 		return err
 	}
@@ -336,8 +336,8 @@ func walkTree(cmd cli.Runner, chain []cli.Runner, fn func(cli.Runner, []cli.Runn
 	return nil
 }
 
-func visibleSubs(subs []cli.Runner) []cli.Runner {
-	out := make([]cli.Runner, 0, len(subs))
+func visibleSubs(subs []cli.Commander) []cli.Commander {
+	out := make([]cli.Commander, 0, len(subs))
 	for _, s := range subs {
 		if h, ok := s.(cli.Hider); ok && h.Hidden() {
 			continue

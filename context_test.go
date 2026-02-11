@@ -104,8 +104,8 @@ type contextParent struct {
 
 func (c *contextParent) Run(_ context.Context) error { return nil }
 func (c *contextParent) Name() string                { return "app" }
-func (c *contextParent) Subcommands() []cli.Runner {
-	return []cli.Runner{&contextChild{t: c.t}}
+func (c *contextParent) Subcommands() []cli.Commander {
+	return []cli.Commander{&contextChild{t: c.t}}
 }
 
 type contextChild struct {

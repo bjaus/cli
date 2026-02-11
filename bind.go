@@ -130,7 +130,7 @@ func BindSingleton[T any](fn func() (T, error)) Option {
 
 // injectBindings populates injectable fields on all commands in the chain.
 // A field is injectable if it has no flag:, arg:, or env: tag.
-func injectBindings(chain []Runner, bindings []binding) error {
+func injectBindings(chain []Commander, bindings []binding) error {
 	if len(bindings) == 0 {
 		return nil
 	}

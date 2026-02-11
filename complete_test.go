@@ -17,8 +17,8 @@ type compRootCmd struct{}
 
 func (c *compRootCmd) Run(_ context.Context) error { return nil }
 func (c *compRootCmd) Name() string                { return "myapp" }
-func (c *compRootCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{&compServeCmd{}, &compDeployCmd{}, &compHiddenCmd{}}
+func (c *compRootCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&compServeCmd{}, &compDeployCmd{}, &compHiddenCmd{}}
 }
 
 type compServeCmd struct {
@@ -59,8 +59,8 @@ type compNestedRoot struct{}
 
 func (c *compNestedRoot) Run(_ context.Context) error { return nil }
 func (c *compNestedRoot) Name() string                { return "myapp" }
-func (c *compNestedRoot) Subcommands() []cli.Runner {
-	return []cli.Runner{&compClusterCmd{}}
+func (c *compNestedRoot) Subcommands() []cli.Commander {
+	return []cli.Commander{&compClusterCmd{}}
 }
 
 type compClusterCmd struct{}
@@ -68,8 +68,8 @@ type compClusterCmd struct{}
 func (c *compClusterCmd) Run(_ context.Context) error { return nil }
 func (c *compClusterCmd) Name() string                { return "cluster" }
 func (c *compClusterCmd) Description() string         { return "Manage clusters" }
-func (c *compClusterCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{&compClusterListCmd{}}
+func (c *compClusterCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&compClusterListCmd{}}
 }
 
 type compClusterListCmd struct {
@@ -97,8 +97,8 @@ func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) ([]string,
 	return nil, cli.ShellCompDirectiveDefault
 }
 
-func (c *compCompleterNilCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{&compServeCmd{}}
+func (c *compCompleterNilCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&compServeCmd{}}
 }
 
 // completionNames extracts flag/command names from completion candidates.

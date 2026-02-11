@@ -28,7 +28,7 @@ type rootCmd struct {
 func (r *rootCmd) Run(_ context.Context) error { return nil }
 func (r *rootCmd) Name() string                { return "app" }
 func (r *rootCmd) Description() string         { return "Test application" }
-func (r *rootCmd) Subcommands() []cli.Runner   { return []cli.Runner{r.serve} }
+func (r *rootCmd) Subcommands() []cli.Commander   { return []cli.Commander{r.serve} }
 
 type serveCmd struct {
 	Port int    `flag:"port" short:"p" default:"8080" help:"Port"`
@@ -139,7 +139,7 @@ type trackedRoot struct {
 
 func (r *trackedRoot) Run(_ context.Context) error { return nil }
 func (r *trackedRoot) Name() string                { return "root" }
-func (r *trackedRoot) Subcommands() []cli.Runner   { return []cli.Runner{r.child} }
+func (r *trackedRoot) Subcommands() []cli.Commander   { return []cli.Commander{r.child} }
 
 func (r *trackedRoot) Before(ctx context.Context) (context.Context, error) {
 	r.tracker.order = append(r.tracker.order, "root-before")
@@ -226,12 +226,12 @@ func (c *failingChild) Name() string { return "fail" }
 
 type parentWithCustomChild struct {
 	tracker *lifecycleTracker
-	child   cli.Runner
+	child   cli.Commander
 }
 
 func (p *parentWithCustomChild) Run(_ context.Context) error { return nil }
 func (p *parentWithCustomChild) Name() string                { return "wrapper" }
-func (p *parentWithCustomChild) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *parentWithCustomChild) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 func (p *parentWithCustomChild) After(_ context.Context) error {
 	p.tracker.order = append(p.tracker.order, "wrapper-after")
@@ -362,7 +362,7 @@ func TestWithFlagParser(t *testing.T) {
 
 	parsed := false
 	parser := &testFlagParser{
-		fn: func(_ cli.Runner, args []string) ([]string, error) {
+		fn: func(_ cli.Commander, args []string) ([]string, error) {
 			parsed = true
 			return args, nil
 		},
@@ -376,10 +376,10 @@ func TestWithFlagParser(t *testing.T) {
 }
 
 type testFlagParser struct {
-	fn func(cli.Runner, []string) ([]string, error)
+	fn func(cli.Commander, []string) ([]string, error)
 }
 
-func (p *testFlagParser) ParseFlags(cmd cli.Runner, args []string) ([]string, error) {
+func (p *testFlagParser) ParseFlags(cmd cli.Commander, args []string) ([]string, error) {
 	return p.fn(cmd, args)
 }
 
@@ -388,7 +388,7 @@ func TestWithSuggest_Disabled(t *testing.T) {
 
 	// Use a custom FlagParser that returns an unknown flag error to trigger suggestion path.
 	parser := &testFlagParser{
-		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+		fn: func(_ cli.Commander, _ []string) ([]string, error) {
 			return nil, fmt.Errorf("unknown flag: --prot")
 		},
 	}
@@ -404,7 +404,7 @@ func TestWithSuggest_Enabled(t *testing.T) {
 
 	// Use a custom FlagParser that returns an unknown flag error to trigger suggestion path.
 	parser := &testFlagParser{
-		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+		fn: func(_ cli.Commander, _ []string) ([]string, error) {
 			return nil, fmt.Errorf("unknown flag: --prot")
 		},
 	}
@@ -427,7 +427,7 @@ type aliasParent struct{}
 
 func (p *aliasParent) Run(_ context.Context) error { return nil }
 func (p *aliasParent) Name() string                { return "app" }
-func (p *aliasParent) Subcommands() []cli.Runner   { return []cli.Runner{&aliasedCmd{}} }
+func (p *aliasParent) Subcommands() []cli.Commander   { return []cli.Commander{&aliasedCmd{}} }
 
 func TestExecute_AliasResolution(t *testing.T) {
 	t.Parallel()
@@ -535,7 +535,7 @@ func TestExecute_ParseRemainingPrepend(t *testing.T) {
 
 	// Use serveCmd (has flags) with a custom FlagParser that returns remaining args.
 	parser := &testFlagParser{
-		fn: func(_ cli.Runner, _ []string) ([]string, error) {
+		fn: func(_ cli.Commander, _ []string) ([]string, error) {
 			return []string{"extra"}, nil
 		},
 	}
@@ -671,7 +671,7 @@ type versionedRoot struct {
 func (v *versionedRoot) Run(_ context.Context) error { return nil }
 func (v *versionedRoot) Name() string                { return "myapp" }
 func (v *versionedRoot) Version() string             { return "v2.1.0" }
-func (v *versionedRoot) Subcommands() []cli.Runner   { return []cli.Runner{v.serve} }
+func (v *versionedRoot) Subcommands() []cli.Commander   { return []cli.Commander{v.serve} }
 
 func TestExecute_Version(t *testing.T) {
 	t.Parallel()
@@ -729,14 +729,14 @@ func TestExecute_Deprecated(t *testing.T) {
 // --- Fallbacker interface ---
 
 type defaultParentCmd struct {
-	defaultCmd cli.Runner
+	defaultCmd cli.Commander
 	child      *serveCmd
 }
 
 func (p *defaultParentCmd) Run(_ context.Context) error { return nil }
 func (p *defaultParentCmd) Name() string                { return "app" }
-func (p *defaultParentCmd) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
-func (p *defaultParentCmd) Fallback() cli.Runner        { return p.defaultCmd }
+func (p *defaultParentCmd) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *defaultParentCmd) Fallback() cli.Commander        { return p.defaultCmd }
 
 func TestExecute_Fallback(t *testing.T) {
 	t.Parallel()
@@ -861,8 +861,8 @@ type catParentCmd struct{}
 func (p *catParentCmd) Run(_ context.Context) error { return nil }
 func (p *catParentCmd) Name() string                { return "app" }
 
-func (p *catParentCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{
+func (p *catParentCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{
 		&catSubCmd{n: "serve", cat: "Server"},
 		&catSubCmd{n: "deploy", cat: "Ops"},
 	}
@@ -1051,12 +1051,12 @@ func TestScanFlags_NewFields(t *testing.T) {
 // Parent and child both declare --env. Child inherits parent's value.
 type inheritParent struct {
 	Env   string `flag:"env" help:"Target environment"`
-	child cli.Runner
+	child cli.Commander
 }
 
 func (p *inheritParent) Run(_ context.Context) error { return nil }
 func (p *inheritParent) Name() string                { return "app" }
-func (p *inheritParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *inheritParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 type inheritChild struct {
 	Env  string `flag:"env" help:"Target environment"`
@@ -1156,20 +1156,20 @@ func TestExecute_FlagInheritance_ValidatedAgainstEnum(t *testing.T) {
 // Multi-level: grandparent → parent → child.
 type inheritGrandparent struct {
 	Env   string `flag:"env" help:"Target environment"`
-	child cli.Runner
+	child cli.Commander
 }
 
 func (p *inheritGrandparent) Run(_ context.Context) error { return nil }
 func (p *inheritGrandparent) Name() string                { return "root" }
-func (p *inheritGrandparent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *inheritGrandparent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 type inheritMiddle struct {
-	child cli.Runner
+	child cli.Commander
 }
 
 func (m *inheritMiddle) Run(_ context.Context) error { return nil }
 func (m *inheritMiddle) Name() string                { return "middle" }
-func (m *inheritMiddle) Subcommands() []cli.Runner   { return []cli.Runner{m.child} }
+func (m *inheritMiddle) Subcommands() []cli.Commander   { return []cli.Commander{m.child} }
 
 func TestExecute_FlagInheritance_MultiLevel(t *testing.T) {
 	t.Parallel()
@@ -1186,12 +1186,12 @@ func TestExecute_FlagInheritance_MultiLevel(t *testing.T) {
 // No inheritance when types don't match.
 type inheritIntParent struct {
 	Env   int `flag:"env" help:"Env as int"`
-	child cli.Runner
+	child cli.Commander
 }
 
 func (p *inheritIntParent) Run(_ context.Context) error { return nil }
 func (p *inheritIntParent) Name() string                { return "app" }
-func (p *inheritIntParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *inheritIntParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 	t.Parallel()
@@ -1209,12 +1209,12 @@ func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 
 type hiddenInheritParent struct {
 	Env   string `flag:"env" help:"Target environment"`
-	child cli.Runner
+	child cli.Commander
 }
 
 func (p *hiddenInheritParent) Run(_ context.Context) error { return nil }
 func (p *hiddenInheritParent) Name() string                { return "app" }
-func (p *hiddenInheritParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *hiddenInheritParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 type hiddenInheritChild struct {
 	Env  string `flag:"env" hidden:"true"`
@@ -1239,12 +1239,12 @@ func TestExecute_HiddenInherit_Basic(t *testing.T) {
 // Nearest ancestor wins for hidden flag inheritance.
 type hiddenInheritMiddle struct {
 	Env   string `flag:"env" help:"Middle env"`
-	child cli.Runner
+	child cli.Commander
 }
 
 func (m *hiddenInheritMiddle) Run(_ context.Context) error { return nil }
 func (m *hiddenInheritMiddle) Name() string                { return "middle" }
-func (m *hiddenInheritMiddle) Subcommands() []cli.Runner   { return []cli.Runner{m.child} }
+func (m *hiddenInheritMiddle) Subcommands() []cli.Commander   { return []cli.Commander{m.child} }
 
 func TestExecute_HiddenInherit_NearestAncestorWins(t *testing.T) {
 	t.Parallel()

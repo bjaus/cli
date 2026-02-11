@@ -1,4 +1,4 @@
-// Package completion generates shell completion scripts from a [cli.Runner]
+// Package completion generates shell completion scripts from a [cli.Commander]
 // command tree.
 //
 // Supported shells: bash, zsh, fish, and PowerShell. Each generator produces
@@ -25,7 +25,7 @@ import (
 )
 
 // Bash generates a bash completion script that calls the binary at runtime.
-func Bash(_ cli.Runner, appName string) string {
+func Bash(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
 
@@ -87,7 +87,7 @@ func Bash(_ cli.Runner, appName string) string {
 }
 
 // Zsh generates a zsh completion script that calls the binary at runtime.
-func Zsh(_ cli.Runner, appName string) string {
+func Zsh(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
 
@@ -147,7 +147,7 @@ func Zsh(_ cli.Runner, appName string) string {
 }
 
 // Fish generates a fish completion script that calls the binary at runtime.
-func Fish(_ cli.Runner, appName string) string {
+func Fish(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
 
@@ -183,7 +183,7 @@ func Fish(_ cli.Runner, appName string) string {
 }
 
 // PowerShell generates a PowerShell completion script that calls the binary at runtime.
-func PowerShell(_ cli.Runner, appName string) string {
+func PowerShell(_ cli.Commander, appName string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# PowerShell completion for %s\n\n", appName)

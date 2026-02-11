@@ -8,22 +8,22 @@ import (
 	"github.com/bjaus/cli"
 )
 
-// Command returns a [cli.Runner] that prints shell completion scripts. It has
+// Command returns a [cli.Commander] that prints shell completion scripts. It has
 // bash, zsh, fish, and powershell subcommands. Output is written to w.
 // Typically added as a hidden "completion" subcommand:
 //
-//	func (a *App) Subcommands() []cli.Runner {
-//	    return []cli.Runner{
+//	func (a *App) Subcommands() []cli.Commander {
+//	    return []cli.Commander{
 //	        &serveCmd{},
 //	        completion.Command(a, "myapp", os.Stdout),
 //	    }
 //	}
-func Command(root cli.Runner, appName string, w io.Writer) cli.Runner {
+func Command(root cli.Commander, appName string, w io.Writer) cli.Commander {
 	return &completionCmd{root: root, appName: appName, out: w}
 }
 
 type completionCmd struct {
-	root    cli.Runner
+	root    cli.Commander
 	appName string
 	out     io.Writer
 }
@@ -36,8 +36,8 @@ func (c *completionCmd) Name() string        { return "completion" }
 func (c *completionCmd) Description() string { return "Generate shell completion scripts" }
 func (c *completionCmd) Hidden() bool        { return true }
 
-func (c *completionCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{
+func (c *completionCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{
 		&shellCmd{root: c.root, appName: c.appName, shell: "bash", out: c.out},
 		&shellCmd{root: c.root, appName: c.appName, shell: "zsh", out: c.out},
 		&shellCmd{root: c.root, appName: c.appName, shell: "fish", out: c.out},
@@ -46,7 +46,7 @@ func (c *completionCmd) Subcommands() []cli.Runner {
 }
 
 type shellCmd struct {
-	root    cli.Runner
+	root    cli.Commander
 	appName string
 	shell   string
 	out     io.Writer

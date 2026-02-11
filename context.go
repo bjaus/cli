@@ -40,8 +40,8 @@ type contextStore struct {
 //	    }
 //	    return ctx, nil
 //	}
-func Leaf(ctx context.Context) Runner {
-	r, ok := ctx.Value(leafKey{}).(Runner)
+func Leaf(ctx context.Context) Commander {
+	r, ok := ctx.Value(leafKey{}).(Commander)
 	if !ok {
 		return nil
 	}
@@ -121,7 +121,7 @@ func setContextValue(ctx context.Context, name string, val any) context.Context 
 // storeFlags reads all flag-tagged and standalone env-tagged fields from each
 // command in the chain and stores their current values in the context. Called
 // after flag parsing and inheritance, before Before hooks.
-func storeFlags(ctx context.Context, chain []Runner) context.Context {
+func storeFlags(ctx context.Context, chain []Commander) context.Context {
 	for _, cmd := range chain {
 		v := reflect.ValueOf(cmd)
 		if v.Kind() == reflect.Ptr {

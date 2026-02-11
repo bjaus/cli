@@ -77,7 +77,7 @@ func jaroWinkler(s1, s2 string) float64 {
 }
 
 // suggestSubcommand finds the closest matching subcommand name.
-func suggestSubcommand(cmd Runner, unknown string) string {
+func suggestSubcommand(cmd Commander, unknown string) string {
 	subs, _ := allSubcommands(cmd) //nolint:errcheck // best-effort suggestion
 	if len(subs) == 0 {
 		return ""
@@ -114,7 +114,7 @@ func suggestSubcommand(cmd Runner, unknown string) string {
 }
 
 // suggestFlagName finds the closest matching flag name.
-func suggestFlagName(cmd Runner, unknown string) string {
+func suggestFlagName(cmd Commander, unknown string) string {
 	flags := ScanFlags(cmd)
 	if len(flags) == 0 {
 		return ""
@@ -149,7 +149,7 @@ func suggestFlagName(cmd Runner, unknown string) string {
 }
 
 // suggestFromError extracts the unknown token from a parse error and suggests.
-func suggestFromError(cmd Runner, err error) string {
+func suggestFromError(cmd Commander, err error) string {
 	msg := err.Error()
 
 	if strings.HasPrefix(msg, "unknown flag: ") {

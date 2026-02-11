@@ -6,31 +6,31 @@ import (
 	"io"
 )
 
-// HelpCommand returns a [Runner] that displays help for a named command. It
+// HelpCommand returns a [Commander] that displays help for a named command. It
 // accepts command names as positional arguments and prints the help output for
 // that command. Typically added as a hidden "help" subcommand:
 //
-//	func (a *App) Subcommands() []cli.Runner {
-//	    return []cli.Runner{&serveCmd{}, cli.HelpCommand(a, os.Stdout)}
+//	func (a *App) Subcommands() []cli.Commander {
+//	    return []cli.Commander{&serveCmd{}, cli.HelpCommand(a, os.Stdout)}
 //	}
 //
 // Usage:
 //
 //	myapp help serve        # shows help for "serve"
 //	myapp help cluster list # shows help for "cluster list"
-func HelpCommand(root Runner, w io.Writer) Runner {
+func HelpCommand(root Commander, w io.Writer) Commander {
 	return &helpCmd{root: root, out: w}
 }
 
 type helpCmd struct {
-	root Runner
+	root Commander
 	out  io.Writer
 	Args Args
 }
 
 func (h *helpCmd) Run(_ context.Context) error {
 	target := h.root
-	chain := []Runner{h.root}
+	chain := []Commander{h.root}
 
 	for _, name := range h.Args {
 		subs, err := allSubcommands(target)

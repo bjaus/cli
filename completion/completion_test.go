@@ -95,16 +95,16 @@ func TestBash_AppNameInScript(t *testing.T) {
 	assert.Contains(t, script, "my-tool.sh __complete")
 }
 
-// Verify the root Runner parameter is accepted but not walked statically.
+// Verify the root Commander parameter is accepted but not walked statically.
 // The scripts should not contain specific subcommand names.
 type rootWithSubs struct {
-	cli.Runner
+	cli.Commander
 }
 
 func (r *rootWithSubs) Run(_ context.Context) error { return nil }
 func (r *rootWithSubs) Name() string                { return "myapp" }
-func (r *rootWithSubs) Subcommands() []cli.Runner {
-	return []cli.Runner{&subCmd{}}
+func (r *rootWithSubs) Subcommands() []cli.Commander {
+	return []cli.Commander{&subCmd{}}
 }
 
 type subCmd struct{}

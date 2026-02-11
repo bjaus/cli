@@ -21,11 +21,11 @@ type PluginInfo struct {
 	Aliases     []string `json:"aliases,omitempty"`
 }
 
-// ExternalCommand wraps an external executable as a [Runner]. When Run
+// ExternalCommand wraps an external executable as a [Commander]. When Run
 // is called, it executes the binary, wiring stdin, stdout, and stderr
 // to the parent process.
 //
-// ExternalCommand implements [Namer], [Describer], and [Aliaser].
+// ExternalCommand implements [Namer], [Descriptor], and [Aliaser].
 type ExternalCommand struct {
 	// Path is the absolute path to the plugin executable.
 	Path string
@@ -46,13 +46,13 @@ type ExternalCommand struct {
 // Name implements [Namer].
 func (e *ExternalCommand) Name() string { return e.Cmd }
 
-// Description implements [Describer].
+// Description implements [Descriptor].
 func (e *ExternalCommand) Description() string { return e.Desc }
 
 // Aliases implements [Aliaser].
 func (e *ExternalCommand) Aliases() []string { return e.CommandAliases }
 
-// Run implements [Runner].
+// Run implements [Commander].
 func (e *ExternalCommand) Run(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, e.Path, e.Args...) //nolint:gosec // path is from directory scan or user-configured PATH
 	cmd.Stdin = os.Stdin
@@ -115,7 +115,7 @@ func WithInfoFlag(flag string) DiscoverOption {
 }
 
 // Discover scans directories and optionally PATH for plugin executables
-// and returns them as [Runner] values. Each discovered executable is
+// and returns them as [Commander] values. Each discovered executable is
 // wrapped in an [ExternalCommand].
 //
 // In directories, every executable file becomes a plugin. The command
@@ -141,13 +141,13 @@ func WithInfoFlag(flag string) DiscoverOption {
 //
 // Example:
 //
-//	func (a *App) Discover() ([]cli.Runner, error) {
+//	func (a *App) Discover() ([]cli.Commander, error) {
 //	    return cli.Discover("myapp",
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
 //	        cli.WithPATH(),
 //	    )
 //	}
-func Discover(prefix string, opts ...DiscoverOption) ([]Runner, error) {
+func Discover(prefix string, opts ...DiscoverOption) ([]Commander, error) {
 	cfg := &discoverConfig{
 		infoFlag: "--cli-info",
 	}
@@ -156,7 +156,7 @@ func Discover(prefix string, opts ...DiscoverOption) ([]Runner, error) {
 	}
 
 	seen := make(map[string]bool)
-	var runners []Runner
+	var runners []Commander
 
 	// Scan directories (higher priority).
 	for _, dir := range cfg.dirs {
@@ -201,21 +201,21 @@ func DefaultDirs(name string) []string {
 }
 
 // AllSubcommands returns all subcommands for a command by merging static
-// subcommands from [Parent] with runtime-discovered subcommands from
-// [Discoverer]. Built-in commands from Parent take priority — discovered
+// subcommands from [Subcommander] with runtime-discovered subcommands from
+// [Discoverer]. Built-in commands from Subcommander take priority — discovered
 // commands whose name or alias collides with a built-in are silently
 // dropped.
 //
 // This is useful for custom [HelpRenderer] implementations, documentation
 // generators, and shell completion scripts that need to enumerate all
 // available subcommands including plugins.
-func AllSubcommands(cmd Runner) ([]Runner, error) {
+func AllSubcommands(cmd Commander) ([]Commander, error) {
 	return allSubcommands(cmd)
 }
 
-func allSubcommands(cmd Runner) ([]Runner, error) {
-	var subs []Runner
-	if p, ok := cmd.(Parent); ok {
+func allSubcommands(cmd Commander) ([]Commander, error) {
+	var subs []Commander
+	if p, ok := cmd.(Subcommander); ok {
 		subs = p.Subcommands()
 	}
 
@@ -239,7 +239,7 @@ func allSubcommands(cmd Runner) ([]Runner, error) {
 		}
 	}
 
-	merged := make([]Runner, len(subs), len(subs)+len(discovered))
+	merged := make([]Commander, len(subs), len(subs)+len(discovered))
 	copy(merged, subs)
 	for _, disc := range discovered {
 		info := resolveInfo(disc)
@@ -256,7 +256,7 @@ func allSubcommands(cmd Runner) ([]Runner, error) {
 	return merged, nil
 }
 
-func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Runner, error) {
+func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Commander, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -265,7 +265,7 @@ func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Runner, e
 		return nil, err
 	}
 
-	runners := make([]Runner, 0, len(entries))
+	runners := make([]Commander, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -286,9 +286,9 @@ func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Runner, e
 	return runners, nil
 }
 
-func discoverPATH(prefix string, seen map[string]bool, infoFlag string) []Runner {
+func discoverPATH(prefix string, seen map[string]bool, infoFlag string) []Commander {
 	pathPrefix := prefix + "-"
-	var runners []Runner
+	var runners []Commander
 
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		entries, err := os.ReadDir(dir)

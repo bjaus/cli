@@ -9,7 +9,7 @@ import (
 
 // resolvedCommand holds the result of walking the command tree.
 type resolvedCommand struct {
-	chain      []Runner
+	chain      []Commander
 	chainArgs  [][]string // per-command flag args, aligned with chain
 	positional []string
 }
@@ -19,7 +19,7 @@ type flagIndex struct {
 	known map[string]bool // flag name -> isBool
 }
 
-func buildFlagIndex(cmd Runner) flagIndex {
+func buildFlagIndex(cmd Commander) flagIndex {
 	flags := ScanFlags(cmd)
 	idx := flagIndex{known: make(map[string]bool, len(flags)*2)}
 	for i := range flags {
@@ -49,8 +49,8 @@ func (fi flagIndex) isBool(name string) bool {
 }
 
 // resolveCommand walks the command tree using flags-anywhere logic.
-func resolveCommand(root Runner, args []string, opts *options) (*resolvedCommand, error) {
-	chain := []Runner{root}
+func resolveCommand(root Commander, args []string, opts *options) (*resolvedCommand, error) {
+	chain := []Commander{root}
 	chainArgs := [][]string{nil}
 	remaining := args
 
@@ -115,14 +115,14 @@ func resolveCommand(root Runner, args []string, opts *options) (*resolvedCommand
 }
 
 type subMatch struct {
-	sub       Runner
+	sub       Commander
 	remaining []string
 }
 
 // scanLevel scans args at the current command level, consuming known flags
 // and looking for a subcommand match. Returns consumed flags, unconsumed
 // non-flag args, and a subMatch if a subcommand was found.
-func scanLevel(args []string, fi flagIndex, subs []Runner, prefixMatch, caseInsensitive bool) ([]string, []string, *subMatch) {
+func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseInsensitive bool) ([]string, []string, *subMatch) {
 	var cmdFlags, next []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -214,7 +214,7 @@ func separateLeafArgs(args []string, fi flagIndex) ([]string, []string) {
 	return flags, positional
 }
 
-func findSubcommand(subs []Runner, name string, prefixMatch, caseInsensitive bool) Runner {
+func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive bool) Commander {
 	eq := func(a, b string) bool {
 		if caseInsensitive {
 			return strings.EqualFold(a, b)
@@ -246,7 +246,7 @@ func findSubcommand(subs []Runner, name string, prefixMatch, caseInsensitive boo
 	}
 
 	// Unique prefix match.
-	var match Runner
+	var match Commander
 	for _, s := range subs {
 		info := resolveInfo(s)
 		if hasPrefix(info.name, name) {
@@ -309,7 +309,7 @@ func expandShortOptions(args []string, fi flagIndex) []string {
 	return expanded
 }
 
-func execute(ctx context.Context, root Runner, args []string, opts *options) error {
+func execute(ctx context.Context, root Commander, args []string, opts *options) error {
 	// Strip program name if args[0] looks like a binary path.
 	// This allows callers to pass os.Args directly.
 	cmdName := resolveInfo(root).name
@@ -399,7 +399,7 @@ func execute(ctx context.Context, root Runner, args []string, opts *options) err
 	ctx = context.WithValue(ctx, leafKey{}, leaf)
 
 	// Before hooks (parent-first).
-	var afterHooks []Runner
+	var afterHooks []Commander
 	for _, cmd := range chain {
 		if b, ok := cmd.(Beforer); ok {
 			var err error
@@ -459,7 +459,7 @@ func versionRequested(resolved *resolvedCommand) bool {
 	return false
 }
 
-func findVersioner(chain []Runner) Versioner {
+func findVersioner(chain []Commander) Versioner {
 	for _, cmd := range chain {
 		if v, ok := cmd.(Versioner); ok {
 			return v
@@ -468,7 +468,7 @@ func findVersioner(chain []Runner) Versioner {
 	return nil
 }
 
-func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough bool, opts *options) ([]map[string]bool, error) {
+func parseFlagChain(resolved *resolvedCommand, chain []Commander, leafPassthrough bool, opts *options) ([]map[string]bool, error) {
 	provided := make([]map[string]bool, len(chain))
 	for i, cmd := range chain {
 		parseOpts := opts
@@ -521,7 +521,7 @@ func parseFlagChain(resolved *resolvedCommand, chain []Runner, leafPassthrough b
 	return provided, nil
 }
 
-func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]bool, error) {
+func parseFlags(cmd Commander, args []string, opts *options) ([]string, map[string]bool, error) {
 	if opts.shortOptionHandling {
 		fi := buildFlagIndex(cmd)
 		args = expandShortOptions(args, fi)
@@ -537,7 +537,7 @@ func parseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]
 	return defaultParseFlags(cmd, args, opts)
 }
 
-func runAfterHooks(ctx context.Context, hooks []Runner) error {
+func runAfterHooks(ctx context.Context, hooks []Commander) error {
 	var firstErr error
 	for i := len(hooks) - 1; i >= 0; i-- {
 		if a, ok := hooks[i].(Afterer); ok {
@@ -549,7 +549,7 @@ func runAfterHooks(ctx context.Context, hooks []Runner) error {
 	return firstErr
 }
 
-func renderHelp(cmd Runner, chain []Runner, opts *options) error {
+func renderHelp(cmd Commander, chain []Commander, opts *options) error {
 	if h, ok := cmd.(Helper); ok {
 		_, err := fmt.Fprint(opts.stdout, h.Help())
 		return err
@@ -602,7 +602,7 @@ func renderHelp(cmd Runner, chain []Runner, opts *options) error {
 
 // collectGlobalFlags gathers visible flags from parent commands in the chain,
 // deduplicating against the leaf command's flags.
-func collectGlobalFlags(chain []Runner, leafFlags []FlagDef) []FlagDef {
+func collectGlobalFlags(chain []Commander, leafFlags []FlagDef) []FlagDef {
 	if len(chain) <= 1 {
 		return nil
 	}
@@ -627,7 +627,7 @@ func collectGlobalFlags(chain []Runner, leafFlags []FlagDef) []FlagDef {
 	return global
 }
 
-func printDeprecationWarnings(chain []Runner, provided []map[string]bool, opts *options) {
+func printDeprecationWarnings(chain []Commander, provided []map[string]bool, opts *options) {
 	for i, cmd := range chain {
 		if provided[i] != nil {
 			defs := ScanFlags(cmd)
@@ -646,7 +646,7 @@ func printDeprecationWarnings(chain []Runner, provided []map[string]bool, opts *
 	}
 }
 
-func suggestFlag(cmd Runner, parseErr error) string {
+func suggestFlag(cmd Commander, parseErr error) string {
 	if s, ok := cmd.(Suggester); ok {
 		return s.Suggest(parseErr.Error())
 	}

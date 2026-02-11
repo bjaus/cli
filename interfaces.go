@@ -9,15 +9,15 @@ type Namer interface {
 	Name() string
 }
 
-// Describer provides a one-line description shown in help output.
-type Describer interface {
+// Descriptor provides a one-line description shown in help output.
+type Descriptor interface {
 	Description() string
 }
 
-// LongDescriber provides extended description text shown in the command's
-// own help output. When implemented, this replaces [Describer] in the
-// help body while [Describer] remains used in subcommand listings.
-type LongDescriber interface {
+// LongDescriptor provides extended description text shown in the command's
+// own help output. When implemented, this replaces [Descriptor] in the
+// help body while [Descriptor] remains used in subcommand listings.
+type LongDescriptor interface {
 	LongDescription() string
 }
 
@@ -26,9 +26,9 @@ type Aliaser interface {
 	Aliases() []string
 }
 
-// Parent declares subcommands.
-type Parent interface {
-	Subcommands() []Runner
+// Subcommander declares subcommands.
+type Subcommander interface {
+	Subcommands() []Commander
 }
 
 // Hider hides the command from help output.
@@ -65,25 +65,25 @@ type Categorizer interface {
 
 // Fallbacker provides a fallback subcommand to run when no subcommand name matches.
 type Fallbacker interface {
-	Fallback() Runner
+	Fallback() Commander
 }
 
 // Discoverer provides runtime-discovered commands (plugins). Discovered
-// commands are merged with [Parent.Subcommands] — built-in commands take
-// priority on name collisions. A command may implement both [Parent] and
-// Discoverer; it may also implement Discoverer alone (without Parent) to
+// commands are merged with [Subcommander.Subcommands] — built-in commands take
+// priority on name collisions. A command may implement both [Subcommander] and
+// Discoverer; it may also implement Discoverer alone (without Subcommander) to
 // have only dynamically discovered subcommands.
 //
 // Use [Discover] to scan directories and PATH for plugin executables:
 //
-//	func (a *App) Discover() ([]Runner, error) {
+//	func (a *App) Discover() ([]Commander, error) {
 //	    return cli.Discover("myapp",
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
 //	        cli.WithPATH(),
 //	    )
 //	}
 type Discoverer interface {
-	Discover() ([]Runner, error)
+	Discover() ([]Commander, error)
 }
 
 // Exiter controls process exit behavior. When implemented on the root command,
@@ -294,7 +294,7 @@ type Helper interface {
 // then falls back to the global parser set via [WithFlagParser], then to the
 // default struct-tag parser.
 type FlagParser interface {
-	ParseFlags(cmd Runner, args []string) (remaining []string, err error)
+	ParseFlags(cmd Commander, args []string) (remaining []string, err error)
 }
 
 // HelpRenderer replaces the help rendering engine. Checked on the command
@@ -308,7 +308,7 @@ type FlagParser interface {
 //   - args: the leaf command's positional arg definitions
 //   - globalFlags: visible flags from parent commands
 type HelpRenderer interface {
-	RenderHelp(cmd Runner, chain []Runner, flags []FlagDef, args []ArgDef, globalFlags []FlagDef) string
+	RenderHelp(cmd Commander, chain []Commander, flags []FlagDef, args []ArgDef, globalFlags []FlagDef) string
 }
 
 // FlagDef describes a single flag for use by custom [HelpRenderer] implementations.

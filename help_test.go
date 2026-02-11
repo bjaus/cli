@@ -42,7 +42,7 @@ func TestCustomHelpRenderer(t *testing.T) {
 
 type testRenderer struct{}
 
-func (r *testRenderer) RenderHelp(_ cli.Runner, _ []cli.Runner, _ []cli.FlagDef, _ []cli.ArgDef, _ []cli.FlagDef) string {
+func (r *testRenderer) RenderHelp(_ cli.Commander, _ []cli.Commander, _ []cli.FlagDef, _ []cli.ArgDef, _ []cli.FlagDef) string {
 	return "rendered by test"
 }
 
@@ -61,7 +61,7 @@ type longDescParent struct{}
 
 func (p *longDescParent) Run(_ context.Context) error { return nil }
 func (p *longDescParent) Name() string                { return "myapp" }
-func (p *longDescParent) Subcommands() []cli.Runner   { return []cli.Runner{&longDescCmd{}} }
+func (p *longDescParent) Subcommands() []cli.Commander   { return []cli.Commander{&longDescCmd{}} }
 
 func TestLongDescription_ShownInHelp(t *testing.T) {
 	t.Parallel()
@@ -96,8 +96,8 @@ type sortedHelpParent struct{}
 
 func (p *sortedHelpParent) Run(_ context.Context) error   { return nil }
 func (p *sortedHelpParent) Name() string                   { return "myapp" }
-func (p *sortedHelpParent) Subcommands() []cli.Runner {
-	return []cli.Runner{&sortedSubZ{}, &sortedSubA{}, &sortedSubM{}}
+func (p *sortedHelpParent) Subcommands() []cli.Commander {
+	return []cli.Commander{&sortedSubZ{}, &sortedSubA{}, &sortedSubM{}}
 }
 
 type sortedSubZ struct {
@@ -215,7 +215,7 @@ type caseParent struct {
 
 func (p *caseParent) Run(_ context.Context) error { return nil }
 func (p *caseParent) Name() string                { return "myapp" }
-func (p *caseParent) Subcommands() []cli.Runner   { return []cli.Runner{p.child} }
+func (p *caseParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
 
 type caseChild struct {
 	ran bool
@@ -322,8 +322,8 @@ type helpCmdRoot struct {
 func (r *helpCmdRoot) Run(_ context.Context) error { return nil }
 func (r *helpCmdRoot) Name() string                { return "myapp" }
 func (r *helpCmdRoot) Description() string         { return "My application" }
-func (r *helpCmdRoot) Subcommands() []cli.Runner {
-	return []cli.Runner{
+func (r *helpCmdRoot) Subcommands() []cli.Commander {
+	return []cli.Commander{
 		&helpCmdServe{},
 		&helpCmdDeploy{},
 		cli.HelpCommand(r, r.out),
@@ -343,8 +343,8 @@ type helpCmdDeploy struct{}
 func (c *helpCmdDeploy) Run(_ context.Context) error { return nil }
 func (c *helpCmdDeploy) Name() string                { return "deploy" }
 func (c *helpCmdDeploy) Description() string         { return "Deploy the app" }
-func (c *helpCmdDeploy) Subcommands() []cli.Runner {
-	return []cli.Runner{&helpCmdDeployProd{}}
+func (c *helpCmdDeploy) Subcommands() []cli.Commander {
+	return []cli.Commander{&helpCmdDeployProd{}}
 }
 
 type helpCmdDeployProd struct{}

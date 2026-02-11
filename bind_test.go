@@ -142,8 +142,8 @@ type bindParentCmd struct {
 	DB *mockDB
 }
 
-func (c *bindParentCmd) Subcommands() []cli.Runner {
-	return []cli.Runner{&bindChildCmd{}}
+func (c *bindParentCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&bindChildCmd{}}
 }
 
 func (c *bindParentCmd) Run(ctx context.Context) error {
@@ -293,7 +293,7 @@ type singletonParentCmd struct {
 }
 
 func (c *singletonParentCmd) Run(_ context.Context) error   { return nil }
-func (c *singletonParentCmd) Subcommands() []cli.Runner     { return []cli.Runner{&singletonChildCmd{}} }
+func (c *singletonParentCmd) Subcommands() []cli.Commander     { return []cli.Commander{&singletonChildCmd{}} }
 
 type singletonChildCmd struct {
 	DB *mockDB

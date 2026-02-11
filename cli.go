@@ -9,15 +9,15 @@ import (
 	"syscall"
 )
 
-// Runner is the core interface every command must implement.
-type Runner interface {
+// Commander is the core interface every command must implement.
+type Commander interface {
 	Run(ctx context.Context) error
 }
 
-// RunFunc adapts a plain function into a [Runner].
+// RunFunc adapts a plain function into a [Commander].
 type RunFunc func(ctx context.Context) error
 
-// Run implements [Runner].
+// Run implements [Commander].
 func (f RunFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
@@ -158,7 +158,7 @@ func WithStdin(r io.Reader) Option {
 // Execute runs the command tree rooted at root with the given args and options.
 // It resolves subcommands, parses flags, runs lifecycle hooks, and executes
 // the target command.
-func Execute(ctx context.Context, root Runner, args []string, opts ...Option) error {
+func Execute(ctx context.Context, root Commander, args []string, opts ...Option) error {
 	o := defaults()
 	for _, opt := range opts {
 		opt(o)
@@ -177,7 +177,7 @@ func Execute(ctx context.Context, root Runner, args []string, opts ...Option) er
 // errors (unknown flag, missing required flag, etc.) a usage hint is appended.
 // If the error implements [ExitCoder], its exit code is used; non-nil errors
 // default to exit code 1.
-func ExecuteAndExit(ctx context.Context, root Runner, args []string, opts ...Option) {
+func ExecuteAndExit(ctx context.Context, root Commander, args []string, opts ...Option) {
 	o := defaults()
 	for _, opt := range opts {
 		opt(o)
@@ -205,7 +205,7 @@ func ExecuteAndExit(ctx context.Context, root Runner, args []string, opts ...Opt
 }
 
 // formatError writes the error message and optional usage hint to w.
-func formatError(w io.Writer, root Runner, err error) {
+func formatError(w io.Writer, root Commander, err error) {
 	fmt.Fprintf(w, "Error: %s\n", err) //nolint:errcheck
 
 	if _, isExit := err.(ExitCoder); !isExit && isFlagOrCommandError(err) {

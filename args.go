@@ -9,7 +9,7 @@ import (
 
 // ScanArgs inspects a command's struct tags and returns positional arg definitions.
 // This is exported so custom [HelpRenderer] implementations can inspect a command's args.
-func ScanArgs(cmd Runner) []ArgDef {
+func ScanArgs(cmd Commander) []ArgDef {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -63,7 +63,7 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 
 // populateArgs sets struct fields tagged with `arg` from positional arguments,
 // environment variables, and defaults. Returns unconsumed positional arguments.
-func populateArgs(cmd Runner, args []string, envPrefix string) ([]string, error) {
+func populateArgs(cmd Commander, args []string, envPrefix string) ([]string, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()

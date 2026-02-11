@@ -31,7 +31,7 @@ const (
 // RuntimeComplete generates completion candidates for the given args and writes
 // them to w. Each candidate is one line, optionally followed by a tab and
 // description. The last line is a directive in the format ":<int>".
-func RuntimeComplete(ctx context.Context, root Runner, args []string, w io.Writer) {
+func RuntimeComplete(ctx context.Context, root Commander, args []string, w io.Writer) {
 	completions, directive := computeCompletions(ctx, root, args)
 	for _, c := range completions {
 		fmt.Fprintln(w, c) //nolint:errcheck // best-effort completion output
@@ -41,7 +41,7 @@ func RuntimeComplete(ctx context.Context, root Runner, args []string, w io.Write
 
 // computeCompletions resolves the command chain and returns completion
 // candidates with a directive.
-func computeCompletions(ctx context.Context, root Runner, args []string) ([]string, ShellCompDirective) {
+func computeCompletions(ctx context.Context, root Commander, args []string) ([]string, ShellCompDirective) {
 	// Split args: everything except last is context, last is the prefix to complete.
 	var contextArgs []string
 	var toComplete string
@@ -170,7 +170,7 @@ func computeCompletions(ctx context.Context, root Runner, args []string) ([]stri
 }
 
 // completeCommandFlags returns flag completions matching prefix.
-func completeCommandFlags(cmd Runner, prefix string) []string {
+func completeCommandFlags(cmd Commander, prefix string) []string {
 	flags := ScanFlags(cmd)
 	var candidates []string
 	for i := range flags {
@@ -222,7 +222,7 @@ func completeCommandFlags(cmd Runner, prefix string) []string {
 
 // lookupValueFlagName returns the flag name (without dashes) if arg matches
 // a non-bool, non-counter flag on cmd, or empty string if not found.
-func lookupValueFlagName(cmd Runner, arg string) string {
+func lookupValueFlagName(cmd Commander, arg string) string {
 	if !strings.HasPrefix(arg, "-") {
 		return ""
 	}
@@ -245,7 +245,7 @@ func lookupValueFlagName(cmd Runner, arg string) string {
 
 // lookupFlagEnum returns the Enum string for a flag matching the given arg
 // (e.g. "--format"), or empty if no match or no enum.
-func lookupFlagEnum(cmd Runner, arg string) string {
+func lookupFlagEnum(cmd Commander, arg string) string {
 	if !strings.HasPrefix(arg, "-") {
 		return ""
 	}

@@ -22,11 +22,11 @@ func TestCommand_Structure(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "completion", n.Name())
 
-	d, ok := cmd.(cli.Describer)
+	d, ok := cmd.(cli.Descriptor)
 	require.True(t, ok)
 	assert.NotEmpty(t, d.Description())
 
-	p, ok := cmd.(cli.Parent)
+	p, ok := cmd.(cli.Subcommander)
 	require.True(t, ok)
 
 	subs := p.Subcommands()
@@ -38,7 +38,7 @@ func TestCommand_Structure(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, wantShells[i], n.Name())
 
-		d, ok := sub.(cli.Describer)
+		d, ok := sub.(cli.Descriptor)
 		require.True(t, ok)
 		assert.NotEmpty(t, d.Description())
 	}
@@ -74,7 +74,7 @@ func TestCommand_UsesWriter(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := completion.Command(root, "myapp", &buf)
 
-	p, ok := cmd.(cli.Parent)
+	p, ok := cmd.(cli.Subcommander)
 	require.True(t, ok)
 
 	subs := p.Subcommands()
@@ -100,11 +100,11 @@ func TestCommand_ShellOutput(t *testing.T) {
 
 			var buf bytes.Buffer
 			cmd := completion.Command(root, "myapp", &buf)
-			p, ok := cmd.(cli.Parent)
+			p, ok := cmd.(cli.Subcommander)
 			require.True(t, ok)
 
 			// Find the matching shell subcommand.
-			var target cli.Runner
+			var target cli.Commander
 			for _, sub := range p.Subcommands() {
 				n, ok := sub.(cli.Namer)
 				if ok && n.Name() == shell {

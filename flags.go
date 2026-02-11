@@ -12,7 +12,7 @@ import (
 // ScanFlags inspects a command's struct tags and returns flag definitions.
 // This is exported so custom [HelpRenderer] and [FlagParser] implementations
 // can inspect a command's flags.
-func ScanFlags(cmd Runner) []FlagDef {
+func ScanFlags(cmd Commander) []FlagDef {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -157,7 +157,7 @@ type fieldInfo struct {
 // hasProcessableFields reports whether cmd has any flag-tagged or standalone
 // env-tagged struct fields. This is used by parseFlagChain to decide whether
 // to call defaultParseFlags.
-func hasProcessableFields(cmd Runner) bool {
+func hasProcessableFields(cmd Commander) bool {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -200,7 +200,7 @@ func hasProcessableFieldsRecurse(t reflect.Type) bool {
 // It returns remaining args, a set of flag names that were explicitly provided
 // (by CLI args, config resolver, or env vars), and any error. Validation is
 // deferred so that inheritance can fill in values before required/enum checks run.
-func defaultParseFlags(cmd Runner, args []string, opts *options) ([]string, map[string]bool, error) {
+func defaultParseFlags(cmd Commander, args []string, opts *options) ([]string, map[string]bool, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -422,7 +422,7 @@ func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) e
 	return nil
 }
 
-func resolveConfigResolver(cmd Runner, opts *options) ConfigResolver {
+func resolveConfigResolver(cmd Commander, opts *options) ConfigResolver {
 	if cp, ok := cmd.(ConfigProvider); ok {
 		return cp.ConfigResolver()
 	}
@@ -555,7 +555,7 @@ func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
 // ValidateFlags runs required and enum checks on a command using the given
 // provided set. This is called after flag inheritance so that inherited values
 // satisfy required constraints and are checked against enum lists.
-func ValidateFlags(cmd Runner, provided map[string]bool) error {
+func ValidateFlags(cmd Commander, provided map[string]bool) error {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -590,7 +590,7 @@ func OneRequired(flags ...string) FlagGroup {
 }
 
 // validateFlagGroups checks FlagGrouper constraints using the provided flag set.
-func validateFlagGroups(cmd Runner, provided map[string]bool) error {
+func validateFlagGroups(cmd Commander, provided map[string]bool) error {
 	g, ok := cmd.(FlagGrouper)
 	if !ok {
 		return nil
@@ -839,7 +839,7 @@ func collectInheritableFields(t reflect.Type, indexPath []int, prefix string) []
 // commands when the child's flag was not explicitly provided. It walks
 // parent→child and for each child flag not in its provided set, finds the
 // nearest ancestor with the same flag name and compatible type.
-func inheritFlags(chain []Runner, provided []map[string]bool) {
+func inheritFlags(chain []Commander, provided []map[string]bool) {
 	for i := 1; i < len(chain); i++ {
 		cv := reflect.ValueOf(chain[i])
 		if cv.Kind() == reflect.Ptr {

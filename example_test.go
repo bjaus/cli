@@ -17,8 +17,8 @@ type exRoot struct{}
 func (r *exRoot) Name() string        { return "mytool" }
 func (r *exRoot) Description() string { return "A CLI built with the cli package" }
 func (r *exRoot) Version() string     { return "1.0.0" }
-func (r *exRoot) Subcommands() []cli.Runner {
-	return []cli.Runner{&exHello{}}
+func (r *exRoot) Subcommands() []cli.Commander {
+	return []cli.Commander{&exHello{}}
 }
 
 func (r *exRoot) Run(_ context.Context) error {
@@ -119,8 +119,8 @@ func (a *App) Run(_ context.Context) error {
 
 func (a *App) Name() string        { return "myapp" }
 func (a *App) Description() string { return "My example application" }
-func (a *App) Subcommands() []cli.Runner {
-	return []cli.Runner{&GreetCmd{}, &VersionCmd{}}
+func (a *App) Subcommands() []cli.Commander {
+	return []cli.Commander{&GreetCmd{}, &VersionCmd{}}
 }
 
 type VersionCmd struct{}
@@ -146,7 +146,7 @@ type SetupApp struct {
 
 func (s *SetupApp) Run(_ context.Context) error { return nil }
 func (s *SetupApp) Name() string                { return "app" }
-func (s *SetupApp) Subcommands() []cli.Runner   { return []cli.Runner{s.child} }
+func (s *SetupApp) Subcommands() []cli.Commander   { return []cli.Commander{s.child} }
 
 func (s *SetupApp) Before(ctx context.Context) (context.Context, error) {
 	fmt.Fprintln(os.Stdout, "setup: before") //nolint:errcheck // example output
@@ -336,8 +336,8 @@ type CategorizedApp struct{}
 func (a *CategorizedApp) Run(_ context.Context) error { return nil }
 func (a *CategorizedApp) Name() string                { return "myapp" }
 func (a *CategorizedApp) Description() string         { return "Categorized example" }
-func (a *CategorizedApp) Subcommands() []cli.Runner {
-	return []cli.Runner{&CoreCmd{}, &AdminCmd{}}
+func (a *CategorizedApp) Subcommands() []cli.Commander {
+	return []cli.Commander{&CoreCmd{}, &AdminCmd{}}
 }
 
 func ExampleExecute_categories() {
@@ -438,7 +438,7 @@ type PrefixApp struct{}
 
 func (a *PrefixApp) Run(_ context.Context) error { return nil }
 func (a *PrefixApp) Name() string                { return "app" }
-func (a *PrefixApp) Subcommands() []cli.Runner   { return []cli.Runner{&StatusCmd{}} }
+func (a *PrefixApp) Subcommands() []cli.Commander   { return []cli.Commander{&StatusCmd{}} }
 
 func ExampleExecute_prefixMatching() {
 	app := &PrefixApp{}
@@ -464,8 +464,8 @@ type DefaultApp struct{}
 
 func (a *DefaultApp) Run(_ context.Context) error { return nil }
 func (a *DefaultApp) Name() string                { return "app" }
-func (a *DefaultApp) Subcommands() []cli.Runner   { return []cli.Runner{&ServeCmd{}} }
-func (a *DefaultApp) Fallback() cli.Runner        { return &ServeCmd{} }
+func (a *DefaultApp) Subcommands() []cli.Commander   { return []cli.Commander{&ServeCmd{}} }
+func (a *DefaultApp) Fallback() cli.Commander        { return &ServeCmd{} }
 
 func ExampleExecute_defaultCommand() {
 	app := &DefaultApp{}
@@ -482,7 +482,7 @@ type InheritApp struct {
 
 func (a *InheritApp) Run(_ context.Context) error { return nil }
 func (a *InheritApp) Name() string                { return "app" }
-func (a *InheritApp) Subcommands() []cli.Runner   { return []cli.Runner{&InheritServe{}} }
+func (a *InheritApp) Subcommands() []cli.Commander   { return []cli.Commander{&InheritServe{}} }
 
 type InheritServe struct {
 	Env  string `flag:"env" help:"Target environment"`
@@ -511,7 +511,7 @@ type HiddenInheritApp struct {
 
 func (a *HiddenInheritApp) Run(_ context.Context) error { return nil }
 func (a *HiddenInheritApp) Name() string                { return "app" }
-func (a *HiddenInheritApp) Subcommands() []cli.Runner   { return []cli.Runner{&HiddenInheritServe{}} }
+func (a *HiddenInheritApp) Subcommands() []cli.Commander   { return []cli.Commander{&HiddenInheritServe{}} }
 
 type HiddenInheritServe struct {
 	Env  string `flag:"env" hidden:"true"`

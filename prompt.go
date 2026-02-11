@@ -22,7 +22,7 @@ func defaultIsTerminal() bool {
 // leaf command. It only runs when interactive mode is enabled and stdin is
 // a terminal. Values entered by the user are set on the command's struct
 // fields and marked as provided. Flags are prompted in struct field order.
-func promptForFlags(cmd Runner, provided map[string]bool, opts *options) (map[string]bool, error) {
+func promptForFlags(cmd Commander, provided map[string]bool, opts *options) (map[string]bool, error) {
 	if !opts.interactive || !opts.isTerminal() {
 		return provided, nil
 	}

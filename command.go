@@ -14,17 +14,17 @@ type commandInfo struct {
 	examples        []Example
 }
 
-func resolveInfo(cmd Runner) commandInfo {
+func resolveInfo(cmd Commander) commandInfo {
 	info := commandInfo{
 		name: defaultName(cmd),
 	}
 	if n, ok := cmd.(Namer); ok {
 		info.name = n.Name()
 	}
-	if d, ok := cmd.(Describer); ok {
+	if d, ok := cmd.(Descriptor); ok {
 		info.description = d.Description()
 	}
-	if ld, ok := cmd.(LongDescriber); ok {
+	if ld, ok := cmd.(LongDescriptor); ok {
 		info.longDescription = ld.LongDescription()
 	}
 	if a, ok := cmd.(Aliaser); ok {
@@ -39,7 +39,7 @@ func resolveInfo(cmd Runner) commandInfo {
 	return info
 }
 
-func defaultName(cmd Runner) string {
+func defaultName(cmd Commander) string {
 	t := reflect.TypeOf(cmd)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()

@@ -20,7 +20,7 @@ type rootCmd struct {
 func (r *rootCmd) Run(_ context.Context) error { return nil }
 func (r *rootCmd) Name() string                { return "myapp" }
 func (r *rootCmd) Description() string         { return "My test application" }
-func (r *rootCmd) Subcommands() []cli.Runner   { return []cli.Runner{r.serve, r.hidden} }
+func (r *rootCmd) Subcommands() []cli.Commander   { return []cli.Commander{r.serve, r.hidden} }
 
 type serveCmd struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
@@ -152,8 +152,8 @@ type discovererRoot struct {
 func (d *discovererRoot) Run(_ context.Context) error     { return nil }
 func (d *discovererRoot) Name() string                    { return "myapp" }
 func (d *discovererRoot) Description() string             { return "App with plugins" }
-func (d *discovererRoot) Subcommands() []cli.Runner       { return []cli.Runner{d.serve} }
-func (d *discovererRoot) Discover() ([]cli.Runner, error) { return []cli.Runner{&pluginCmd{}}, nil }
+func (d *discovererRoot) Subcommands() []cli.Commander       { return []cli.Commander{d.serve} }
+func (d *discovererRoot) Discover() ([]cli.Commander, error) { return []cli.Commander{&pluginCmd{}}, nil }
 
 func newDiscovererRoot() *discovererRoot {
 	return &discovererRoot{serve: &serveCmd{}}

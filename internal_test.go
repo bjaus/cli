@@ -42,7 +42,7 @@ func TestResolveInfo(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cmd         Runner
+		cmd         Commander
 		wantName    string
 		wantDesc    string
 		wantAliases []string
@@ -81,7 +81,7 @@ func TestDefaultName(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cmd      Runner
+		cmd      Commander
 		wantName string
 	}{
 		"pointer to struct": {
@@ -405,8 +405,8 @@ type internalParentWithSubs struct{}
 
 func (p *internalParentWithSubs) Run(_ context.Context) error { return nil }
 
-func (p *internalParentWithSubs) Subcommands() []Runner {
-	return []Runner{
+func (p *internalParentWithSubs) Subcommands() []Commander {
+	return []Commander{
 		&internalNamedCmd{n: "serve"},
 		&internalNamedCmd{n: "status"},
 		&internalNamedCmd{n: "deploy"},
@@ -482,12 +482,12 @@ type internalDiscovererParent struct{}
 
 func (p *internalDiscovererParent) Run(_ context.Context) error { return nil }
 func (p *internalDiscovererParent) Name() string                { return "myapp" }
-func (p *internalDiscovererParent) Subcommands() []Runner {
-	return []Runner{&internalNamedCmd{n: "serve"}}
+func (p *internalDiscovererParent) Subcommands() []Commander {
+	return []Commander{&internalNamedCmd{n: "serve"}}
 }
 
-func (p *internalDiscovererParent) Discover() ([]Runner, error) {
-	return []Runner{&internalNamedCmd{n: "deploy-plugin"}}, nil
+func (p *internalDiscovererParent) Discover() ([]Commander, error) {
+	return []Commander{&internalNamedCmd{n: "deploy-plugin"}}, nil
 }
 
 func TestSuggestSubcommand_DiscoveredCommand(t *testing.T) {
@@ -609,13 +609,13 @@ type internalRootCmd struct {
 func (r *internalRootCmd) Run(_ context.Context) error { return nil }
 func (r *internalRootCmd) Name() string                { return "app" }
 func (r *internalRootCmd) Description() string         { return "Test application" }
-func (r *internalRootCmd) Subcommands() []Runner       { return []Runner{r.serve} }
+func (r *internalRootCmd) Subcommands() []Commander       { return []Commander{r.serve} }
 
 func TestDefaultRenderHelp_Basic(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalServeCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -633,7 +633,7 @@ func TestDefaultRenderHelp_WithSubcommands(t *testing.T) {
 
 	serve := &internalServeCmd{}
 	root := &internalRootCmd{serve: serve}
-	chain := []Runner{root}
+	chain := []Commander{root}
 	flags := ScanFlags(root)
 
 	text := defaultRenderHelp(root, chain, flags, nil, false)
@@ -650,19 +650,19 @@ func (c *internalHiddenSubCmd) Name() string                { return "secret" }
 func (c *internalHiddenSubCmd) Hidden() bool                { return true }
 
 type internalParentWithHidden struct {
-	child Runner
+	child Commander
 }
 
 func (p *internalParentWithHidden) Run(_ context.Context) error { return nil }
 func (p *internalParentWithHidden) Name() string                { return "app" }
-func (p *internalParentWithHidden) Subcommands() []Runner       { return []Runner{p.child} }
+func (p *internalParentWithHidden) Subcommands() []Commander       { return []Commander{p.child} }
 
 func TestDefaultRenderHelp_HiddenSubcommands(t *testing.T) {
 	t.Parallel()
 
 	hidden := &internalHiddenSubCmd{}
 	parent := &internalParentWithHidden{child: hidden}
-	chain := []Runner{parent}
+	chain := []Commander{parent}
 
 	text := defaultRenderHelp(parent, chain, nil, nil, false)
 	assert.NotContains(t, text, "secret")
@@ -672,7 +672,7 @@ func TestDefaultRenderHelp_WithExamples(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFullCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -684,7 +684,7 @@ func TestDefaultRenderHelp_RequiredFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalRequiredFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -696,7 +696,7 @@ func TestCommandChainNames(t *testing.T) {
 
 	serve := &internalServeCmd{}
 	root := &internalRootCmd{serve: serve}
-	chain := []Runner{root, serve}
+	chain := []Commander{root, serve}
 
 	names := commandChainNames(chain)
 	assert.Equal(t, "app serve", names)
@@ -749,7 +749,7 @@ func TestSuggestFlag(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cmd  Runner
+		cmd  Commander
 		err  error
 		want string
 	}{
@@ -778,7 +778,7 @@ func TestSuggestFlag(t *testing.T) {
 func TestScanLevel(t *testing.T) {
 	t.Parallel()
 
-	subs := []Runner{&internalNamedCmd{n: "serve"}, &internalNamedCmd{n: "status"}}
+	subs := []Commander{&internalNamedCmd{n: "serve"}, &internalNamedCmd{n: "status"}}
 	fi := flagIndex{known: map[string]bool{
 		"--port":    false,
 		"-p":        false,
@@ -940,13 +940,13 @@ type internalEmptyParent struct{}
 
 func (p *internalEmptyParent) Run(_ context.Context) error { return nil }
 func (p *internalEmptyParent) Name() string                { return "empty" }
-func (p *internalEmptyParent) Subcommands() []Runner       { return nil }
+func (p *internalEmptyParent) Subcommands() []Commander       { return nil }
 
 func TestResolveCommand(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		root         Runner
+		root         Commander
 		args         []string
 		wantChainLen int
 		wantPosit    []string
@@ -998,7 +998,7 @@ type internalFlagParserCmd struct {
 
 func (c *internalFlagParserCmd) Run(_ context.Context) error { return nil }
 
-func (c *internalFlagParserCmd) ParseFlags(_ Runner, args []string) ([]string, error) {
+func (c *internalFlagParserCmd) ParseFlags(_ Commander, args []string) ([]string, error) {
 	c.parseCalled = true
 	return args, nil
 }
@@ -1016,7 +1016,7 @@ type internalGlobalParser struct {
 	called bool
 }
 
-func (p *internalGlobalParser) ParseFlags(_ Runner, args []string) ([]string, error) {
+func (p *internalGlobalParser) ParseFlags(_ Commander, args []string) ([]string, error) {
 	p.called = true
 	return args, nil
 }
@@ -1049,7 +1049,7 @@ func (c *internalAfterErrorCmd) After(_ context.Context) error {
 func TestRunAfterHooks_Error(t *testing.T) {
 	t.Parallel()
 
-	hooks := []Runner{
+	hooks := []Commander{
 		&internalAfterErrorCmd{errMsg: "first after error"},
 		&internalAfterErrorCmd{errMsg: "second after error"},
 	}
@@ -1064,7 +1064,7 @@ func TestRunAfterHooks_Error(t *testing.T) {
 func TestRunAfterHooks_NoAfterInterface(t *testing.T) {
 	t.Parallel()
 
-	hooks := []Runner{&internalBareCmd{}}
+	hooks := []Commander{&internalBareCmd{}}
 	err := runAfterHooks(context.Background(), hooks)
 	require.NoError(t, err)
 }
@@ -1075,7 +1075,7 @@ func TestFlagTypeName(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cmd      Runner
+		cmd      Commander
 		flagName string
 		wantType string
 	}{
@@ -1203,7 +1203,7 @@ type internalCmdLevelRenderer struct {
 	internalBareCmd
 }
 
-func (c *internalCmdLevelRenderer) RenderHelp(_ Runner, _ []Runner, _ []FlagDef, _ []ArgDef, _ []FlagDef) string {
+func (c *internalCmdLevelRenderer) RenderHelp(_ Commander, _ []Commander, _ []FlagDef, _ []ArgDef, _ []FlagDef) string {
 	return "cmd-level help"
 }
 
@@ -1215,7 +1215,7 @@ func TestRenderHelp_CmdLevelRenderer(t *testing.T) {
 	opts := defaults()
 	opts.stdout = &buf
 
-	err := renderHelp(cmd, []Runner{cmd}, opts)
+	err := renderHelp(cmd, []Commander{cmd}, opts)
 	require.NoError(t, err)
 	assert.Equal(t, "cmd-level help", buf.String())
 }
@@ -1239,7 +1239,7 @@ func TestHelpRequested_InChainArgs(t *testing.T) {
 	t.Parallel()
 
 	resolved := &resolvedCommand{
-		chain:     []Runner{&internalBareCmd{}},
+		chain:     []Commander{&internalBareCmd{}},
 		chainArgs: [][]string{{"--help"}},
 	}
 	assert.True(t, helpRequested(resolved))
@@ -1249,7 +1249,7 @@ func TestHelpRequested_ShortInPositional(t *testing.T) {
 	t.Parallel()
 
 	resolved := &resolvedCommand{
-		chain:      []Runner{&internalBareCmd{}},
+		chain:      []Commander{&internalBareCmd{}},
 		chainArgs:  [][]string{nil},
 		positional: []string{"-h"},
 	}
@@ -1260,7 +1260,7 @@ func TestHelpRequested_NotRequested(t *testing.T) {
 	t.Parallel()
 
 	resolved := &resolvedCommand{
-		chain:      []Runner{&internalBareCmd{}},
+		chain:      []Commander{&internalBareCmd{}},
 		chainArgs:  [][]string{nil},
 		positional: []string{"arg1"},
 	}
@@ -1272,12 +1272,12 @@ func TestHelpRequested_NotRequested(t *testing.T) {
 // Test Before error with parent-child: parent's After should still run.
 type internalBeforeParent struct {
 	afterCalled bool
-	child       Runner
+	child       Commander
 }
 
 func (c *internalBeforeParent) Run(_ context.Context) error { return nil }
 func (c *internalBeforeParent) Name() string                { return "parent" }
-func (c *internalBeforeParent) Subcommands() []Runner       { return []Runner{c.child} }
+func (c *internalBeforeParent) Subcommands() []Commander       { return []Commander{c.child} }
 
 func (c *internalBeforeParent) Before(ctx context.Context) (context.Context, error) {
 	return ctx, nil
@@ -1313,7 +1313,7 @@ func TestExecute_BeforeError(t *testing.T) {
 // Test suggestion path via custom FlagParser that returns unknown flag error.
 type internalErrorFlagParser struct{}
 
-func (p *internalErrorFlagParser) ParseFlags(_ Runner, _ []string) ([]string, error) {
+func (p *internalErrorFlagParser) ParseFlags(_ Commander, _ []string) ([]string, error) {
 	return nil, fmt.Errorf("unknown flag: --prot")
 }
 
@@ -1346,7 +1346,7 @@ func TestExecute_SuggestDisabled(t *testing.T) {
 // Test suggestion with no match returns raw error.
 type internalNoMatchFlagParser struct{}
 
-func (p *internalNoMatchFlagParser) ParseFlags(_ Runner, _ []string) ([]string, error) {
+func (p *internalNoMatchFlagParser) ParseFlags(_ Commander, _ []string) ([]string, error) {
 	return nil, fmt.Errorf("unknown flag: --zzzzz")
 }
 
@@ -1374,7 +1374,7 @@ func TestDefaultRenderHelp_NoDescription(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalNoDescCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	text := defaultRenderHelp(cmd, chain, nil, nil, false)
 
 	assert.Contains(t, text, "Usage:")
@@ -1392,7 +1392,7 @@ func TestDefaultRenderHelp_FlagWithEnv(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalEnvFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -1411,8 +1411,8 @@ type internalParentMixed struct{}
 
 func (p *internalParentMixed) Run(_ context.Context) error { return nil }
 
-func (p *internalParentMixed) Subcommands() []Runner {
-	return []Runner{&internalAliasedSubCmd{}, &internalHiddenSubCmd{}}
+func (p *internalParentMixed) Subcommands() []Commander {
+	return []Commander{&internalAliasedSubCmd{}, &internalHiddenSubCmd{}}
 }
 
 func TestSuggestSubcommand_SkipsHidden(t *testing.T) {
@@ -1443,7 +1443,7 @@ func TestDefaultRenderHelp_NoShortFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalNoShortFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -1465,7 +1465,7 @@ func TestDefaultRenderHelp_ExampleNoDescription(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalExampleNoDescCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 
 	text := defaultRenderHelp(cmd, chain, nil, nil, false)
 	assert.Contains(t, text, "$ extest --flag")
@@ -1944,7 +1944,7 @@ func TestParseScalarValue(t *testing.T) {
 func TestFindSubcommand_PrefixMatch(t *testing.T) {
 	t.Parallel()
 
-	subs := []Runner{
+	subs := []Commander{
 		&internalNamedCmd{n: "serve"},
 		&internalNamedCmd{n: "status"},
 		&internalNamedCmd{n: "deploy"},
@@ -1989,7 +1989,7 @@ func (c *internalAliasedForPrefix) Aliases() []string           { return []strin
 func TestFindSubcommand_PrefixMatchAliasAmbiguous(t *testing.T) {
 	t.Parallel()
 
-	subs := []Runner{&internalAliasedForPrefix{}}
+	subs := []Commander{&internalAliasedForPrefix{}}
 	// "de" matches prefix of both "deploy" and alias "dep" — ambiguous in our impl.
 	result := findSubcommand(subs, "de", true, false)
 	assert.Nil(t, result)
@@ -2071,7 +2071,7 @@ func TestVersionRequested(t *testing.T) {
 			t.Parallel()
 
 			resolved := &resolvedCommand{
-				chain:      []Runner{&internalBareCmd{}},
+				chain:      []Commander{&internalBareCmd{}},
 				chainArgs:  [][]string{nil},
 				positional: tt.positional,
 			}
@@ -2090,15 +2090,15 @@ func TestFindVersioner(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		chain []Runner
+		chain []Commander
 		found bool
 	}{
 		"has versioner": {
-			chain: []Runner{&internalVersionedCmd{}},
+			chain: []Commander{&internalVersionedCmd{}},
 			found: true,
 		},
 		"no versioner": {
-			chain: []Runner{&internalBareCmd{}},
+			chain: []Commander{&internalBareCmd{}},
 			found: false,
 		},
 	}
@@ -2127,8 +2127,8 @@ type internalDefaultParent struct {
 
 func (p *internalDefaultParent) Run(_ context.Context) error { return nil }
 func (p *internalDefaultParent) Name() string                { return "app" }
-func (p *internalDefaultParent) Subcommands() []Runner       { return []Runner{p.child} }
-func (p *internalDefaultParent) Fallback() Runner            { return p.def }
+func (p *internalDefaultParent) Subcommands() []Commander       { return []Commander{p.child} }
+func (p *internalDefaultParent) Fallback() Commander            { return p.def }
 
 func TestResolveCommand_Fallback(t *testing.T) {
 	t.Parallel()
@@ -2178,7 +2178,7 @@ func TestDefaultRenderHelp_Negatable(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalNegatableCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -2191,7 +2191,7 @@ func TestDefaultRenderHelp_Enum(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalEnumCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -2204,7 +2204,7 @@ func TestDefaultRenderHelp_Counter(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalCounterCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -2225,25 +2225,25 @@ func (c *internalCatCmd) Description() string         { return c.n + " command" 
 func (c *internalCatCmd) Category() string            { return c.cat }
 
 type internalCatParent struct {
-	subs []Runner
+	subs []Commander
 }
 
 func (p *internalCatParent) Run(_ context.Context) error { return nil }
 func (p *internalCatParent) Name() string                { return "app" }
-func (p *internalCatParent) Subcommands() []Runner       { return p.subs }
+func (p *internalCatParent) Subcommands() []Commander       { return p.subs }
 
 func TestDefaultRenderHelp_Categories(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalCatParent{
-		subs: []Runner{
+		subs: []Commander{
 			&internalNamedCmd{n: "help"},
 			&internalCatCmd{n: "serve", cat: "Server"},
 			&internalCatCmd{n: "stop", cat: "Server"},
 			&internalCatCmd{n: "deploy", cat: "Deploy"},
 		},
 	}
-	chain := []Runner{parent}
+	chain := []Commander{parent}
 	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	// Uncategorized under "Commands:"
@@ -2262,12 +2262,12 @@ func TestDefaultRenderHelp_AllCategorized(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalCatParent{
-		subs: []Runner{
+		subs: []Commander{
 			&internalCatCmd{n: "serve", cat: "Server"},
 			&internalCatCmd{n: "deploy", cat: "Deploy"},
 		},
 	}
-	chain := []Runner{parent}
+	chain := []Commander{parent}
 	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	// No "Commands:" section when all are categorized
@@ -2282,7 +2282,7 @@ func TestRenderSubcommands_AllHidden(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalParentWithHidden{child: &internalHiddenSubCmd{}}
-	chain := []Runner{parent}
+	chain := []Commander{parent}
 	text := defaultRenderHelp(parent, chain, nil, nil, false)
 
 	assert.NotContains(t, text, "Commands:")
@@ -2429,12 +2429,12 @@ func TestParseScalarValue_BadInt64(t *testing.T) {
 
 type internalShortOptParent struct {
 	Verbose bool `flag:"verbose" short:"v"`
-	child   Runner
+	child   Commander
 }
 
 func (p *internalShortOptParent) Run(_ context.Context) error { return nil }
 func (p *internalShortOptParent) Name() string                { return "app" }
-func (p *internalShortOptParent) Subcommands() []Runner       { return []Runner{p.child} }
+func (p *internalShortOptParent) Subcommands() []Commander       { return []Commander{p.child} }
 
 func TestResolveCommand_ShortOptionHandlingInScanPhase(t *testing.T) {
 	t.Parallel()
@@ -2461,7 +2461,7 @@ func (c *internalPrefixAliased) Aliases() []string           { return []string{"
 func TestFindSubcommand_PrefixMatchAlias(t *testing.T) {
 	t.Parallel()
 
-	subs := []Runner{&internalPrefixAliased{}, &internalNamedCmd{n: "status"}}
+	subs := []Commander{&internalPrefixAliased{}, &internalNamedCmd{n: "status"}}
 
 	// "d" matches prefix of "deploy" and alias "dp" — but both are the same command.
 	// In our implementation: first match on "deploy" sets match, second on "dp" sees match != nil → ambiguous.
@@ -2489,7 +2489,7 @@ func (c *internalOnlyAliasPrefix) Aliases() []string           { return []string
 func TestFindSubcommand_PrefixMatchAliasOnly(t *testing.T) {
 	t.Parallel()
 
-	subs := []Runner{&internalOnlyAliasPrefix{}}
+	subs := []Commander{&internalOnlyAliasPrefix{}}
 	// "d" does NOT prefix-match "xdeploy" but DOES prefix-match alias "dp".
 	result := findSubcommand(subs, "d", true, false)
 	require.NotNil(t, result)
@@ -2508,7 +2508,7 @@ func TestDefaultRenderHelp_NegatableNoShort(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalNegatableNoShortCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -2599,16 +2599,16 @@ exit 1`,
 // --- allSubcommands ---
 
 type internalDiscoverParent struct {
-	subs       []Runner
-	discovered []Runner
-	discoverFn func() ([]Runner, error)
+	subs       []Commander
+	discovered []Commander
+	discoverFn func() ([]Commander, error)
 }
 
 func (d *internalDiscoverParent) Run(_ context.Context) error { return nil }
 func (d *internalDiscoverParent) Name() string                { return "root" }
-func (d *internalDiscoverParent) Subcommands() []Runner       { return d.subs }
+func (d *internalDiscoverParent) Subcommands() []Commander       { return d.subs }
 
-func (d *internalDiscoverParent) Discover() ([]Runner, error) {
+func (d *internalDiscoverParent) Discover() ([]Commander, error) {
 	if d.discoverFn != nil {
 		return d.discoverFn()
 	}
@@ -2624,8 +2624,8 @@ func TestAllSubcommands_MergesParentAndDiscoverer(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalDiscoverParent{
-		subs:       []Runner{&internalSimpleCmd{n: "builtin"}},
-		discovered: []Runner{&internalSimpleCmd{n: "plugin"}},
+		subs:       []Commander{&internalSimpleCmd{n: "builtin"}},
+		discovered: []Commander{&internalSimpleCmd{n: "plugin"}},
 	}
 
 	subs, err := allSubcommands(parent)
@@ -2641,8 +2641,8 @@ func TestAllSubcommands_BuiltinWinsCollision(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalDiscoverParent{
-		subs:       []Runner{&internalSimpleCmd{n: "deploy"}},
-		discovered: []Runner{&internalSimpleCmd{n: "deploy"}},
+		subs:       []Commander{&internalSimpleCmd{n: "deploy"}},
+		discovered: []Commander{&internalSimpleCmd{n: "deploy"}},
 	}
 
 	subs, err := allSubcommands(parent)
@@ -2655,7 +2655,7 @@ func TestAllSubcommands_DiscoverError(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalDiscoverParent{
-		discoverFn: func() ([]Runner, error) {
+		discoverFn: func() ([]Commander, error) {
 			return nil, assert.AnError
 		},
 	}
@@ -2665,17 +2665,17 @@ func TestAllSubcommands_DiscoverError(t *testing.T) {
 	assert.Empty(t, subs)
 }
 
-type internalParentOnlyCmd struct{ subs []Runner }
+type internalParentOnlyCmd struct{ subs []Commander }
 
 func (p *internalParentOnlyCmd) Run(_ context.Context) error { return nil }
 func (p *internalParentOnlyCmd) Name() string                { return "root" }
-func (p *internalParentOnlyCmd) Subcommands() []Runner       { return p.subs }
+func (p *internalParentOnlyCmd) Subcommands() []Commander       { return p.subs }
 
 func TestAllSubcommands_ParentOnly(t *testing.T) {
 	t.Parallel()
 
 	p := &internalParentOnlyCmd{
-		subs: []Runner{&internalSimpleCmd{n: "serve"}},
+		subs: []Commander{&internalSimpleCmd{n: "serve"}},
 	}
 
 	subs, err := allSubcommands(p)
@@ -2684,12 +2684,12 @@ func TestAllSubcommands_ParentOnly(t *testing.T) {
 	assert.Equal(t, "serve", resolveInfo(subs[0]).name)
 }
 
-type internalDiscovererOnlyCmd struct{ discovered []Runner }
+type internalDiscovererOnlyCmd struct{ discovered []Commander }
 
 func (d *internalDiscovererOnlyCmd) Run(_ context.Context) error { return nil }
 func (d *internalDiscovererOnlyCmd) Name() string                { return "root" }
 
-func (d *internalDiscovererOnlyCmd) Discover() ([]Runner, error) {
+func (d *internalDiscovererOnlyCmd) Discover() ([]Commander, error) {
 	return d.discovered, nil
 }
 
@@ -2697,7 +2697,7 @@ func TestAllSubcommands_DiscovererOnly(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalDiscovererOnlyCmd{
-		discovered: []Runner{&internalSimpleCmd{n: "plugin-a"}, &internalSimpleCmd{n: "plugin-b"}},
+		discovered: []Commander{&internalSimpleCmd{n: "plugin-a"}, &internalSimpleCmd{n: "plugin-b"}},
 	}
 
 	subs, err := allSubcommands(cmd)
@@ -2718,15 +2718,15 @@ func TestHelp_IncludesDiscoveredCommands(t *testing.T) {
 	t.Parallel()
 
 	parent := &internalDiscoverParent{
-		subs: []Runner{&internalSimpleCmd{n: "serve"}},
-		discovered: []Runner{
+		subs: []Commander{&internalSimpleCmd{n: "serve"}},
+		discovered: []Commander{
 			&ExternalCommand{Cmd: "deploy", Desc: "Deploy things"},
 			&ExternalCommand{Cmd: "migrate", Desc: "Run migrations"},
 		},
 	}
 
 	flags := ScanFlags(parent)
-	help := defaultRenderHelp(parent, []Runner{parent}, flags, nil, false)
+	help := defaultRenderHelp(parent, []Commander{parent}, flags, nil, false)
 
 	assert.Contains(t, help, "serve")
 	assert.Contains(t, help, "deploy")
@@ -2755,7 +2755,7 @@ func TestInheritFlags_NonStructAncestor(t *testing.T) {
 
 	parent := RunFunc(func(_ context.Context) error { return nil })
 	child := &internalInheritChild{}
-	chain := []Runner{parent, child}
+	chain := []Commander{parent, child}
 	provided := []map[string]bool{nil, nil}
 
 	inheritFlags(chain, provided)
@@ -2769,7 +2769,7 @@ func TestInheritFlags_NilProvidedMap(t *testing.T) {
 
 	parent := &internalInheritParent{Env: "prod"}
 	child := &internalInheritChild{}
-	chain := []Runner{parent, child}
+	chain := []Commander{parent, child}
 	// Parent provided "env", child provided map is nil.
 	provided := []map[string]bool{{"env": true}, nil}
 
@@ -3052,7 +3052,7 @@ func TestDefaultRenderHelp_HiddenFlagFiltered(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalHiddenFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3072,7 +3072,7 @@ func TestDefaultRenderHelp_AllFlagsHidden(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalAllHiddenFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3112,7 +3112,7 @@ func TestDefaultRenderHelp_DeprecatedFlag(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalDeprecatedFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3152,7 +3152,7 @@ func TestDefaultRenderHelp_FlagCategories(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalFlagCategoryCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3181,7 +3181,7 @@ func TestDefaultRenderHelp_AllFlagsCategorized(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalAllCatFlagCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3359,7 +3359,7 @@ func TestScanArgs_AutoName(t *testing.T) {
 		autoArgCmd
 		internalBareCmd
 	}{}
-	// We need a proper Runner for ScanArgs.
+	// We need a proper Commander for ScanArgs.
 	// ScanArgs only reads type info, so we can use the raw struct.
 	defs := ScanArgs(&struct {
 		OutputFile string `arg:"" help:"Output file"`
@@ -3639,8 +3639,8 @@ func TestAllSubcommands_BuiltinAliasBlocksDiscovered(t *testing.T) {
 
 	// Builtin "deploy" has alias "d". Discovered command named "d" should be blocked.
 	parent := &internalDiscoverParent{
-		subs:       []Runner{&internalAliasedCmd{n: "deploy", aliases: []string{"d", "dep"}}},
-		discovered: []Runner{&internalSimpleCmd{n: "d"}},
+		subs:       []Commander{&internalAliasedCmd{n: "deploy", aliases: []string{"d", "dep"}}},
+		discovered: []Commander{&internalSimpleCmd{n: "d"}},
 	}
 
 	subs, err := allSubcommands(parent)
@@ -3654,7 +3654,7 @@ func TestAllSubcommands_DiscoveredAliasesTracked(t *testing.T) {
 
 	// Discovered "plugin" has alias "p". A second discovered "p" should be blocked.
 	parent := &internalDiscoverParent{
-		discovered: []Runner{
+		discovered: []Commander{
 			&internalAliasedCmd{n: "plugin", aliases: []string{"p"}},
 			&internalSimpleCmd{n: "p"},
 		},
@@ -3761,7 +3761,7 @@ func TestStoreFlags(t *testing.T) {
 
 	parent := &internalStoreFlagsParent{Env: "prod", Verbose: true}
 	child := &internalStoreFlagsChild{Port: 9090}
-	chain := []Runner{parent, child}
+	chain := []Commander{parent, child}
 
 	ctx := storeFlags(context.Background(), chain)
 
@@ -3782,7 +3782,7 @@ func TestStoreFlags_NonStructSkipped(t *testing.T) {
 	t.Parallel()
 
 	fn := RunFunc(func(_ context.Context) error { return nil })
-	chain := []Runner{fn}
+	chain := []Commander{fn}
 
 	ctx := storeFlags(context.Background(), chain)
 
@@ -3799,7 +3799,7 @@ func TestStoreFlags_ChildOverwritesParent(t *testing.T) {
 		Env string `flag:"env"`
 		internalBareCmd
 	}{Env: "prod"}
-	chain := []Runner{parent, child}
+	chain := []Commander{parent, child}
 
 	ctx := storeFlags(context.Background(), chain)
 
@@ -3814,7 +3814,7 @@ func TestStoreFlags_AutoDerivedName(t *testing.T) {
 		OutputFormat string `flag:""`
 		internalBareCmd
 	}{OutputFormat: "json"}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 
 	ctx := storeFlags(context.Background(), chain)
 
@@ -3850,7 +3850,7 @@ func TestDefaultRenderHelp_AppendHelp(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalSectionedCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3887,7 +3887,7 @@ func TestDefaultRenderHelp_PrependHelp(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalPrependCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3917,7 +3917,7 @@ func TestDefaultRenderHelp_PrependAndAppend(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBothSectionsCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3939,7 +3939,7 @@ func TestDefaultRenderHelp_NoSections(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalBareCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -3952,7 +3952,7 @@ func TestDefaultRenderHelp_WithArgs(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalArgHelpCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -4160,7 +4160,7 @@ type globalFlagParent struct {
 
 func (c *globalFlagParent) Run(_ context.Context) error { return nil }
 func (c *globalFlagParent) Name() string                { return "app" }
-func (c *globalFlagParent) Subcommands() []Runner       { return []Runner{&globalFlagChild{}} }
+func (c *globalFlagParent) Subcommands() []Commander       { return []Commander{&globalFlagChild{}} }
 
 type globalFlagChild struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
@@ -4174,26 +4174,26 @@ func TestCollectGlobalFlags(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		chain     []Runner
+		chain     []Commander
 		leafFlags []FlagDef
 		wantNames []string
 	}{
 		"parent flags shown": {
-			chain:     []Runner{&globalFlagParent{}, &globalFlagChild{}},
+			chain:     []Commander{&globalFlagParent{}, &globalFlagChild{}},
 			leafFlags: ScanFlags(&globalFlagChild{}),
 			wantNames: []string{"env"}, // format is deduplicated, secret is hidden
 		},
 		"single command no globals": {
-			chain:     []Runner{&globalFlagParent{}},
+			chain:     []Commander{&globalFlagParent{}},
 			leafFlags: ScanFlags(&globalFlagParent{}),
 			wantNames: nil,
 		},
 		"all parent flags hidden": {
-			chain: []Runner{
+			chain: []Commander{
 				&struct {
-					Runner
+					Commander
 					Secret string `flag:"secret" hidden:"true"`
-				}{Runner: &globalFlagChild{}},
+				}{Commander: &globalFlagChild{}},
 				&globalFlagChild{},
 			},
 			leafFlags: ScanFlags(&globalFlagChild{}),
@@ -4222,7 +4222,7 @@ func TestDefaultRenderHelp_GlobalFlags(t *testing.T) {
 
 	parent := &globalFlagParent{}
 	child := &globalFlagChild{}
-	chain := []Runner{parent, child}
+	chain := []Commander{parent, child}
 	leafFlags := ScanFlags(child)
 	globalFlags := collectGlobalFlags(chain, leafFlags)
 
@@ -4260,7 +4260,7 @@ func TestDefaultRenderHelp_NoGlobalFlags(t *testing.T) {
 	t.Parallel()
 
 	cmd := &globalFlagChild{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -4295,7 +4295,7 @@ func TestDefaultRenderHelp_MultiLevelGlobalFlags(t *testing.T) {
 	gp := &multiLevelGrandparent{}
 	p := &multiLevelParent{}
 	child := &multiLevelChild{}
-	chain := []Runner{gp, p, child}
+	chain := []Commander{gp, p, child}
 	leafFlags := ScanFlags(child)
 	globalFlags := collectGlobalFlags(chain, leafFlags)
 
@@ -4536,7 +4536,7 @@ func TestDefaultRenderHelp_RequiredFlagAsterisk(t *testing.T) {
 	t.Parallel()
 
 	cmd := &requiredIndicatorCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -4649,7 +4649,7 @@ func TestEnvOnly_NotInHelp(t *testing.T) {
 
 	cmd := &envOnlyCmd{}
 	flags := ScanFlags(cmd)
-	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	text := defaultRenderHelp(cmd, []Commander{cmd}, flags, nil, false)
 	assert.NotContains(t, text, "token")
 	assert.NotContains(t, text, "TEST_TOKEN")
 	assert.Contains(t, text, "port")
@@ -4695,8 +4695,8 @@ type envOnlyParentCmd struct {
 
 func (c *envOnlyParentCmd) Run(_ context.Context) error { return nil }
 func (c *envOnlyParentCmd) Name() string                { return "parent" }
-func (c *envOnlyParentCmd) Subcommands() []Runner {
-	return []Runner{&envOnlyChildCmd{}}
+func (c *envOnlyParentCmd) Subcommands() []Commander {
+	return []Commander{&envOnlyChildCmd{}}
 }
 
 type envOnlyChildCmd struct {
@@ -4718,7 +4718,7 @@ func TestEnvOnly_InheritFlagsSkips(t *testing.T) {
 // --- Leaf context accessor ---
 
 type leafParentCmd struct {
-	capturedLeaf Runner
+	capturedLeaf Commander
 }
 
 func (c *leafParentCmd) Run(_ context.Context) error { return nil }
@@ -4728,8 +4728,8 @@ func (c *leafParentCmd) Before(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
 
-func (c *leafParentCmd) Subcommands() []Runner {
-	return []Runner{&leafChildCmd{}}
+func (c *leafParentCmd) Subcommands() []Commander {
+	return []Commander{&leafChildCmd{}}
 }
 
 type leafChildCmd struct{}
@@ -4767,7 +4767,7 @@ func TestLeaf_NilWithoutContext(t *testing.T) {
 }
 
 type leafCaptureCmd struct {
-	captured Runner
+	captured Commander
 }
 
 func (c *leafCaptureCmd) Run(ctx context.Context) error {
@@ -4789,13 +4789,13 @@ func TestLeaf_AvailableInRun(t *testing.T) {
 }
 
 type leafRunParent struct {
-	child Runner
+	child Commander
 }
 
 func (c *leafRunParent) Run(_ context.Context) error { return nil }
 func (c *leafRunParent) Name() string                { return "app" }
-func (c *leafRunParent) Subcommands() []Runner {
-	return []Runner{c.child}
+func (c *leafRunParent) Subcommands() []Commander {
+	return []Commander{c.child}
 }
 
 // --- Leaf for auth pattern ---
@@ -4826,8 +4826,8 @@ func (c *authRootCmd) Before(ctx context.Context) (context.Context, error) {
 	return ctx, nil
 }
 
-func (c *authRootCmd) Subcommands() []Runner {
-	return []Runner{&unauthedCmd{}, &authedCmd{}, &rbacCmd{}}
+func (c *authRootCmd) Subcommands() []Commander {
+	return []Commander{&unauthedCmd{}, &authedCmd{}, &rbacCmd{}}
 }
 
 type unauthedCmd struct{}
@@ -4897,7 +4897,7 @@ func TestDefaultRenderHelp_NoAsteriskWithoutRequired(t *testing.T) {
 	t.Parallel()
 
 	cmd := &noRequiredFlagsCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -5193,7 +5193,7 @@ func TestMask_InHelpOutput(t *testing.T) {
 
 	cmd := &maskCmd{}
 	flags := ScanFlags(cmd)
-	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	text := defaultRenderHelp(cmd, []Commander{cmd}, flags, nil, false)
 	assert.Contains(t, text, "(default: ****)")
 	assert.NotContains(t, text, "hunter2")
 }
@@ -5328,7 +5328,7 @@ func TestArgHelp_ShowsEnumDefaultEnv(t *testing.T) {
 
 	cmd := &argHelpCmd{}
 	flags := ScanFlags(cmd)
-	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	text := defaultRenderHelp(cmd, []Commander{cmd}, flags, nil, false)
 	assert.Contains(t, text, "[prod|staging|dev]")
 	assert.Contains(t, text, "(default: dev)")
 	assert.Contains(t, text, "(env: DEPLOY_TARGET)")
@@ -5437,7 +5437,7 @@ func TestSep_InHelpOutput(t *testing.T) {
 
 	cmd := &sepCmd{}
 	flags := ScanFlags(cmd)
-	text := defaultRenderHelp(cmd, []Runner{cmd}, flags, nil, false)
+	text := defaultRenderHelp(cmd, []Commander{cmd}, flags, nil, false)
 	assert.Contains(t, text, `(separator: ",")`)
 }
 
@@ -5512,7 +5512,7 @@ func TestAlt_InHelpOutput(t *testing.T) {
 	t.Parallel()
 
 	cmd := &altCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -5600,7 +5600,7 @@ func TestEmbedded_InHelpOutput(t *testing.T) {
 	t.Parallel()
 
 	cmd := &embeddedListCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -5615,7 +5615,7 @@ func TestEmbedded_InContext(t *testing.T) {
 	_, _, err := defaultParseFlags(cmd, []string{"--format", "json"}, defaults())
 	require.NoError(t, err)
 
-	ctx := storeFlags(context.Background(), []Runner{cmd})
+	ctx := storeFlags(context.Background(), []Commander{cmd})
 	assert.Equal(t, "json", Get[string](ctx, "format"))
 	assert.Equal(t, 50, Get[int](ctx, "limit"))
 }
@@ -5707,7 +5707,7 @@ func TestPrefix_InHelpOutput(t *testing.T) {
 	t.Parallel()
 
 	cmd := &prefixServeCmd{}
-	chain := []Runner{cmd}
+	chain := []Commander{cmd}
 	flags := ScanFlags(cmd)
 
 	text := defaultRenderHelp(cmd, chain, flags, nil, false)
@@ -5723,7 +5723,7 @@ func TestPrefix_InContext(t *testing.T) {
 	_, _, err := defaultParseFlags(cmd, []string{"--db-host", "remote"}, defaults())
 	require.NoError(t, err)
 
-	ctx := storeFlags(context.Background(), []Runner{cmd})
+	ctx := storeFlags(context.Background(), []Commander{cmd})
 	assert.Equal(t, "remote", Get[string](ctx, "db-host"))
 	assert.Equal(t, 5432, Get[int](ctx, "db-port"))
 	assert.Equal(t, 8080, Get[int](ctx, "port"))
@@ -6373,7 +6373,7 @@ func TestUintFlags_EnvVars(t *testing.T) {
 		Port uint `flag:"port" env:"TEST_PORT"`
 	}
 	c := &cmd{}
-	// cmd doesn't implement Runner, use the struct directly through reflection
+	// cmd doesn't implement Commander, use the struct directly through reflection
 	v := reflect.ValueOf(c).Elem()
 	fields := buildFieldMap(v.Type())
 	require.NoError(t, applyEnv(v, fields, ""))
