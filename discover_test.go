@@ -41,7 +41,7 @@ fi`)
 	// Subdirectory should be skipped.
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0o750))
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dir))
+	runners, err := cli.Discover(cli.WithDir(dir))
 	require.NoError(t, err)
 	require.Len(t, runners, 2)
 }
@@ -49,7 +49,7 @@ fi`)
 func TestDiscover_MissingDirectory(t *testing.T) {
 	t.Parallel()
 
-	runners, err := cli.Discover("myapp", cli.WithDir("/nonexistent/path/to/plugins"))
+	runners, err := cli.Discover(cli.WithDir("/nonexistent/path/to/plugins"))
 	require.NoError(t, err)
 	assert.Empty(t, runners)
 }
@@ -76,7 +76,7 @@ if [ "$1" = "--cli-info" ]; then
   exit 0
 fi`)
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dir1), cli.WithDir(dir2))
+	runners, err := cli.Discover(cli.WithDir(dir1), cli.WithDir(dir2))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -111,7 +111,7 @@ echo hi`)
 
 	t.Setenv("PATH", dir)
 
-	runners, err := cli.Discover("myapp", cli.WithPATH())
+	runners, err := cli.Discover(cli.WithPATH("myapp"))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -142,7 +142,7 @@ fi`)
 
 	t.Setenv("PATH", dirPATH)
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dirPlugins), cli.WithPATH())
+	runners, err := cli.Discover(cli.WithDir(dirPlugins), cli.WithPATH("myapp"))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -168,7 +168,7 @@ if [ "$1" = "--metadata" ]; then
   exit 0
 fi`)
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dir), cli.WithInfoFlag("--metadata"))
+	runners, err := cli.Discover(cli.WithDir(dir), cli.WithInfoFlag("--metadata"))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -305,7 +305,7 @@ if [ "$1" = "--cli-info" ]; then
   exit 0
 fi`)
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dir))
+	runners, err := cli.Discover(cli.WithDir(dir))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -330,7 +330,7 @@ func TestDiscover_NoInfoSupport(t *testing.T) {
 	writePlugin(t, filepath.Join(dir, "simple"), `#!/bin/sh
 echo "I do stuff"`)
 
-	runners, err := cli.Discover("myapp", cli.WithDir(dir))
+	runners, err := cli.Discover(cli.WithDir(dir))
 	require.NoError(t, err)
 	require.Len(t, runners, 1)
 
@@ -357,7 +357,7 @@ func TestDiscover_UnreadableDirectory(t *testing.T) {
 		_ = os.Chmod(unreadable, 0o750) //nolint:errcheck,gosec // best-effort cleanup
 	})
 
-	runners, err := cli.Discover("myapp", cli.WithDir(unreadable))
+	runners, err := cli.Discover(cli.WithDir(unreadable))
 	require.Error(t, err)
 	assert.Nil(t, runners)
 }
@@ -379,7 +379,7 @@ true`)
 	writePlugin(t, filepath.Join(dir2, "b"), `#!/bin/sh
 true`)
 
-	runners, err := cli.Discover("myapp", cli.WithDirs(dir1, dir2))
+	runners, err := cli.Discover(cli.WithDirs(dir1, dir2))
 	require.NoError(t, err)
 	assert.Len(t, runners, 2)
 }
@@ -391,9 +391,9 @@ type discoverApp struct {
 	discovered []cli.Commander
 }
 
-func (d *discoverApp) Run(_ context.Context) error { return nil }
-func (d *discoverApp) Name() string                { return "myapp" }
-func (d *discoverApp) Subcommands() []cli.Commander   { return d.builtins }
+func (d *discoverApp) Run(_ context.Context) error  { return nil }
+func (d *discoverApp) Name() string                 { return "myapp" }
+func (d *discoverApp) Subcommands() []cli.Commander { return d.builtins }
 
 func (d *discoverApp) Discover() ([]cli.Commander, error) {
 	return d.discovered, nil
@@ -408,7 +408,7 @@ func (d *discoverFromDirApp) Run(_ context.Context) error { return nil }
 func (d *discoverFromDirApp) Name() string                { return d.prefix }
 
 func (d *discoverFromDirApp) Discover() ([]cli.Commander, error) {
-	return cli.Discover(d.prefix, cli.WithDir(d.dir))
+	return cli.Discover(cli.WithDir(d.dir))
 }
 
 func writePlugin(t *testing.T, path, content string) {

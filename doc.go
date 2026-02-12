@@ -359,9 +359,9 @@
 // PATH for plugin executables:
 //
 //	func (a *App) Discover() ([]cli.Commander, error) {
-//	    return cli.Discover("myapp",
+//	    return cli.Discover(
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
-//	        cli.WithPATH(),
+//	        cli.WithPATH("myapp"),
 //	    )
 //	}
 //

@@ -146,9 +146,9 @@ type Fallbacker interface {
 // Use [Discover] to scan directories and PATH for plugin executables:
 //
 //	func (a *App) Discover() ([]Commander, error) {
-//	    return cli.Discover("myapp",
+//	    return cli.Discover(
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
-//	        cli.WithPATH(),
+//	        cli.WithPATH("myapp"),
 //	    )
 //	}
 type Discoverer interface {

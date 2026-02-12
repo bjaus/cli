@@ -69,9 +69,9 @@ func (e *ExternalCommand) Run(ctx context.Context) error {
 type DiscoverOption func(*discoverConfig)
 
 type discoverConfig struct {
-	dirs     []string
-	scanPATH bool
-	infoFlag string
+	dirs       []string
+	pathPrefix string // non-empty enables PATH scanning
+	infoFlag   string
 }
 
 // WithDir adds a directory to scan for plugin executables. Directories
@@ -100,9 +100,9 @@ func WithDirs(dirs ...string) DiscoverOption {
 //
 // PATH-discovered plugins have lower priority than directory-discovered
 // plugins. Unreadable PATH entries are silently skipped.
-func WithPATH() DiscoverOption {
+func WithPATH(prefix string) DiscoverOption {
 	return func(c *discoverConfig) {
-		c.scanPATH = true
+		c.pathPrefix = prefix
 	}
 }
 
@@ -146,12 +146,12 @@ func WithInfoFlag(flag string) DiscoverOption {
 // Example:
 //
 //	func (a *App) Discover() ([]cli.Commander, error) {
-//	    return cli.Discover("myapp",
+//	    return cli.Discover(
 //	        cli.WithDirs(cli.DefaultDirs("myapp")...),
-//	        cli.WithPATH(),
+//	        cli.WithPATH("myapp"),
 //	    )
 //	}
-func Discover(prefix string, opts ...DiscoverOption) ([]Commander, error) {
+func Discover(opts ...DiscoverOption) ([]Commander, error) {
 	cfg := &discoverConfig{
 		infoFlag: "--cli-info",
 	}
@@ -172,8 +172,8 @@ func Discover(prefix string, opts ...DiscoverOption) ([]Commander, error) {
 	}
 
 	// Scan PATH (lower priority).
-	if cfg.scanPATH {
-		found := discoverPATH(prefix, seen, cfg.infoFlag)
+	if cfg.pathPrefix != "" {
+		found := discoverPATH(cfg.pathPrefix, seen, cfg.infoFlag)
 		runners = append(runners, found...)
 	}
 
@@ -190,7 +190,7 @@ func Discover(prefix string, opts ...DiscoverOption) ([]Commander, error) {
 // Missing directories are silently skipped by [Discover]. The returned
 // paths are suitable for passing directly to [WithDirs]:
 //
-//	cli.Discover("myapp", cli.WithDirs(cli.DefaultDirs("myapp")...))
+//	cli.Discover(cli.WithDirs(cli.DefaultDirs("myapp")...))
 func DefaultDirs(name string) []string {
 	dirs := []string{
 		filepath.Join(".", name, "plugins"),
