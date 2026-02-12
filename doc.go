@@ -464,8 +464,16 @@
 //
 // Commands implementing [Completer] can provide custom completion candidates.
 // When a command implements Completer, its Complete method is called during
-// tab-completion and the returned strings are offered as candidates. The
-// returned [ShellCompDirective] controls shell behavior (e.g. suppressing
-// space or file completion). If Complete returns nil completions, the
-// framework falls back to static completion of subcommands and flags.
+// tab-completion. Return a [CompletionResult] with candidates, optional active
+// help messages, and a directive. Use the convenience constructors [Completions],
+// [CompletionsWithDesc], and [NoCompletions] to build results:
+//
+//	func (c *DeployCmd) Complete(ctx context.Context, args []string) cli.CompletionResult {
+//	    return cli.Completions("dev", "staging", "prod").
+//	        WithActiveHelp("Select deployment environment")
+//	}
+//
+// Active help messages are displayed by the shell as guidance during completion.
+// If Complete returns an empty result (or [NoCompletions]), the framework falls
+// back to static completion of subcommands and flags.
 package cli

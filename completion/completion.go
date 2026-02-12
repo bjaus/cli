@@ -25,6 +25,8 @@ import (
 )
 
 // Bash generates a bash completion script that calls the binary at runtime.
+// Supports active help messages (lines prefixed with "_activeHelp_ ") which are
+// displayed as guidance during completion.
 func Bash(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
@@ -46,6 +48,16 @@ func Bash(_ cli.Commander, appName string) string {
 	b.WriteString("    local directive\n")
 	b.WriteString("    directive=$(echo \"$out\" | tail -n1)\n")
 	b.WriteString("    out=$(echo \"$out\" | head -n-1)\n\n")
+
+	// Handle active help messages (lines starting with "_activeHelp_ ").
+	b.WriteString("    local activeHelp\n")
+	b.WriteString("    activeHelp=$(echo \"$out\" | grep '^_activeHelp_ ' | sed 's/^_activeHelp_ //')\n")
+	b.WriteString("    out=$(echo \"$out\" | grep -v '^_activeHelp_ ')\n\n")
+
+	// Display active help if present (bash 4.4+ supports COMPREPLY modifications).
+	b.WriteString("    if [[ -n \"$activeHelp\" ]]; then\n")
+	b.WriteString("        printf '\\n%s\\n' \"$activeHelp\" >&2\n")
+	b.WriteString("    fi\n\n")
 
 	// Strip tab-separated descriptions for compgen.
 	b.WriteString("    local candidates\n")
@@ -87,6 +99,8 @@ func Bash(_ cli.Commander, appName string) string {
 }
 
 // Zsh generates a zsh completion script that calls the binary at runtime.
+// Supports active help messages (lines prefixed with "_activeHelp_ ") which are
+// displayed as guidance during completion.
 func Zsh(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
@@ -95,6 +109,7 @@ func Zsh(_ cli.Commander, appName string) string {
 
 	fmt.Fprintf(&b, "_%s() {\n", safe)
 	b.WriteString("    local -a completions\n")
+	b.WriteString("    local -a activeHelp\n")
 	b.WriteString("    local directive\n\n")
 
 	// Call the binary with __complete.
@@ -109,8 +124,11 @@ func Zsh(_ cli.Commander, appName string) string {
 	b.WriteString("    out=${out%$'\\n'*}\n\n")
 
 	// Parse candidates: each line is "candidate\\tdescription".
+	// Filter out active help messages (lines starting with "_activeHelp_ ").
 	b.WriteString("    while IFS=$'\\t' read -r comp desc; do\n")
-	b.WriteString("        if [[ -n \"$comp\" ]]; then\n")
+	b.WriteString("        if [[ \"$comp\" == _activeHelp_* ]]; then\n")
+	b.WriteString("            activeHelp+=(\"${comp#_activeHelp_ }\")\n")
+	b.WriteString("        elif [[ -n \"$comp\" ]]; then\n")
 	b.WriteString("            if [[ -n \"$desc\" ]]; then\n")
 	b.WriteString("                completions+=(\"${comp}:${desc}\")\n")
 	b.WriteString("            else\n")
@@ -118,6 +136,11 @@ func Zsh(_ cli.Commander, appName string) string {
 	b.WriteString("            fi\n")
 	b.WriteString("        fi\n")
 	b.WriteString("    done <<< \"$out\"\n\n")
+
+	// Display active help messages.
+	b.WriteString("    if (( ${#activeHelp} > 0 )); then\n")
+	b.WriteString("        _message -r \"${(F)activeHelp}\"\n")
+	b.WriteString("    fi\n\n")
 
 	// Handle directives (bitfield).
 	b.WriteString("    local dir_val=${directive#:}\n\n")
@@ -147,6 +170,8 @@ func Zsh(_ cli.Commander, appName string) string {
 }
 
 // Fish generates a fish completion script that calls the binary at runtime.
+// Supports active help messages (lines prefixed with "_activeHelp_ ") which are
+// displayed as guidance during completion.
 func Fish(_ cli.Commander, appName string) string {
 	var b strings.Builder
 	safe := bashSafe(appName)
@@ -159,6 +184,16 @@ func Fish(_ cli.Commander, appName string) string {
 	b.WriteString("    set -e out[-1]\n\n")
 
 	b.WriteString("    set -l dir_val (string replace ':' '' $directive)\n\n")
+
+	// Handle active help messages (lines starting with "_activeHelp_ ").
+	b.WriteString("    for line in $out\n")
+	b.WriteString("        if string match -q '_activeHelp_ *' $line\n")
+	b.WriteString("            set -l msg (string replace '_activeHelp_ ' '' $line)\n")
+	b.WriteString("            # Fish displays active help in the pager.\n")
+	b.WriteString("            printf '%s\\n' $msg >&2\n")
+	b.WriteString("        end\n")
+	b.WriteString("    end\n")
+	b.WriteString("    set out (string match -rv '^_activeHelp_ ' $out)\n\n")
 
 	// FilterDirs (32)
 	b.WriteString("    if test (math \"$dir_val & 32\") -ne 0\n")
@@ -183,6 +218,8 @@ func Fish(_ cli.Commander, appName string) string {
 }
 
 // PowerShell generates a PowerShell completion script that calls the binary at runtime.
+// Supports active help messages (lines prefixed with "_activeHelp_ ") which are
+// displayed as guidance during completion.
 func PowerShell(_ cli.Commander, appName string) string {
 	var b strings.Builder
 
@@ -200,6 +237,22 @@ func PowerShell(_ cli.Commander, appName string) string {
 	b.WriteString("    $directive = $lines[-1]\n")
 	b.WriteString("    $candidates = $lines[0..($lines.Count - 2)]\n\n")
 
+	// Handle active help messages (lines starting with "_activeHelp_ ").
+	b.WriteString("    $activeHelp = @()\n")
+	b.WriteString("    $completions = @()\n")
+	b.WriteString("    foreach ($line in $candidates) {\n")
+	b.WriteString("        if ($line.StartsWith('_activeHelp_ ')) {\n")
+	b.WriteString("            $activeHelp += $line.Substring(13)\n")
+	b.WriteString("        } else {\n")
+	b.WriteString("            $completions += $line\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n\n")
+
+	// Display active help as a tooltip if available.
+	b.WriteString("    if ($activeHelp.Count -gt 0) {\n")
+	b.WriteString("        Write-Host ($activeHelp -join \"`n\") -ForegroundColor Cyan\n")
+	b.WriteString("    }\n\n")
+
 	// Parse directive value.
 	b.WriteString("    $dirVal = [int]($directive -replace ':', '')\n\n")
 
@@ -213,7 +266,7 @@ func PowerShell(_ cli.Commander, appName string) string {
 
 	// FilterFileExt (16)
 	b.WriteString("    if ($dirVal -band 16) {\n")
-	b.WriteString("        foreach ($ext in $candidates) {\n")
+	b.WriteString("        foreach ($ext in $completions) {\n")
 	b.WriteString("            Get-ChildItem -File -Filter \"*$ext\" | ForEach-Object {\n")
 	b.WriteString("                [System.Management.Automation.CompletionResult]::new($_.Name, $_.Name, 'ProviderItem', $_.Name)\n")
 	b.WriteString("            }\n")
@@ -222,7 +275,7 @@ func PowerShell(_ cli.Commander, appName string) string {
 	b.WriteString("    }\n\n")
 
 	// Create CompletionResult for each candidate.
-	b.WriteString("    foreach ($line in $candidates) {\n")
+	b.WriteString("    foreach ($line in $completions) {\n")
 	b.WriteString("        $parts = $line -split \"`t\", 2\n")
 	b.WriteString("        $comp = $parts[0]\n")
 	b.WriteString("        $desc = if ($parts.Count -gt 1) { $parts[1] } else { $comp }\n")

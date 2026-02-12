@@ -28,20 +28,103 @@ const (
 	ShellCompDirectiveFilterDirs
 )
 
-// RuntimeComplete generates completion candidates for the given args and writes
-// them to w. Each candidate is one line, optionally followed by a tab and
-// description. The last line is a directive in the format ":<int>".
-func RuntimeComplete(ctx context.Context, root Commander, args []string, w io.Writer) {
-	completions, directive := computeCompletions(ctx, root, args)
-	for _, c := range completions {
-		fmt.Fprintln(w, c) //nolint:errcheck // best-effort completion output
-	}
-	fmt.Fprintf(w, ":%d\n", int(directive)) //nolint:errcheck
+// Completion represents a single shell completion candidate.
+type Completion struct {
+	Value       string // the completion value
+	Description string // optional description shown in shell
 }
 
-// computeCompletions resolves the command chain and returns completion
-// candidates with a directive.
-func computeCompletions(ctx context.Context, root Commander, args []string) ([]string, ShellCompDirective) {
+// CompletionResult holds completion candidates and metadata.
+// Returned by Completer.Complete and FlagCompleter.CompleteFlag.
+type CompletionResult struct {
+	Completions []Completion       // completion candidates
+	ActiveHelp  []string           // contextual hints shown during completion
+	Directive   ShellCompDirective // controls shell behavior
+}
+
+// Completions returns a CompletionResult with the given values.
+// Use for simple completions without descriptions.
+//
+//	return cli.Completions("foo", "bar", "baz")
+func Completions(values ...string) CompletionResult {
+	comps := make([]Completion, len(values))
+	for i, v := range values {
+		comps[i] = Completion{Value: v}
+	}
+	return CompletionResult{
+		Completions: comps,
+		Directive:   ShellCompDirectiveNoFileComp,
+	}
+}
+
+// CompletionsWithDesc returns a CompletionResult with the given completions.
+// Use for completions with descriptions.
+//
+//	return cli.CompletionsWithDesc(
+//	    cli.Completion{Value: "us-east-1", Description: "N. Virginia"},
+//	    cli.Completion{Value: "us-west-2", Description: "Oregon"},
+//	)
+func CompletionsWithDesc(comps ...Completion) CompletionResult {
+	return CompletionResult{
+		Completions: comps,
+		Directive:   ShellCompDirectiveNoFileComp,
+	}
+}
+
+// NoCompletions returns an empty CompletionResult that falls through to
+// default completion behavior (e.g., file completion).
+func NoCompletions() CompletionResult {
+	return CompletionResult{
+		Directive: ShellCompDirectiveDefault,
+	}
+}
+
+// WithDirective returns a copy of the result with the given directive.
+func (r CompletionResult) WithDirective(d ShellCompDirective) CompletionResult {
+	r.Directive = d
+	return r
+}
+
+// WithActiveHelp returns a copy of the result with active help messages.
+// Active help messages are displayed by the shell during completion to provide
+// contextual guidance. Supported by bash (4.4+), zsh, and fish.
+//
+//	return cli.Completions("dev", "staging", "prod").
+//	    WithActiveHelp("Select deployment target")
+func (r CompletionResult) WithActiveHelp(messages ...string) CompletionResult {
+	r.ActiveHelp = append(r.ActiveHelp, messages...)
+	return r
+}
+
+// activeHelpPrefix is prepended to active help messages. Shells recognize
+// this prefix and display the message as guidance rather than a completion.
+const activeHelpPrefix = "_activeHelp_ "
+
+// RuntimeComplete generates completion candidates for the given args and writes
+// them to w. Each candidate is one line, optionally followed by a tab and
+// description. Active help messages are prefixed with "_activeHelp_ ".
+// The last line is a directive in the format ":<int>".
+func RuntimeComplete(ctx context.Context, root Commander, args []string, w io.Writer) {
+	result := computeCompletions(ctx, root, args)
+
+	// Output active help messages first.
+	for _, msg := range result.ActiveHelp {
+		fmt.Fprintln(w, activeHelpPrefix+msg) //nolint:errcheck
+	}
+
+	// Output completions.
+	for _, c := range result.Completions {
+		if c.Description != "" {
+			fmt.Fprintf(w, "%s\t%s\n", c.Value, c.Description) //nolint:errcheck
+		} else {
+			fmt.Fprintln(w, c.Value) //nolint:errcheck
+		}
+	}
+	fmt.Fprintf(w, ":%d\n", int(result.Directive)) //nolint:errcheck
+}
+
+// computeCompletions resolves the command chain and returns a CompletionResult.
+func computeCompletions(ctx context.Context, root Commander, args []string) CompletionResult {
 	// Split args: everything except last is context, last is the prefix to complete.
 	var contextArgs []string
 	var toComplete string
@@ -86,15 +169,20 @@ func computeCompletions(ctx context.Context, root Commander, args []string) ([]s
 
 	// If the target command implements Completer, delegate.
 	if c, ok := target.(Completer); ok {
-		results, directive := c.Complete(ctx, args)
-		if results != nil {
-			filtered := filterCompletionPrefix(results, toComplete)
-			if len(filtered) == 0 {
+		result := c.Complete(ctx, args)
+		if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
+			filtered := filterCompletions(result.Completions, toComplete)
+			directive := result.Directive
+			if len(filtered) == 0 && result.Directive != ShellCompDirectiveError {
 				directive = ShellCompDirectiveDefault
 			}
-			return filtered, directive
+			return CompletionResult{
+				Completions: filtered,
+				ActiveHelp:  result.ActiveHelp,
+				Directive:   directive,
+			}
 		}
-		// nil result: fall through to static completion.
+		// Empty result: fall through to static completion.
 	}
 
 	// If toComplete starts with "-", complete flags.
@@ -104,7 +192,7 @@ func computeCompletions(ctx context.Context, root Commander, args []string) ([]s
 		if len(candidates) == 0 {
 			directive = ShellCompDirectiveDefault
 		}
-		return candidates, directive
+		return CompletionResult{Completions: candidates, Directive: directive}
 	}
 
 	// If the previous arg was a value flag, try FlagCompleter then enum.
@@ -113,51 +201,48 @@ func computeCompletions(ctx context.Context, root Commander, args []string) ([]s
 		if flagName := lookupValueFlagName(target, prev); flagName != "" {
 			// Try FlagCompleter interface first.
 			if fc, ok := target.(FlagCompleter); ok {
-				results, directive := fc.CompleteFlag(ctx, flagName, toComplete)
-				if results != nil {
-					filtered := filterCompletionPrefix(results, toComplete)
-					if len(filtered) == 0 {
+				result := fc.CompleteFlag(ctx, flagName, toComplete)
+				if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
+					filtered := filterCompletions(result.Completions, toComplete)
+					directive := result.Directive
+					if len(filtered) == 0 && result.Directive != ShellCompDirectiveError {
 						directive = ShellCompDirectiveDefault
 					}
-					return filtered, directive
+					return CompletionResult{
+						Completions: filtered,
+						ActiveHelp:  result.ActiveHelp,
+						Directive:   directive,
+					}
 				}
 			}
 
 			// Fall through to enum completion.
 			if enumVals := lookupFlagEnum(target, prev); enumVals != "" {
 				vals := strings.Split(enumVals, ",")
-				filtered := filterCompletionPrefix(vals, toComplete)
+				filtered := filterStrings(vals, toComplete)
 				directive := ShellCompDirectiveNoFileComp
 				if len(filtered) == 0 {
 					directive = ShellCompDirectiveDefault
 				}
-				return filtered, directive
+				return CompletionResult{Completions: stringsToCompletions(filtered), Directive: directive}
 			}
 		}
 	}
 
 	// Complete subcommand names + aliases.
 	subs, _ := allSubcommands(target) //nolint:errcheck
-	var candidates []string
+	var candidates []Completion
 	for _, sub := range subs {
 		info := resolveInfo(sub)
 		if info.hidden {
 			continue
 		}
 		if strings.HasPrefix(info.name, toComplete) {
-			entry := info.name
-			if info.description != "" {
-				entry += "\t" + info.description
-			}
-			candidates = append(candidates, entry)
+			candidates = append(candidates, Completion{Value: info.name, Description: info.description})
 		}
 		for _, alias := range info.aliases {
 			if strings.HasPrefix(alias, toComplete) {
-				entry := alias
-				if info.description != "" {
-					entry += "\t" + info.description
-				}
-				candidates = append(candidates, entry)
+				candidates = append(candidates, Completion{Value: alias, Description: info.description})
 			}
 		}
 	}
@@ -166,13 +251,13 @@ func computeCompletions(ctx context.Context, root Commander, args []string) ([]s
 	if len(candidates) == 0 {
 		directive = ShellCompDirectiveDefault
 	}
-	return candidates, directive
+	return CompletionResult{Completions: candidates, Directive: directive}
 }
 
 // completeCommandFlags returns flag completions matching prefix.
-func completeCommandFlags(cmd Commander, prefix string) []string {
+func completeCommandFlags(cmd Commander, prefix string) []Completion {
 	flags := ScanFlags(cmd)
-	var candidates []string
+	var candidates []Completion
 	for i := range flags {
 		f := &flags[i]
 		if f.Hidden || f.Deprecated != "" {
@@ -180,40 +265,24 @@ func completeCommandFlags(cmd Commander, prefix string) []string {
 		}
 		name := "--" + f.Name
 		if strings.HasPrefix(name, prefix) {
-			entry := name
-			if f.Help != "" {
-				entry += "\t" + f.Help
-			}
-			candidates = append(candidates, entry)
+			candidates = append(candidates, Completion{Value: name, Description: f.Help})
 		}
 		if f.Short != "" {
 			short := "-" + f.Short
 			if strings.HasPrefix(short, prefix) {
-				entry := short
-				if f.Help != "" {
-					entry += "\t" + f.Help
-				}
-				candidates = append(candidates, entry)
+				candidates = append(candidates, Completion{Value: short, Description: f.Help})
 			}
 		}
 		for _, alt := range f.Alt {
 			altName := "--" + alt
 			if strings.HasPrefix(altName, prefix) {
-				entry := altName
-				if f.Help != "" {
-					entry += "\t" + f.Help
-				}
-				candidates = append(candidates, entry)
+				candidates = append(candidates, Completion{Value: altName, Description: f.Help})
 			}
 		}
 		if f.Negate {
 			neg := "--no-" + f.Name
 			if strings.HasPrefix(neg, prefix) {
-				entry := neg
-				if f.Help != "" {
-					entry += "\tDisable " + f.Name
-				}
-				candidates = append(candidates, entry)
+				candidates = append(candidates, Completion{Value: neg, Description: "Disable " + f.Name})
 			}
 		}
 	}
@@ -269,18 +338,39 @@ func lookupFlagEnum(cmd Commander, arg string) string {
 	return ""
 }
 
-// filterCompletionPrefix filters candidates to those starting with prefix.
-func filterCompletionPrefix(candidates []string, prefix string) []string {
+// filterCompletions filters candidates to those starting with prefix.
+func filterCompletions(candidates []Completion, prefix string) []Completion {
+	if prefix == "" {
+		return candidates
+	}
+	var out []Completion
+	for _, c := range candidates {
+		if strings.HasPrefix(c.Value, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// filterStrings filters string candidates to those starting with prefix.
+func filterStrings(candidates []string, prefix string) []string {
 	if prefix == "" {
 		return candidates
 	}
 	var out []string
 	for _, c := range candidates {
-		// Match against the candidate text before any tab (description separator).
-		text, _, _ := strings.Cut(c, "\t")
-		if strings.HasPrefix(text, prefix) {
+		if strings.HasPrefix(c, prefix) {
 			out = append(out, c)
 		}
 	}
 	return out
+}
+
+// stringsToCompletions converts strings to Completion values.
+func stringsToCompletions(vals []string) []Completion {
+	comps := make([]Completion, len(vals))
+	for i, v := range vals {
+		comps[i] = Completion{Value: v}
+	}
+	return comps
 }

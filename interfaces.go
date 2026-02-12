@@ -203,27 +203,35 @@ type Afterer interface {
 
 // --- UX interfaces (all optional) ---
 
-// Completer provides shell completion candidates. The returned
-// [ShellCompDirective] controls shell behavior after completing (e.g.
-// suppressing space or file completion). Return nil completions to fall
+// Completer provides shell completion candidates. Return a [CompletionResult]
+// with candidates, optional active help messages, and a directive controlling
+// shell behavior. Return an empty result (or use [NoCompletions]) to fall
 // through to static completion of subcommands and flags.
+//
+//	func (c *DeployCmd) Complete(ctx context.Context, args []string) cli.CompletionResult {
+//	    return cli.Completions("dev", "staging", "prod").
+//	        WithActiveHelp("Select deployment environment")
+//	}
 type Completer interface {
-	Complete(ctx context.Context, args []string) ([]string, ShellCompDirective)
+	Complete(ctx context.Context, args []string) CompletionResult
 }
 
 // FlagCompleter provides dynamic completion for flag values. When a flag
 // requires a value and the command implements this interface, the framework
-// calls CompleteFlag with the flag name and partial value. Return nil to
-// fall through to enum-based completion.
+// calls CompleteFlag with the flag name and partial value. Return an empty
+// result (or use [NoCompletions]) to fall through to enum-based completion.
 //
-//	func (c *DeployCmd) CompleteFlag(ctx context.Context, flag, value string) ([]string, ShellCompDirective) {
+//	func (c *DeployCmd) CompleteFlag(ctx context.Context, flag, value string) cli.CompletionResult {
 //	    if flag == "region" {
-//	        return []string{"us-east-1", "us-west-2", "eu-west-1"}, cli.ShellCompDirectiveNoFileComp
+//	        return cli.CompletionsWithDesc(
+//	            cli.Completion{Value: "us-east-1", Description: "N. Virginia"},
+//	            cli.Completion{Value: "us-west-2", Description: "Oregon"},
+//	        )
 //	    }
-//	    return nil, cli.ShellCompDirectiveDefault
+//	    return cli.NoCompletions()
 //	}
 type FlagCompleter interface {
-	CompleteFlag(ctx context.Context, flag string, value string) ([]string, ShellCompDirective)
+	CompleteFlag(ctx context.Context, flag string, value string) CompletionResult
 }
 
 // Middlewarer provides middleware that wraps the command's Run function.

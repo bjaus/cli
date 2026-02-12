@@ -85,30 +85,29 @@ type compCompleterCmd struct{}
 
 func (c *compCompleterCmd) Run(_ context.Context) error { return nil }
 func (c *compCompleterCmd) Name() string                { return "myapp" }
-func (c *compCompleterCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
-	return []string{"alpha", "beta", "gamma"}, cli.ShellCompDirectiveNoFileComp
+func (c *compCompleterCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.Completions("alpha", "beta", "gamma")
 }
 
 type compCompleterNilCmd struct{}
 
 func (c *compCompleterNilCmd) Run(_ context.Context) error { return nil }
 func (c *compCompleterNilCmd) Name() string                { return "myapp" }
-func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
-	return nil, cli.ShellCompDirectiveDefault
+func (c *compCompleterNilCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.NoCompletions()
 }
 
 func (c *compCompleterNilCmd) Subcommands() []cli.Commander {
 	return []cli.Commander{&compServeCmd{}}
 }
 
-// completionNames extracts flag/command names from completion candidates.
-func completionNames(completions []string) []string {
-	names := make([]string, 0, len(completions))
+// completionValues extracts values from completion candidates.
+func completionValues(completions []cli.Completion) []string {
+	values := make([]string, 0, len(completions))
 	for _, c := range completions {
-		name, _, _ := strings.Cut(c, "\t")
-		names = append(names, name)
+		values = append(values, c.Value)
 	}
-	return names
+	return values
 }
 
 // --- tests ---
@@ -116,27 +115,27 @@ func completionNames(completions []string) []string {
 func TestComputeCompletions_RootSubcommands(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{""})
+	result := cli.ComputeCompletions(context.Background(), root, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
 
-	names := completionNames(completions)
-	assert.Contains(t, names, "serve")
-	assert.Contains(t, names, "deploy")
-	assert.NotContains(t, names, "internal") // hidden
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "serve")
+	assert.Contains(t, values, "deploy")
+	assert.NotContains(t, values, "internal") // hidden
 }
 
 func TestComputeCompletions_SubcommandFlags(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--"})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--"})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
 
-	names := completionNames(completions)
-	assert.Contains(t, names, "--port")
-	assert.Contains(t, names, "--tls")
-	assert.Contains(t, names, "--format")
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "--port")
+	assert.Contains(t, values, "--tls")
+	assert.Contains(t, values, "--format")
 }
 
 func TestComputeCompletions_NestedSubcommand(t *testing.T) {
@@ -144,82 +143,83 @@ func TestComputeCompletions_NestedSubcommand(t *testing.T) {
 	root := &compNestedRoot{}
 
 	// "--" prefix shows long flags.
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"cluster", "list", "--"})
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Contains(t, completionNames(completions), "--region")
+	result := cli.ComputeCompletions(context.Background(), root, []string{"cluster", "list", "--"})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Contains(t, completionValues(result.Completions), "--region")
 
 	// "-" prefix shows both long and short flags.
-	completions2, _ := cli.ComputeCompletions(context.Background(), root, []string{"cluster", "list", "-"})
-	names2 := completionNames(completions2)
-	assert.Contains(t, names2, "--region")
-	assert.Contains(t, names2, "-r")
+	result2 := cli.ComputeCompletions(context.Background(), root, []string{"cluster", "list", "-"})
+	values2 := completionValues(result2.Completions)
+	assert.Contains(t, values2, "--region")
+	assert.Contains(t, values2, "-r")
 }
 
 func TestComputeCompletions_Aliases(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{""})
+	result := cli.ComputeCompletions(context.Background(), root, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
 
-	names := completionNames(completions)
-	assert.Contains(t, names, "d")
-	assert.Contains(t, names, "dep")
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "d")
+	assert.Contains(t, values, "dep")
 }
 
 func TestComputeCompletions_NegateFlags(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, _ := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--"})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--"})
 
-	assert.Contains(t, completionNames(completions), "--no-color")
+	assert.Contains(t, completionValues(result.Completions), "--no-color")
 }
 
 func TestComputeCompletions_EnumValues(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--format", ""})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--format", ""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Contains(t, completions, "json")
-	assert.Contains(t, completions, "yaml")
-	assert.Contains(t, completions, "text")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "json")
+	assert.Contains(t, values, "yaml")
+	assert.Contains(t, values, "text")
 }
 
 func TestComputeCompletions_DeprecatedExcluded(t *testing.T) {
 	t.Parallel()
 	cmd := &compDeprecatedFlagCmd{}
-	completions, _ := cli.ComputeCompletions(context.Background(), cmd, []string{"--"})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--"})
 
-	names := completionNames(completions)
-	assert.NotContains(t, names, "--old")
-	assert.Contains(t, names, "--new")
+	values := completionValues(result.Completions)
+	assert.NotContains(t, values, "--old")
+	assert.Contains(t, values, "--new")
 }
 
 func TestComputeCompletions_HiddenExcluded(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, _ := cli.ComputeCompletions(context.Background(), root, []string{""})
+	result := cli.ComputeCompletions(context.Background(), root, []string{""})
 
-	assert.NotContains(t, completionNames(completions), "internal")
+	assert.NotContains(t, completionValues(result.Completions), "internal")
 }
 
 func TestComputeCompletions_CompleterInterface(t *testing.T) {
 	t.Parallel()
 	cmd := &compCompleterCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"alpha", "beta", "gamma"}, completions)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, completionValues(result.Completions))
 }
 
 func TestComputeCompletions_CompleterNilFallback(t *testing.T) {
 	t.Parallel()
 	cmd := &compCompleterNilCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Contains(t, completionNames(completions), "serve")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Contains(t, completionValues(result.Completions), "serve")
 }
 
 // Completer returning NoSpace directive.
@@ -227,17 +227,17 @@ type compCompleterNoSpaceCmd struct{}
 
 func (c *compCompleterNoSpaceCmd) Run(_ context.Context) error { return nil }
 func (c *compCompleterNoSpaceCmd) Name() string                { return "myapp" }
-func (c *compCompleterNoSpaceCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
-	return []string{"alpha", "beta"}, cli.ShellCompDirectiveNoSpace
+func (c *compCompleterNoSpaceCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.Completions("alpha", "beta").WithDirective(cli.ShellCompDirectiveNoSpace)
 }
 
 func TestComputeCompletions_CompleterDirective(t *testing.T) {
 	t.Parallel()
 	cmd := &compCompleterNoSpaceCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoSpace, directive)
-	assert.Equal(t, []string{"alpha", "beta"}, completions)
+	assert.Equal(t, cli.ShellCompDirectiveNoSpace, result.Directive)
+	assert.Equal(t, []string{"alpha", "beta"}, completionValues(result.Completions))
 }
 
 func TestRuntimeComplete_OutputFormat(t *testing.T) {
@@ -271,24 +271,24 @@ func TestExecute_CompleteIntercept(t *testing.T) {
 func TestComputeCompletions_PrefixFilter(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"se"})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"se"})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	names := completionNames(completions)
-	assert.Contains(t, names, "serve")
-	assert.NotContains(t, names, "deploy")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "serve")
+	assert.NotContains(t, values, "deploy")
 }
 
 func TestComputeCompletions_FlagSkipDuringWalk(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
 	// Flags in contextArgs should be skipped; "serve" should still be resolved.
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"--verbose", "serve", "--"})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"--verbose", "serve", "--"})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	names := completionNames(completions)
-	assert.Contains(t, names, "--port")
-	assert.Contains(t, names, "--tls")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "--port")
+	assert.Contains(t, values, "--tls")
 }
 
 type compAltEnumCmd struct {
@@ -302,34 +302,35 @@ func TestComputeCompletions_AltFlagEnum(t *testing.T) {
 	t.Parallel()
 	cmd := &compAltEnumCmd{}
 	// --fmt is the alt name for --format; should complete enum values.
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--fmt", ""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--fmt", ""})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Contains(t, completions, "json")
-	assert.Contains(t, completions, "yaml")
-	assert.Contains(t, completions, "text")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "json")
+	assert.Contains(t, values, "yaml")
+	assert.Contains(t, values, "text")
 }
 
 func TestComputeCompletions_EmptyArgs(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), root, nil)
+	result := cli.ComputeCompletions(context.Background(), root, nil)
 
 	// nil args should return root subcommands.
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	names := completionNames(completions)
-	assert.Contains(t, names, "serve")
-	assert.Contains(t, names, "deploy")
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "serve")
+	assert.Contains(t, values, "deploy")
 }
 
 func TestComputeCompletions_CompleterWithPrefix(t *testing.T) {
 	t.Parallel()
 	cmd := &compCompleterCmd{}
 	// "al" is the prefix to complete; Completer returns alpha/beta/gamma.
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"al"})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"al"})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"alpha"}, completions)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"alpha"}, completionValues(result.Completions))
 }
 
 // --- FlagCompleter tests ---
@@ -342,11 +343,11 @@ type compFlagCompleterCmd struct {
 
 func (c *compFlagCompleterCmd) Run(_ context.Context) error { return nil }
 func (c *compFlagCompleterCmd) Name() string                { return "myapp" }
-func (c *compFlagCompleterCmd) CompleteFlag(_ context.Context, flag, _ string) ([]string, cli.ShellCompDirective) {
+func (c *compFlagCompleterCmd) CompleteFlag(_ context.Context, flag, _ string) cli.CompletionResult {
 	if flag == "region" {
-		return []string{"us-east-1", "us-west-2", "eu-west-1"}, cli.ShellCompDirectiveNoFileComp
+		return cli.Completions("us-east-1", "us-west-2", "eu-west-1")
 	}
-	return nil, cli.ShellCompDirectiveDefault
+	return cli.NoCompletions()
 }
 
 func TestComputeCompletions_FlagCompleter(t *testing.T) {
@@ -354,9 +355,9 @@ func TestComputeCompletions_FlagCompleter(t *testing.T) {
 	cmd := &compFlagCompleterCmd{}
 
 	// FlagCompleter provides completions for --region.
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", ""})
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completions)
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completionValues(result.Completions))
 }
 
 func TestComputeCompletions_FlagCompleterPrefix(t *testing.T) {
@@ -364,20 +365,21 @@ func TestComputeCompletions_FlagCompleterPrefix(t *testing.T) {
 	cmd := &compFlagCompleterCmd{}
 
 	// Prefix "us-e" filters to "us-east-1".
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", "us-e"})
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"us-east-1"}, completions)
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--region", "us-e"})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"us-east-1"}, completionValues(result.Completions))
 }
 
 func TestComputeCompletions_FlagCompleterNilFallsToEnum(t *testing.T) {
 	t.Parallel()
 	cmd := &compFlagCompleterCmd{}
 
-	// FlagCompleter returns nil for --format; falls through to enum.
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"--format", ""})
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Contains(t, completions, "json")
-	assert.Contains(t, completions, "yaml")
+	// FlagCompleter returns empty for --format; falls through to enum.
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--format", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "json")
+	assert.Contains(t, values, "yaml")
 }
 
 func TestComputeCompletions_FlagCompleterShortFlag(t *testing.T) {
@@ -385,9 +387,9 @@ func TestComputeCompletions_FlagCompleterShortFlag(t *testing.T) {
 	cmd := &compFlagCompleterCmd{}
 
 	// Short flag -r triggers FlagCompleter for "region".
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{"-r", ""})
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completions)
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"-r", ""})
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"us-east-1", "us-west-2", "eu-west-1"}, completionValues(result.Completions))
 }
 
 // --- FilterFileExt / FilterDirs directive tests ---
@@ -396,33 +398,33 @@ type compFilterFileExtCmd struct{}
 
 func (c *compFilterFileExtCmd) Run(_ context.Context) error { return nil }
 func (c *compFilterFileExtCmd) Name() string                { return "myapp" }
-func (c *compFilterFileExtCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
-	return []string{".yaml", ".json"}, cli.ShellCompDirectiveFilterFileExt
+func (c *compFilterFileExtCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.Completions(".yaml", ".json").WithDirective(cli.ShellCompDirectiveFilterFileExt)
 }
 
 func TestComputeCompletions_FilterFileExt(t *testing.T) {
 	t.Parallel()
 	cmd := &compFilterFileExtCmd{}
-	completions, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveFilterFileExt, directive)
-	assert.Equal(t, []string{".yaml", ".json"}, completions)
+	assert.Equal(t, cli.ShellCompDirectiveFilterFileExt, result.Directive)
+	assert.Equal(t, []string{".yaml", ".json"}, completionValues(result.Completions))
 }
 
 type compFilterDirsCmd struct{}
 
 func (c *compFilterDirsCmd) Run(_ context.Context) error { return nil }
 func (c *compFilterDirsCmd) Name() string                { return "myapp" }
-func (c *compFilterDirsCmd) Complete(_ context.Context, _ []string) ([]string, cli.ShellCompDirective) {
-	return []string{"dir-placeholder"}, cli.ShellCompDirectiveFilterDirs
+func (c *compFilterDirsCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.Completions("dir-placeholder").WithDirective(cli.ShellCompDirectiveFilterDirs)
 }
 
 func TestComputeCompletions_FilterDirs(t *testing.T) {
 	t.Parallel()
 	cmd := &compFilterDirsCmd{}
-	_, directive := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
 
-	assert.Equal(t, cli.ShellCompDirectiveFilterDirs, directive)
+	assert.Equal(t, cli.ShellCompDirectiveFilterDirs, result.Directive)
 }
 
 func TestShellCompDirective_Values(t *testing.T) {
@@ -441,8 +443,71 @@ func TestComputeCompletions_EnumValuePrefix(t *testing.T) {
 	t.Parallel()
 	root := &compRootCmd{}
 	// After --format, complete "js" which should match "json".
-	completions, directive := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--format", "js"})
+	result := cli.ComputeCompletions(context.Background(), root, []string{"serve", "--format", "js"})
 
-	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, directive)
-	assert.Equal(t, []string{"json"}, completions)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"json"}, completionValues(result.Completions))
+}
+
+// --- Active Help tests ---
+
+type compActiveHelpCmd struct{}
+
+func (c *compActiveHelpCmd) Run(_ context.Context) error { return nil }
+func (c *compActiveHelpCmd) Name() string                { return "myapp" }
+func (c *compActiveHelpCmd) Complete(_ context.Context, _ []string) cli.CompletionResult {
+	return cli.Completions("dev", "staging", "prod").
+		WithActiveHelp("Select deployment environment", "Use 'prod' with caution")
+}
+
+func TestComputeCompletions_ActiveHelp(t *testing.T) {
+	t.Parallel()
+	cmd := &compActiveHelpCmd{}
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{""})
+
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+	assert.Equal(t, []string{"dev", "staging", "prod"}, completionValues(result.Completions))
+	assert.Equal(t, []string{"Select deployment environment", "Use 'prod' with caution"}, result.ActiveHelp)
+}
+
+func TestRuntimeComplete_ActiveHelpOutput(t *testing.T) {
+	t.Parallel()
+	cmd := &compActiveHelpCmd{}
+	var buf bytes.Buffer
+	cli.RuntimeComplete(context.Background(), cmd, []string{""}, &buf)
+
+	output := buf.String()
+	// Active help messages should be prefixed with "_activeHelp_ ".
+	assert.Contains(t, output, "_activeHelp_ Select deployment environment")
+	assert.Contains(t, output, "_activeHelp_ Use 'prod' with caution")
+	// Regular completions should still be present.
+	assert.Contains(t, output, "dev")
+	assert.Contains(t, output, "staging")
+	assert.Contains(t, output, "prod")
+}
+
+func TestCompletionsWithDesc(t *testing.T) {
+	t.Parallel()
+	result := cli.CompletionsWithDesc(
+		cli.Completion{Value: "us-east-1", Description: "N. Virginia"},
+		cli.Completion{Value: "us-west-2", Description: "Oregon"},
+	)
+
+	assert.Len(t, result.Completions, 2)
+	assert.Equal(t, "us-east-1", result.Completions[0].Value)
+	assert.Equal(t, "N. Virginia", result.Completions[0].Description)
+	assert.Equal(t, cli.ShellCompDirectiveNoFileComp, result.Directive)
+}
+
+func TestRuntimeComplete_DescriptionOutput(t *testing.T) {
+	t.Parallel()
+	// Test that descriptions are formatted with tab separator.
+	root := &compRootCmd{}
+	var buf bytes.Buffer
+	cli.RuntimeComplete(context.Background(), root, []string{""}, &buf)
+
+	output := buf.String()
+	// Subcommand completions include descriptions.
+	assert.Contains(t, output, "serve\tStart the server")
+	assert.Contains(t, output, "deploy\tDeploy the app")
 }
