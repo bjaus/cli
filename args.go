@@ -59,7 +59,8 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 }
 
 // populateArgs sets struct fields tagged with `arg` from positional arguments,
-// environment variables, and defaults. Returns unconsumed positional arguments.
+// environment variables, and defaults. Also populates any cli.Args field with
+// remaining arguments. Returns unconsumed positional arguments.
 func populateArgs(cmd Commander, args []string, envPrefix string) ([]string, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
@@ -70,22 +71,43 @@ func populateArgs(cmd Commander, args []string, envPrefix string) ([]string, err
 	}
 
 	argIdx := 0
-	if err := populateArgsRecurse(v, v.Type(), args, envPrefix, &argIdx); err != nil {
+	var argsField *reflect.Value
+	if err := populateArgsRecurse(v, v.Type(), args, envPrefix, &argIdx, &argsField); err != nil {
 		return nil, err
 	}
 
-	return args[argIdx:], nil
+	remaining := args[argIdx:]
+
+	// If a cli.Args field exists, populate it with remaining args.
+	if argsField != nil {
+		argsField.Set(reflect.ValueOf(Args(remaining)))
+		return nil, nil // all args consumed
+	}
+
+	return remaining, nil
 }
 
-func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPrefix string, argIdx *int) error {
+var argsType = reflect.TypeFor[Args]()
+
+func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPrefix string, argIdx *int, argsField **reflect.Value) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
 
 		// Anonymous embedded struct: recurse into promoted fields.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			if err := populateArgsRecurse(v.Field(i), f.Type, args, envPrefix, argIdx); err != nil {
+			if err := populateArgsRecurse(v.Field(i), f.Type, args, envPrefix, argIdx, argsField); err != nil {
 				return err
 			}
+			continue
+		}
+
+		// Check for cli.Args field (no tag needed).
+		if f.Type == argsType && f.IsExported() {
+			if *argsField != nil {
+				return fmt.Errorf("multiple cli.Args fields found; only one is allowed")
+			}
+			fv := v.Field(i)
+			*argsField = &fv
 			continue
 		}
 

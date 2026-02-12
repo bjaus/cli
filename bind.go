@@ -4,24 +4,75 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 )
 
-// Args is a slice of positional arguments. Commands can declare an Args field
-// to receive positional arguments via dependency injection:
+// Args captures remaining positional arguments after named args are consumed.
+// Declare an Args field (no tag needed) to receive unconsumed arguments:
 //
-//	type ServeCmd struct {
-//	    Args cli.Args
-//	    Port int `flag:"port"`
+//	type CopyCmd struct {
+//	    Src  string   `arg:"src"`   // named arg, gets args[0]
+//	    Dst  string   `arg:"dst"`   // named arg, gets args[1]
+//	    Args cli.Args               // captures args[2:]
 //	}
 //
-//	func (s *ServeCmd) Run(ctx context.Context) error {
-//	    for _, file := range s.Args {
+//	func (c *CopyCmd) Run(ctx context.Context) error {
+//	    if c.Args.Empty() {
+//	        return errors.New("no extra files")
+//	    }
+//	    for _, file := range c.Args {
 //	        // process file
 //	    }
 //	}
+//
+// Only one Args field is allowed per command. The field must be of type cli.Args.
 type Args []string
+
+// Len returns the number of arguments.
+func (a Args) Len() int { return len(a) }
+
+// Empty returns true if there are no arguments.
+func (a Args) Empty() bool { return len(a) == 0 }
+
+// First returns the first argument or empty string if none.
+func (a Args) First() string {
+	if len(a) == 0 {
+		return ""
+	}
+	return a[0]
+}
+
+// Last returns the last argument or empty string if none.
+func (a Args) Last() string {
+	if len(a) == 0 {
+		return ""
+	}
+	return a[len(a)-1]
+}
+
+// Get returns the argument at index i or empty string if out of bounds.
+func (a Args) Get(i int) string {
+	if i < 0 || i >= len(a) {
+		return ""
+	}
+	return a[i]
+}
+
+// Contains returns true if the argument list contains s.
+func (a Args) Contains(s string) bool { return slices.Contains(a, s) }
+
+// Index returns the index of s or -1 if not found.
+func (a Args) Index(s string) int { return slices.Index(a, s) }
+
+// Tail returns all arguments after the first, or nil if there are 0-1 arguments.
+func (a Args) Tail() Args {
+	if len(a) <= 1 {
+		return nil
+	}
+	return a[1:]
+}
 
 // binding holds a registered dependency and its target type.
 type binding struct {

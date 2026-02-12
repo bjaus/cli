@@ -105,6 +105,33 @@
 //
 // Priority for env-only fields: env var > config > default > zero value.
 //
+// # Positional Arguments
+//
+// Named positional arguments use the arg struct tag:
+//
+//	type CopyCmd struct {
+//	    Src string `arg:"src" help:"Source file"`
+//	    Dst string `arg:"dst" help:"Destination file"`
+//	}
+//
+// Arguments are assigned in struct field order. Non-slice args are required
+// by default (use `required:"false"` to make optional). A slice field consumes
+// all remaining arguments.
+//
+// To capture remaining arguments after named args, use a [cli.Args] field
+// (no tag needed):
+//
+//	type CopyCmd struct {
+//	    Src  string `arg:"src"`   // args[0]
+//	    Dst  string `arg:"dst"`   // args[1]
+//	    Args cli.Args             // args[2:] — no tag required
+//	}
+//
+// [Args] provides convenience methods: [Args.First], [Args.Last], [Args.Get],
+// [Args.Len], [Args.Empty], [Args.Contains], [Args.Index], and [Args.Tail].
+//
+// Only one [Args] field is allowed per command.
+//
 // # Embedded Structs and Prefix
 //
 // Anonymous embedded structs have their flags promoted, just like Go's own

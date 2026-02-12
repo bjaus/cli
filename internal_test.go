@@ -6166,6 +6166,129 @@ func TestPopulateArgs_EnumValidation(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidFlagValue)
 }
 
+// --- cli.Args as first-class type ---
+
+type cliArgsOnlyCmd struct {
+	Args Args
+}
+
+func (c *cliArgsOnlyCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_CliArgsOnly(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cliArgsOnlyCmd{}
+	remaining, err := populateArgs(cmd, []string{"foo", "bar", "baz"}, "")
+	require.NoError(t, err)
+	assert.Nil(t, remaining) // all consumed
+	assert.Equal(t, Args{"foo", "bar", "baz"}, cmd.Args)
+}
+
+type cliArgsWithNamedCmd struct {
+	Src  string `arg:"src"`
+	Dst  string `arg:"dst"`
+	Args Args
+}
+
+func (c *cliArgsWithNamedCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_CliArgsWithNamed(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cliArgsWithNamedCmd{}
+	remaining, err := populateArgs(cmd, []string{"a.txt", "b.txt", "c.txt", "d.txt"}, "")
+	require.NoError(t, err)
+	assert.Nil(t, remaining)
+	assert.Equal(t, "a.txt", cmd.Src)
+	assert.Equal(t, "b.txt", cmd.Dst)
+	assert.Equal(t, Args{"c.txt", "d.txt"}, cmd.Args)
+}
+
+func TestPopulateArgs_CliArgsEmpty(t *testing.T) {
+	t.Parallel()
+
+	cmd := &cliArgsWithNamedCmd{}
+	remaining, err := populateArgs(cmd, []string{"a.txt", "b.txt"}, "")
+	require.NoError(t, err)
+	assert.Nil(t, remaining)
+	assert.Equal(t, "a.txt", cmd.Src)
+	assert.Equal(t, "b.txt", cmd.Dst)
+	assert.Empty(t, cmd.Args)
+}
+
+type multipleCliArgsCmd struct {
+	Args1 Args
+	Args2 Args
+}
+
+func (c *multipleCliArgsCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_MultipleCliArgsError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &multipleCliArgsCmd{}
+	_, err := populateArgs(cmd, []string{"foo"}, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "multiple cli.Args fields")
+}
+
+// --- Args convenience methods ---
+
+func TestArgs_Len(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, 3, Args{"a", "b", "c"}.Len())
+	assert.Equal(t, 0, Args{}.Len())
+}
+
+func TestArgs_Empty(t *testing.T) {
+	t.Parallel()
+	assert.True(t, Args{}.Empty())
+	assert.False(t, Args{"a"}.Empty())
+}
+
+func TestArgs_First(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "a", Args{"a", "b", "c"}.First())
+	assert.Equal(t, "", Args{}.First())
+}
+
+func TestArgs_Last(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "c", Args{"a", "b", "c"}.Last())
+	assert.Equal(t, "", Args{}.Last())
+}
+
+func TestArgs_Get(t *testing.T) {
+	t.Parallel()
+	args := Args{"a", "b", "c"}
+	assert.Equal(t, "a", args.Get(0))
+	assert.Equal(t, "b", args.Get(1))
+	assert.Equal(t, "c", args.Get(2))
+	assert.Equal(t, "", args.Get(3))
+	assert.Equal(t, "", args.Get(-1))
+}
+
+func TestArgs_Contains(t *testing.T) {
+	t.Parallel()
+	args := Args{"a", "b", "c"}
+	assert.True(t, args.Contains("b"))
+	assert.False(t, args.Contains("d"))
+}
+
+func TestArgs_Index(t *testing.T) {
+	t.Parallel()
+	args := Args{"a", "b", "c"}
+	assert.Equal(t, 1, args.Index("b"))
+	assert.Equal(t, -1, args.Index("d"))
+}
+
+func TestArgs_Tail(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, Args{"b", "c"}, Args{"a", "b", "c"}.Tail())
+	assert.Nil(t, Args{"a"}.Tail())
+	assert.Nil(t, Args{}.Tail())
+}
+
 // --- flag normalization (internal) ---
 
 type normInternalCmd struct {
