@@ -163,6 +163,31 @@ type Exiter interface {
 }
 
 // --- Lifecycle interfaces (all optional) ---
+//
+// Execution order:
+//   Init → [parse] → Default → Validate → Before → [middleware] → Run → After
+
+// Initializer runs setup logic before any parsing. Called parent-first
+// through the command chain. Use this for tracing setup, arg preprocessing,
+// or early context initialization. The returned context flows forward.
+type Initializer interface {
+	Init(ctx context.Context) (context.Context, error)
+}
+
+// Defaulter computes default values after parsing but before validation.
+// Called on each command in the chain after all flags, args, env vars,
+// config, and tag defaults are applied. Use this for computed defaults
+// that can't be expressed in struct tags (e.g., cross-field logic).
+type Defaulter interface {
+	Default() error
+}
+
+// Validator validates command state after flag parsing and defaulting.
+// Called after all values are resolved (flags, args, env, config, defaults,
+// inheritance, Defaulter) giving full access to the command's final state.
+type Validator interface {
+	Validate() error
+}
 
 // Beforer runs setup logic before Run. Called parent-first through the
 // command chain. The returned context flows forward to subsequent hooks and Run.
@@ -174,13 +199,6 @@ type Beforer interface {
 // command chain. After hooks always run, even if Run returned an error.
 type Afterer interface {
 	After(ctx context.Context) error
-}
-
-// Validator validates command state after flag parsing and before Run.
-// Called after all values are resolved (flags, args, env, config, defaults,
-// inheritance) giving full access to the command's final state.
-type Validator interface {
-	Validate() error
 }
 
 // --- UX interfaces (all optional) ---

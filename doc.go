@@ -35,9 +35,13 @@
 //
 // # Lifecycle Interfaces
 //
+// Execution order: Init → [parse] → Default → Validate → Before → Run → After
+//
+//   - [Initializer] — run setup before parsing (parent-first), returns modified context
+//   - [Defaulter] — compute defaults after parsing, before validation
+//   - [Validator] — validate state after defaulting, before Before hooks
 //   - [Beforer] — run setup logic before Run (parent-first), returns modified context
 //   - [Afterer] — run teardown logic after Run (child-first, always runs)
-//   - [Validator] — validate state after flag parsing, before Run
 //
 // # Flags
 //

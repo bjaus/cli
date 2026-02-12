@@ -1322,6 +1322,141 @@ func TestExecute_BeforeError(t *testing.T) {
 	assert.True(t, parent.afterCalled)
 }
 
+// --- Initializer tests ---
+
+type initializerCmd struct {
+	initCalled bool
+	initCtxVal string
+	Flag       string `flag:"flag"`
+}
+
+func (c *initializerCmd) Run(_ context.Context) error { return nil }
+func (c *initializerCmd) Init(ctx context.Context) (context.Context, error) {
+	c.initCalled = true
+	return context.WithValue(ctx, "init-key", "init-value"), nil
+}
+
+func (c *initializerCmd) Before(ctx context.Context) (context.Context, error) {
+	// Verify context from Init is available
+	if v, ok := ctx.Value("init-key").(string); ok {
+		c.initCtxVal = v
+	}
+	return ctx, nil
+}
+
+func TestExecute_Initializer(t *testing.T) {
+	t.Parallel()
+
+	cmd := &initializerCmd{}
+	err := Execute(context.Background(), cmd, []string{"--flag", "test"})
+	require.NoError(t, err)
+
+	assert.True(t, cmd.initCalled, "Init should be called")
+	assert.Equal(t, "init-value", cmd.initCtxVal, "context from Init should flow to Before")
+	assert.Equal(t, "test", cmd.Flag, "flags should be parsed after Init")
+}
+
+type initializerErrorCmd struct{}
+
+func (c *initializerErrorCmd) Run(_ context.Context) error { return nil }
+func (c *initializerErrorCmd) Init(_ context.Context) (context.Context, error) {
+	return nil, fmt.Errorf("init failed")
+}
+
+func TestExecute_InitializerError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &initializerErrorCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "init failed")
+}
+
+// --- Defaulter tests ---
+
+type defaulterCmd struct {
+	Output string `flag:"output"`
+	Format string `flag:"format" default:"json"`
+}
+
+func (c *defaulterCmd) Run(_ context.Context) error { return nil }
+func (c *defaulterCmd) Default() error {
+	// Computed default: if output not set and format is json, default to stdout.json
+	if c.Output == "" && c.Format == "json" {
+		c.Output = "stdout.json"
+	}
+	return nil
+}
+
+func TestExecute_Defaulter(t *testing.T) {
+	t.Parallel()
+
+	cmd := &defaulterCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, "json", cmd.Format)
+	assert.Equal(t, "stdout.json", cmd.Output, "Defaulter should compute Output")
+}
+
+func TestExecute_DefaulterExplicitOverride(t *testing.T) {
+	t.Parallel()
+
+	cmd := &defaulterCmd{}
+	err := Execute(context.Background(), cmd, []string{"--output", "out.txt"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "out.txt", cmd.Output, "explicit flag should not be overridden")
+}
+
+type defaulterValidatorCmd struct {
+	Value     int `flag:"value"`
+	validated bool
+}
+
+func (c *defaulterValidatorCmd) Run(_ context.Context) error { return nil }
+func (c *defaulterValidatorCmd) Default() error {
+	if c.Value == 0 {
+		c.Value = 42
+	}
+	return nil
+}
+
+func (c *defaulterValidatorCmd) Validate() error {
+	c.validated = true
+	if c.Value < 10 {
+		return fmt.Errorf("value must be >= 10")
+	}
+	return nil
+}
+
+func TestExecute_DefaulterBeforeValidator(t *testing.T) {
+	t.Parallel()
+
+	cmd := &defaulterValidatorCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 42, cmd.Value, "Defaulter should set Value")
+	assert.True(t, cmd.validated, "Validator should run after Defaulter")
+}
+
+type defaulterErrorCmd struct{}
+
+func (c *defaulterErrorCmd) Run(_ context.Context) error { return nil }
+func (c *defaulterErrorCmd) Default() error {
+	return fmt.Errorf("default failed")
+}
+
+func TestExecute_DefaulterError(t *testing.T) {
+	t.Parallel()
+
+	cmd := &defaulterErrorCmd{}
+	err := Execute(context.Background(), cmd, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "default failed")
+}
+
 // Test suggestion path via custom FlagParser that returns unknown flag error.
 type internalErrorFlagParser struct{}
 

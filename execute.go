@@ -431,6 +431,16 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 		return renderHelp(leaf, chain, opts)
 	}
 
+	// Initializer hooks (parent-first) — runs before any parsing.
+	for _, cmd := range chain {
+		if init, ok := cmd.(Initializer); ok {
+			ctx, err = init.Init(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	// Check if leaf disables flag parsing (passthrough mode).
 	leafPassthrough := false
 	if pt, ok := leaf.(Passthrougher); ok {
@@ -464,6 +474,15 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 			return err
 		}
 		resolved.positional = remaining
+	}
+
+	// Defaulter hooks — compute defaults after parsing, before validation.
+	for _, cmd := range chain {
+		if d, ok := cmd.(Defaulter); ok {
+			if err := d.Default(); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Validate positional args using the original args.

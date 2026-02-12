@@ -714,14 +714,16 @@ func (s *ServeCmd) BeforeApply(ctx *kong.Context) error {
 
 ### bjaus/cli
 
-Two hook points via interfaces, plus middleware:
+Four hook points via interfaces, plus middleware:
 
 ```
-Before (parent→child) → Middleware(Run) → After (child→parent)
+Init → [parse] → Default → Validate → Before → Middleware(Run) → After
 ```
 
-- `Before` returns `(context.Context, error)` — context flows forward through the
-  chain
+- `Init` returns `(context.Context, error)` — runs before parsing for early setup
+- `Default` runs after parsing — compute defaults that tags can't express
+- `Validate` runs after defaulting — validate final state
+- `Before` returns `(context.Context, error)` — context flows forward through chain
 - `After` always runs, even on error (child-first order)
 - `Middlewarer` returns `[]func(next RunFunc) RunFunc` — wraps the leaf's `Run`
 
@@ -743,16 +745,18 @@ Cobra requires `PersistentPreRun` without knowing which leaf will run.
 
 ### Comparison
 
-| Feature              | cobra               | urfave/cli        | kong      | bjaus/cli          |
-| -------------------- | ------------------- | ----------------- | --------- | ------------------ |
-| Hook points          | 6                   | 2 + per-flag      | 5         | 2 + middleware     |
-| Context modification | No                  | Yes (Before)      | Via DI    | Yes (Before)       |
-| Always-run cleanup   | PersistentPostRun   | After             | AfterRun  | After              |
-| Middleware wrapping  | No                  | No                | No        | Yes                |
-| Leaf inspection      | No                  | No                | No        | Yes (`cli.Leaf`)   |
-| Hook inheritance     | Persistent variants | Root Before/After | On struct | Parent implements  |
-| Per-flag callbacks   | No                  | Yes               | No        | No                 |
-| DI in hooks          | No                  | No                | Yes       | Yes (bound values) |
+| Feature              | cobra               | urfave/cli        | kong      | bjaus/cli            |
+| -------------------- | ------------------- | ----------------- | --------- | -------------------- |
+| Hook points          | 6                   | 2 + per-flag      | 5         | 4 + middleware       |
+| Pre-parse hook       | PersistentPreRun    | No                | BeforeReset | Init               |
+| Post-parse hook      | No                  | No                | AfterApply | Default            |
+| Context modification | No                  | Yes (Before)      | Via DI    | Yes (Init, Before)   |
+| Always-run cleanup   | PersistentPostRun   | After             | AfterRun  | After                |
+| Middleware wrapping  | No                  | No                | No        | Yes                  |
+| Leaf inspection      | No                  | No                | No        | Yes (`cli.Leaf`)     |
+| Hook inheritance     | Persistent variants | Root Before/After | On struct | Parent implements    |
+| Per-flag callbacks   | No                  | Yes               | No        | No                   |
+| DI in hooks          | No                  | No                | Yes       | Yes (bound values)   |
 
 ---
 
