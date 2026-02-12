@@ -938,29 +938,56 @@ No exit code control beyond conventional `os.Exit(1)`.
 
 ### bjaus/cli
 
-Sentinel errors for common failures: `ErrUnknownFlag`, `ErrFlagRequiresVal`,
-`ErrRequiredFlag`, `ErrUnsupportedType`, `ErrInvalidFlagValue`, `ErrInvalidTag`.
+**Hierarchical sentinel errors** with `Unwrap()` enable granular error checking:
 
-`ExitCoder` interface with `ExitCode() int`. Create with `cli.Exit("msg", code)` or
-`cli.Exitf("msg %s", arg, code)`.
+```go
+// Check specific error
+if errors.Is(err, cli.ErrRequiredArg) { /* missing argument */ }
 
-`ErrShowHelp` — return from `Run` to trigger help display without error.
+// Check error category
+if errors.Is(err, cli.ErrArgument) { /* any argument error */ }
+```
 
-`Exiter` interface on root — custom error printing and process exit.
+Error hierarchy:
 
-`Execute` returns error (testable); `ExecuteAndExit` handles exit codes.
+- `ErrFlag` → `ErrUnknownFlag`, `ErrFlagRequiresVal`, `ErrRequiredFlag`, `ErrInvalidFlagValue`
+- `ErrArgument` → `ErrRequiredArg`, `ErrInvalidArgValue`, `ErrArgCount`
+- `ErrCommand` → `ErrUnknownCommand`
+- `ErrFlagGroup` → `ErrMutuallyExclusive`, `ErrRequiredTogether`, `ErrOneRequired`
+
+**Help/usage signals** with distinct exit codes:
+
+| Signal | Display | Exit Code | Use Case |
+|--------|---------|-----------|----------|
+| `ShowHelp` | Full help | 0 | Explicit help request (`myapp help`) |
+| `ErrShowHelp` | Full help | 1 | Error requiring help (missing subcommand) |
+| `ShowUsage` | Brief usage | 0 | Usage info request |
+| `ErrShowUsage` | Brief usage | 1 | Error requiring usage hint |
+
+**Silence options** for output control:
+
+- `WithSilenceErrors(true)` — suppress "Error: ..." message
+- `WithSilenceUsage(true)` — suppress "Run 'app --help' for usage" hint
+
+**`ExitCoder` interface** for custom exit codes. Create with `cli.Exit("msg", code)`
+or `cli.Exitf(code, "msg %s", arg)`.
+
+**`Exiter` interface** on root for complete exit control — custom error printing and
+process exit logic.
+
+`Execute` returns error (testable); `ExecuteAndExit` handles exit codes and output.
 
 ### Comparison
 
-| Feature               | cobra | urfave/cli  | kong            | bjaus/cli              |
-| --------------------- | ----- | ----------- | --------------- | ---------------------- |
-| Custom exit codes     | No    | `ExitCoder` | `ExitCode()`    | `ExitCoder`            |
-| Sentinel errors       | No    | No          | `ParseError`    | 7 sentinel errors      |
-| "Show help" error     | No    | No          | No              | `ErrShowHelp`          |
-| Silence control       | Yes   | No          | No              | No                     |
-| Custom exit behavior  | No    | `OsExiter`  | `Exit()` option | `Exiter` interface     |
-| Execute returns error | Yes   | Yes         | Yes             | Yes                    |
-| Strict tag validation | No    | No          | No              | Yes (catches bad tags) |
+| Feature               | cobra | urfave/cli  | kong            | bjaus/cli                   |
+| --------------------- | ----- | ----------- | --------------- | --------------------------- |
+| Custom exit codes     | No    | `ExitCoder` | `ExitCode()`    | `ExitCoder`                 |
+| Hierarchical errors   | No    | No          | `ParseError`    | Yes (4 categories, 11 specific) |
+| Help/usage signals    | No    | No          | No              | 4 signals with exit codes   |
+| Silence control       | Yes   | No          | No              | Yes (`WithSilence*`)        |
+| Custom exit behavior  | No    | `OsExiter`  | `Exit()` option | `Exiter` interface          |
+| Execute returns error | Yes   | Yes         | Yes             | Yes                         |
+| Strict tag validation | No    | No          | No              | Yes (catches bad tags)      |
 
 bjaus/cli's **strict tag validation** catches invalid struct tag combinations at parse
 time (e.g., `flag` + `arg` on same field, `required` + `default`, `counter` on
@@ -1339,7 +1366,7 @@ func TestServe(t *testing.T) {
 | **Counter flags**         | Yes                | No                 | Yes              | Yes                       |
 | **Flag auto-naming**      | No                 | No                 | Yes              | Yes                       |
 | **Secret masking**        | No                 | No                 | No               | Yes                       |
-| **`ErrShowHelp`**         | No                 | No                 | No               | Yes                       |
+| **Help/usage signals**    | No                 | No                 | No               | Yes (4 with exit codes)   |
 | **Passthrough mode**      | DisableFlagParsing | No                 | `passthrough:""` | `Passthrougher`           |
 
 ---

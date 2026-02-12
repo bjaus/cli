@@ -76,28 +76,60 @@ func (a Args) Tail() Args {
 // WithBindings registers dependencies for injection into command structs.
 // Uses [bind.Option] from github.com/bjaus/bind.
 //
+// # Binding Modes
+//
+// Four binding modes are available:
+//
+//   - bind.Value(v) — register a value, matched by its concrete type
+//   - bind.Interface(v, (*Iface)(nil)) — register a value as an interface type
+//   - bind.Provider(func() (T, error)) — lazy factory, called on each injection
+//   - bind.Singleton(func() (T, error)) — lazy factory, called once and cached
+//
+// # Example
+//
+//	db, _ := sql.Open("postgres", connStr)
 //	cli.Execute(ctx, root, args,
 //	    cli.WithBindings(
-//	        bind.Value(db),
-//	        bind.Interface(cache, (*Cache)(nil)),
-//	        bind.Singleton(newDB),
+//	        bind.Value(db),                        // inject *sql.DB
+//	        bind.Interface(cache, (*Cache)(nil)),  // inject as Cache interface
+//	        bind.Singleton(newLogger),             // create once, share across commands
+//	        bind.Provider(newRequestID),           // create fresh each time
 //	    ),
 //	)
 //
-// Commands declare dependencies as struct fields (no tag needed):
+// # Declaring Dependencies
+//
+// Commands declare dependencies as struct fields without tags:
 //
 //	type ServeCmd struct {
-//	    DB   *sql.DB
-//	    Port int `flag:"port"`
+//	    DB     *sql.DB   // injected by type
+//	    Cache  Cache     // injected by interface
+//	    Port   int       `flag:"port"` // NOT injected (has flag tag)
 //	}
 //
 // Fields with flag:, arg:, or env: tags are not eligible for injection.
+// The injector matches by exact type first, then by interface compatibility.
+//
+// # Auto-Bound Types
+//
+// [Args] (positional arguments) is auto-bound. Commands can declare an Args
+// field to receive remaining positional arguments:
+//
+//	type GrepCmd struct {
+//	    Pattern string   `arg:"pattern"`
+//	    Args    cli.Args // automatically populated
+//	}
+//
+// # Context Lookup
 //
 // Bindings are also accessible in Run via [bind.Get]:
 //
 //	func (s *ServeCmd) Run(ctx context.Context) error {
 //	    db := bind.Get[*sql.DB](ctx)
+//	    // ...
 //	}
+//
+// Use [bind.Lookup] for optional dependencies (returns value, bool).
 func WithBindings(opts ...bind.Option) Option {
 	return func(o *options) {
 		o.bindOpts = append(o.bindOpts, opts...)

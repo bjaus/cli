@@ -5,6 +5,45 @@ import (
 	"fmt"
 )
 
+// --- Hierarchical Sentinel Errors ---
+//
+// The framework uses hierarchical sentinel errors for precise error handling.
+// Each specific error wraps a parent category error via Unwrap(), enabling
+// checks at any granularity level using [errors.Is]:
+//
+//	// Handle specific errors differently
+//	switch {
+//	case errors.Is(err, cli.ErrRequiredArg):
+//	    fmt.Println("Missing required argument")
+//	case errors.Is(err, cli.ErrInvalidArgValue):
+//	    fmt.Println("Invalid argument value")
+//	case errors.Is(err, cli.ErrArgument):
+//	    fmt.Println("Some argument error") // catches all argument errors
+//	}
+//
+// Error hierarchy:
+//
+//	ErrFlag ─────────┬── ErrUnknownFlag
+//	                 ├── ErrFlagRequiresVal
+//	                 ├── ErrRequiredFlag
+//	                 └── ErrInvalidFlagValue
+//
+//	ErrArgument ─────┬── ErrRequiredArg
+//	                 ├── ErrInvalidArgValue
+//	                 └── ErrArgCount
+//
+//	ErrCommand ──────┴── ErrUnknownCommand
+//
+//	ErrFlagGroup ────┬── ErrMutuallyExclusive
+//	                 ├── ErrRequiredTogether
+//	                 └── ErrOneRequired
+//
+// The framework wraps these sentinels with context when returning errors:
+//
+//	fmt.Errorf("%w: --port: %w", cli.ErrInvalidFlagValue, strconv.ErrSyntax)
+//
+// This preserves the error chain for both [errors.Is] and [errors.Unwrap].
+
 // sentinelError is an error that wraps a parent sentinel, enabling hierarchical
 // error checking via [errors.Is]. For example, ErrRequiredArg wraps ErrArgument,
 // so errors.Is(err, ErrRequiredArg) and errors.Is(err, ErrArgument) both return true.

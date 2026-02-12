@@ -9,10 +9,12 @@
 // Every command must implement [Commander]:
 //
 //	type Commander interface {
-//	    Run(ctx context.Context, args []string) error
+//	    Run(ctx context.Context) error
 //	}
 //
 // [RunFunc] adapts a plain function into a Commander for simple cases.
+// Positional arguments are injected via [Args] struct fields or accessed
+// via [bind.Get] from the context.
 //
 // # Discovery Interfaces
 //
@@ -245,7 +247,7 @@
 // before [Beforer] hooks run. Subcommands can retrieve any ancestor's
 // flag value without declaring struct fields:
 //
-//	func (s *ServeCmd) Run(ctx context.Context, args []string) error {
+//	func (s *ServeCmd) Run(ctx context.Context) error {
 //	    env := cli.Get[string](ctx, "env") // from parent's --env flag
 //	    // ...
 //	}
@@ -476,4 +478,174 @@
 // Active help messages are displayed by the shell as guidance during completion.
 // If Complete returns an empty result (or [NoCompletions]), the framework falls
 // back to static completion of subcommands and flags.
+//
+// # Error Handling
+//
+// The framework provides hierarchical sentinel errors for precise error handling.
+// Each specific error wraps a parent category, enabling checks at any granularity:
+//
+//	// Check specific error
+//	if errors.Is(err, cli.ErrRequiredArg) { /* missing argument */ }
+//
+//	// Check error category
+//	if errors.Is(err, cli.ErrArgument) { /* any argument error */ }
+//
+// Error categories and their specific errors:
+//
+//   - [ErrFlag] → [ErrUnknownFlag], [ErrFlagRequiresVal], [ErrRequiredFlag], [ErrInvalidFlagValue]
+//   - [ErrArgument] → [ErrRequiredArg], [ErrInvalidArgValue], [ErrArgCount]
+//   - [ErrCommand] → [ErrUnknownCommand]
+//   - [ErrFlagGroup] → [ErrMutuallyExclusive], [ErrRequiredTogether], [ErrOneRequired]
+//
+// # Help and Usage Signals
+//
+// Commands can return special signals to display help or usage:
+//
+//	func (c *Cmd) Run(ctx context.Context) error {
+//	    if len(c.Args) == 0 {
+//	        return cli.ErrShowHelp  // show help, exit 1
+//	    }
+//	    return nil
+//	}
+//
+// Four signals control help/usage display:
+//
+//   - [ShowHelp] — full help, exit code 0 (explicit help request)
+//   - [ErrShowHelp] — full help, exit code 1 (error condition)
+//   - [ShowUsage] — brief usage line, exit code 0
+//   - [ErrShowUsage] — brief usage line, exit code 1
+//
+// Use [ShowHelp] for explicit help requests (e.g., a "help" subcommand).
+// Use [ErrShowHelp] when showing help due to an error (e.g., missing required
+// subcommand on bare invocation).
+//
+// # Custom Exit Codes
+//
+// Return an error implementing [ExitCoder] to control the process exit code:
+//
+//	func (c *Cmd) Run(ctx context.Context) error {
+//	    if err := doWork(); err != nil {
+//	        return cli.Exit("operation failed", 2)
+//	    }
+//	    return nil
+//	}
+//
+// Use [Exit] for simple messages or [Exitf] for formatted messages:
+//
+//	return cli.Exitf(3, "port %d already in use", port)
+//
+// # Silencing Output
+//
+// Control error output with [WithSilenceErrors] and [WithSilenceUsage]:
+//
+//	cli.Execute(ctx, root, args,
+//	    cli.WithSilenceErrors(true),  // suppress "Error: ..." message
+//	    cli.WithSilenceUsage(true),   // suppress "Run 'app --help' for usage" hint
+//	)
+//
+// For complete control over error handling, implement [Exiter] on the root
+// command. When ExecuteAndExit encounters an error and the root implements
+// Exiter, it delegates entirely to Exit(err) instead of printing the error
+// and calling os.Exit.
+//
+// # Execution Functions
+//
+// Two functions run the command tree:
+//
+//   - [Execute] — runs the command and returns the error (for testing)
+//   - [ExecuteAndExit] — runs the command, prints errors, and calls os.Exit
+//
+// Use Execute in tests for direct error inspection. Use ExecuteAndExit in
+// main() for proper exit code handling.
+//
+// # Dependency Injection
+//
+// The framework provides built-in dependency injection via [WithBindings]:
+//
+//	db, _ := sql.Open("postgres", connStr)
+//	cli.Execute(ctx, root, args,
+//	    cli.WithBindings(
+//	        bind.Value(db),                        // bind by concrete type
+//	        bind.Interface(cache, (*Cache)(nil)),  // bind to interface
+//	        bind.Singleton(newLogger),             // lazy singleton
+//	    ),
+//	)
+//
+// Bound values are injected into struct fields across all commands in the
+// chain. Fields with flag, arg, or env tags are skipped. The injector matches
+// by exact type first, then by interface compatibility.
+//
+// Four binding modes are available:
+//
+//   - bind.Value(v) — register a value matched by concrete type
+//   - bind.Interface(v, (*Iface)(nil)) — register a value as an interface type
+//   - bind.Provider(func() (T, error)) — lazy factory called on each injection
+//   - bind.Singleton(func() (T, error)) — lazy factory called once, cached
+//
+// [Args] is auto-bound, so commands can declare an Args field without tags:
+//
+//	type GrepCmd struct {
+//	    Pattern string `arg:"pattern"`
+//	    Args    cli.Args  // automatically populated with remaining args
+//	}
+//
+// Bound values are also accessible via context lookup in Run:
+//
+//	func (c *Cmd) Run(ctx context.Context) error {
+//	    db := bind.Get[*sql.DB](ctx)
+//	    // ...
+//	}
+//
+// # Middleware
+//
+// Commands implementing [Middlewarer] can wrap their Run function:
+//
+//	func (c *Cmd) Middleware() []func(cli.RunFunc) cli.RunFunc {
+//	    return []func(cli.RunFunc) cli.RunFunc{
+//	        loggingMiddleware,
+//	        timingMiddleware,
+//	    }
+//	}
+//
+// Middleware is applied in order (first wraps outermost). This enables
+// cross-cutting concerns like logging, timing, error recovery, and
+// transaction management without modifying Run.
+//
+// # Leaf Inspection
+//
+// Parent [Beforer.Before] hooks can inspect the resolved leaf command:
+//
+//	func (a *App) Before(ctx context.Context) (context.Context, error) {
+//	    leaf := cli.Leaf(ctx)
+//	    if _, ok := leaf.(Authenticated); ok {
+//	        return authenticate(ctx)
+//	    }
+//	    return ctx, nil
+//	}
+//
+// This enables interface-based routing: define a marker interface like
+// Authenticated, implement it on commands that require auth, and handle
+// the concern in a single parent Before hook. The pattern avoids duplicating
+// authentication logic across every command that needs it.
+//
+// # Meta Struct
+//
+// For rapid prototyping, embed [Meta] to get default implementations for
+// common metadata interfaces:
+//
+//	type ServeCmd struct {
+//	    cli.Meta
+//	    Port int `flag:"port" default:"8080"`
+//	}
+//
+//	cmd := &ServeCmd{
+//	    Meta: cli.Meta{}.
+//	        WithName("serve").
+//	        WithDescription("Start the server").
+//	        WithAliases("s"),
+//	}
+//
+// [Meta] implements [Namer], [Descriptor], [LongDescriptor], [Aliaser],
+// [Categorizer], [Hider], [Deprecator], and [Exampler]. Override any method
+// by defining it on your command type.
 package cli
