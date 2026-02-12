@@ -1279,6 +1279,29 @@ func TestHelpRequested_NotRequested(t *testing.T) {
 	assert.False(t, helpRequested(resolved))
 }
 
+func TestHelpRequested_HelpAsFirstPositional(t *testing.T) {
+	t.Parallel()
+
+	resolved := &resolvedCommand{
+		chain:      []Commander{&internalBareCmd{}},
+		chainArgs:  [][]string{nil},
+		positional: []string{"help"},
+	}
+	assert.True(t, helpRequested(resolved))
+}
+
+func TestHelpRequested_HelpNotFirstPositional(t *testing.T) {
+	t.Parallel()
+
+	// "help" in a non-first position should NOT trigger help
+	resolved := &resolvedCommand{
+		chain:      []Commander{&internalBareCmd{}},
+		chainArgs:  [][]string{nil},
+		positional: []string{"something", "help"},
+	}
+	assert.False(t, helpRequested(resolved))
+}
+
 // --- execute integration tests for coverage ---
 
 // Test Before error with parent-child: parent's After should still run.

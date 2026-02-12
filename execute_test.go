@@ -311,6 +311,106 @@ func TestExecute_HelpFlag(t *testing.T) {
 	}
 }
 
+// --- "help" as default subcommand ---
+
+type helpSubcmdApp struct {
+	sub *helpSubcmdSub // lowercase, not exported, not treated as embedded
+}
+
+func (c *helpSubcmdApp) Run(_ context.Context) error { return nil }
+func (c *helpSubcmdApp) Name() string                { return "app" }
+func (c *helpSubcmdApp) Subcommands() []cli.Commander {
+	return []cli.Commander{c.sub}
+}
+
+type helpSubcmdSub struct{ ran bool }
+
+func (c *helpSubcmdSub) Run(_ context.Context) error {
+	c.ran = true
+	return nil
+}
+func (c *helpSubcmdSub) Name() string { return "status" }
+
+func TestExecute_HelpAsSubcommand_ShowsHelp(t *testing.T) {
+	t.Parallel()
+
+	// When "help" is passed and no subcommand named "help" exists,
+	// it should show help output (not error on unknown command).
+	var buf bytes.Buffer
+	sub := &helpSubcmdSub{}
+	cmd := &helpSubcmdApp{sub: sub}
+	err := cli.Execute(context.Background(), cmd, []string{"help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Commands:")
+	assert.False(t, sub.ran)
+}
+
+// Explicit "help" subcommand takes priority over default help behavior.
+type explicitHelpApp struct {
+	sub *explicitHelpSub
+}
+
+func (c *explicitHelpApp) Run(_ context.Context) error { return nil }
+func (c *explicitHelpApp) Name() string                { return "app" }
+func (c *explicitHelpApp) Subcommands() []cli.Commander {
+	return []cli.Commander{c.sub}
+}
+
+type explicitHelpSub struct{ ran bool }
+
+func (c *explicitHelpSub) Run(_ context.Context) error {
+	c.ran = true
+	return nil
+}
+func (c *explicitHelpSub) Name() string        { return "help" }
+func (c *explicitHelpSub) Description() string { return "Custom help command" }
+
+func TestExecute_HelpAsSubcommand_ExplicitTakesPriority(t *testing.T) {
+	t.Parallel()
+
+	// When an explicit "help" subcommand exists, it should be executed
+	// instead of showing the default help.
+	var buf bytes.Buffer
+	sub := &explicitHelpSub{}
+	cmd := &explicitHelpApp{sub: sub}
+	err := cli.Execute(context.Background(), cmd, []string{"help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.True(t, sub.ran)
+}
+
+// Fallbacker takes priority over default help behavior.
+type fallbackHelpApp struct {
+	fallback *fallbackHelpSub
+}
+
+func (c *fallbackHelpApp) Run(_ context.Context) error { return nil }
+func (c *fallbackHelpApp) Name() string                { return "app" }
+func (c *fallbackHelpApp) Subcommands() []cli.Commander {
+	return []cli.Commander{&serveCmd{}}
+}
+func (c *fallbackHelpApp) Fallback() cli.Commander { return c.fallback }
+
+type fallbackHelpSub struct{ ran bool }
+
+func (c *fallbackHelpSub) Run(_ context.Context) error {
+	c.ran = true
+	return nil
+}
+func (c *fallbackHelpSub) Name() string { return "fallback" }
+
+func TestExecute_HelpAsSubcommand_FallbackTakesPriority(t *testing.T) {
+	t.Parallel()
+
+	// When Fallbacker is implemented and "help" doesn't match any subcommand,
+	// the fallback command should run instead of showing help.
+	var buf bytes.Buffer
+	fallback := &fallbackHelpSub{}
+	cmd := &fallbackHelpApp{fallback: fallback}
+	err := cli.Execute(context.Background(), cmd, []string{"help"}, cli.WithStdout(&buf))
+	require.NoError(t, err)
+	assert.True(t, fallback.ran)
+}
+
 // --- Middleware in execution ---
 
 type middlewareCmd struct {

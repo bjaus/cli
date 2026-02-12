@@ -817,6 +817,7 @@ Default renderer produces formatted output with multiple customization points:
 - `WithSortedHelp`: alphabetical sorting for subcommands and flags
 - Variable interpolation: `${default}`, `${enum}`, `${env}` in help strings
 - `HelpCommand(root, w)`: pre-built hidden `help` subcommand
+- Default `help` behavior: `app help` shows help when no explicit `help` subcommand exists
 
 Sections in order: description, prepended sections, usage, examples, subcommands
 (by category), flags (by category, hidden filtered, required marked with `*`),
@@ -827,7 +828,7 @@ positional args, appended sections, global flags, footer.
 | Feature                | cobra           | urfave/cli     | kong               | bjaus/cli                               |
 | ---------------------- | --------------- | -------------- | ------------------ | --------------------------------------- |
 | Auto `--help`          | Yes             | Yes            | Yes                | Yes                                     |
-| Auto `help` subcommand | Yes             | Yes            | No                 | Yes (`HelpCommand`)                     |
+| Auto `help` subcommand | Yes             | Yes            | No                 | Yes (default + `HelpCommand`)           |
 | Template system        | Go templates    | Go templates   | No                 | No                                      |
 | Variable interpolation | No              | No             | Yes (`${default}`) | Yes (`${default}`, `${enum}`, `${env}`) |
 | Compact/Tree modes     | No              | No             | Yes                | No                                      |

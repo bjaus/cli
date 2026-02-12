@@ -9,10 +9,11 @@ import (
 
 // resolvedCommand holds the result of walking the command tree.
 type resolvedCommand struct {
-	chain      []Commander
-	chainArgs  [][]string // per-command flag args, aligned with chain
-	branchArgs [][]string // per-command positional args for branching commands
-	positional []string
+	chain        []Commander
+	chainArgs    [][]string // per-command flag args, aligned with chain
+	branchArgs   [][]string // per-command positional args for branching commands
+	positional   []string
+	usedFallback bool // true if Fallbacker was invoked during resolution
 }
 
 // flagIndex maps flag names (--name, -n) to whether they are boolean.
@@ -55,6 +56,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 	chainArgs := [][]string{nil}
 	branchArgs := make([][]string, 1) // positional args for branching commands
 	remaining := args
+	usedFallback := false
 
 	for {
 		idx := len(chain) - 1
@@ -90,6 +92,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 					chain = append(chain, d.Fallback())
 					chainArgs = append(chainArgs, nil)
 					branchArgs = append(branchArgs, nil)
+					usedFallback = true
 					continue
 				}
 				break
@@ -110,6 +113,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 				chain = append(chain, d.Fallback())
 				chainArgs = append(chainArgs, nil)
 				branchArgs = append(branchArgs, nil)
+				usedFallback = true
 				if next != nil {
 					remaining = next
 				}
@@ -139,10 +143,11 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 	chainArgs[leafIdx] = append(chainArgs[leafIdx], leafFlags...)
 
 	return &resolvedCommand{
-		chain:      chain,
-		chainArgs:  chainArgs,
-		branchArgs: branchArgs,
-		positional: positional,
+		chain:        chain,
+		chainArgs:    chainArgs,
+		branchArgs:   branchArgs,
+		positional:   positional,
+		usedFallback: usedFallback,
 	}, nil
 }
 
@@ -554,6 +559,12 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 }
 
 func helpRequested(resolved *resolvedCommand) bool {
+	// "help" as first positional arg triggers help if it wasn't matched
+	// as a subcommand (explicit help subcommand or Fallbacker takes priority).
+	if !resolved.usedFallback && len(resolved.positional) > 0 && resolved.positional[0] == "help" {
+		return true
+	}
+
 	for _, arg := range resolved.positional {
 		if arg == "--help" || arg == "-h" {
 			return true
