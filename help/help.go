@@ -16,6 +16,20 @@
 //   - [Man] — man page style with CAPS sections
 //   - [JSON] — machine-readable JSON
 //   - [Markdown] — Markdown format for documentation
+//   - [Template] — custom Go text/template
+//
+// # Custom Templates
+//
+// The [Template] renderer allows complete control over help output using Go's
+// text/template syntax. Templates receive a [HelpData] struct with all command
+// metadata:
+//
+//	tmpl := `{{.Name}} - {{.Description}}
+//	{{range .Flags}}- --{{.Name}}: {{.Help}}
+//	{{end}}`
+//	renderer, _ := help.Template(tmpl)
+//
+// Use [BuildHelpData] to access the structured help data programmatically.
 package help
 
 import (

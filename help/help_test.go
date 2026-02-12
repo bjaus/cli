@@ -428,3 +428,110 @@ func TestInterpolateHelp(t *testing.T) {
 		})
 	}
 }
+
+func TestTemplateRenderer(t *testing.T) {
+	root := &testRoot{}
+	serve := &testCmd{}
+	chain := []cli.Commander{root, serve}
+	flags := cli.ScanFlags(serve)
+	args := cli.ScanArgs(serve)
+	globalFlags := cli.ScanFlags(root)
+
+	tmpl := `# {{.Name}}
+{{.Description}}
+
+## Usage
+{{range .Usage}}  {{.}}
+{{end}}
+## Flags
+{{range .Flags}}- --{{.Name}}: {{.Help}}
+{{end}}`
+
+	renderer, err := help.Template(tmpl)
+	if err != nil {
+		t.Fatalf("Template() error: %v", err)
+	}
+
+	output := renderer.RenderHelp(serve, chain, flags, args, globalFlags)
+
+	checks := []string{
+		"# myapp serve",
+		"Start the HTTP server",
+		"## Usage",
+		"## Flags",
+		"--port",
+		"--verbose",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\nOutput:\n%s", check, output)
+		}
+	}
+}
+
+func TestMustTemplate(t *testing.T) {
+	// Valid template should not panic.
+	renderer := help.MustTemplate("{{.Name}}")
+	if renderer == nil {
+		t.Error("MustTemplate returned nil")
+	}
+
+	// Invalid template should panic.
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("MustTemplate should panic on invalid template")
+		}
+	}()
+	help.MustTemplate("{{.Invalid")
+}
+
+func TestTemplateWithFunctions(t *testing.T) {
+	root := &testRoot{}
+	serve := &testCmd{}
+	chain := []cli.Commander{root, serve}
+	flags := cli.ScanFlags(serve)
+	args := cli.ScanArgs(serve)
+	globalFlags := cli.ScanFlags(root)
+
+	tmpl := `{{upper .Name}}
+{{join .Usage " | "}}
+{{indent 4 .Description}}`
+
+	renderer, err := help.Template(tmpl)
+	if err != nil {
+		t.Fatalf("Template() error: %v", err)
+	}
+
+	output := renderer.RenderHelp(serve, chain, flags, args, globalFlags)
+
+	if !strings.Contains(output, "MYAPP SERVE") {
+		t.Errorf("upper function not working, got: %s", output)
+	}
+	if !strings.Contains(output, "    Start the HTTP server") {
+		t.Errorf("indent function not working, got: %s", output)
+	}
+}
+
+func TestBuildHelpData(t *testing.T) {
+	root := &testRoot{}
+	serve := &testCmd{}
+	chain := []cli.Commander{root, serve}
+	flags := cli.ScanFlags(serve)
+	args := cli.ScanArgs(serve)
+	globalFlags := cli.ScanFlags(root)
+
+	data := help.BuildHelpData(serve, chain, flags, args, globalFlags, false)
+
+	if data.Name != "myapp serve" {
+		t.Errorf("expected name 'myapp serve', got %q", data.Name)
+	}
+	if data.Description != "Start the HTTP server" {
+		t.Errorf("expected description, got %q", data.Description)
+	}
+	if len(data.Flags) != 3 {
+		t.Errorf("expected 3 flags, got %d", len(data.Flags))
+	}
+	if len(data.GlobalFlags) != 1 {
+		t.Errorf("expected 1 global flag, got %d", len(data.GlobalFlags))
+	}
+}

@@ -20,22 +20,23 @@ func JSON(opts ...Option) cli.HelpRenderer {
 	return &jsonRenderer{opts: applyOptions(opts)}
 }
 
-// CommandHelp is the JSON structure for command help.
-type CommandHelp struct {
+// HelpData is the structured representation of command help.
+// It is used by both the JSON renderer and the Template renderer.
+type HelpData struct {
 	Name            string        `json:"name"`
 	Description     string        `json:"description,omitempty"`
 	LongDescription string        `json:"longDescription,omitempty"`
 	Aliases         []string      `json:"aliases,omitempty"`
 	Usage           []string      `json:"usage"`
-	Commands        []CommandJSON `json:"commands,omitempty"`
-	Flags           []FlagJSON    `json:"flags,omitempty"`
-	Arguments       []ArgJSON     `json:"arguments,omitempty"`
-	GlobalFlags     []FlagJSON    `json:"globalFlags,omitempty"`
-	Examples        []ExampleJSON `json:"examples,omitempty"`
+	Commands        []CommandData `json:"commands,omitempty"`
+	Flags           []FlagData    `json:"flags,omitempty"`
+	Arguments       []ArgData     `json:"arguments,omitempty"`
+	GlobalFlags     []FlagData    `json:"globalFlags,omitempty"`
+	Examples        []ExampleData `json:"examples,omitempty"`
 }
 
-// CommandJSON is the JSON structure for a subcommand.
-type CommandJSON struct {
+// CommandData is the structured representation of a subcommand.
+type CommandData struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`
@@ -43,8 +44,8 @@ type CommandJSON struct {
 	Hidden      bool     `json:"hidden,omitempty"`
 }
 
-// FlagJSON is the JSON structure for a flag.
-type FlagJSON struct {
+// FlagData is the structured representation of a flag.
+type FlagData struct {
 	Name        string   `json:"name"`
 	Short       string   `json:"short,omitempty"`
 	Alt         []string `json:"alt,omitempty"`
@@ -64,8 +65,8 @@ type FlagJSON struct {
 	Placeholder string   `json:"placeholder,omitempty"`
 }
 
-// ArgJSON is the JSON structure for a positional argument.
-type ArgJSON struct {
+// ArgData is the structured representation of a positional argument.
+type ArgData struct {
 	Name     string `json:"name"`
 	Help     string `json:"help,omitempty"`
 	Default  string `json:"default,omitempty"`
@@ -76,19 +77,32 @@ type ArgJSON struct {
 	IsSlice  bool   `json:"isSlice,omitempty"`
 }
 
-// ExampleJSON is the JSON structure for an example.
-type ExampleJSON struct {
+// ExampleData is the structured representation of an example.
+type ExampleData struct {
 	Description string `json:"description,omitempty"`
 	Command     string `json:"command"`
 }
 
 // RenderHelp implements cli.HelpRenderer.
 func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef) string {
+	h := BuildHelpData(cmd, chain, flags, args, globalFlags, r.opts.Sorted)
+
+	// Marshal to JSON.
+	data, err := json.MarshalIndent(h, "", "  ")
+	if err != nil {
+		return "{\"error\": \"" + err.Error() + "\"}"
+	}
+	return string(data) + "\n"
+}
+
+// BuildHelpData constructs a HelpData struct from command metadata.
+// This is useful for custom template rendering or programmatic access.
+func BuildHelpData(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef, sorted bool) HelpData {
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
 
-	h := CommandHelp{
+	h := HelpData{
 		Name:            chainNames,
 		Description:     info.Description,
 		LongDescription: info.LongDescription,
@@ -109,14 +123,14 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 
 	// Commands.
 	visible := VisibleSubcommands(allSubs)
-	if r.opts.Sorted {
+	if sorted {
 		slices.SortFunc(visible, func(a, b cli.Commander) int {
 			return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
 		})
 	}
 	for _, s := range visible {
 		sInfo := ResolveInfo(s)
-		h.Commands = append(h.Commands, CommandJSON{
+		h.Commands = append(h.Commands, CommandData{
 			Name:        sInfo.Name,
 			Description: sInfo.Description,
 			Aliases:     sInfo.Aliases,
@@ -125,13 +139,13 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 		})
 	}
 
-	// Include hidden in JSON output for completeness.
+	// Include hidden in output for completeness.
 	for _, s := range allSubs {
 		sInfo := ResolveInfo(s)
 		if !sInfo.Hidden {
 			continue
 		}
-		h.Commands = append(h.Commands, CommandJSON{
+		h.Commands = append(h.Commands, CommandData{
 			Name:        sInfo.Name,
 			Description: sInfo.Description,
 			Aliases:     sInfo.Aliases,
@@ -141,19 +155,19 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 	}
 
 	// Flags (include all, not just visible).
-	if r.opts.Sorted {
+	if sorted {
 		slices.SortFunc(flags, func(a, b cli.FlagDef) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 	}
 	for i := range flags {
-		h.Flags = append(h.Flags, flagDefToJSON(&flags[i]))
+		h.Flags = append(h.Flags, flagToData(&flags[i]))
 	}
 
 	// Arguments.
 	for i := range args {
 		a := &args[i]
-		h.Arguments = append(h.Arguments, ArgJSON{
+		h.Arguments = append(h.Arguments, ArgData{
 			Name:     a.Name,
 			Help:     a.Help,
 			Default:  a.Default,
@@ -166,33 +180,28 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 	}
 
 	// Global flags.
-	if r.opts.Sorted {
+	if sorted {
 		slices.SortFunc(globalFlags, func(a, b cli.FlagDef) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 	}
 	for i := range globalFlags {
-		h.GlobalFlags = append(h.GlobalFlags, flagDefToJSON(&globalFlags[i]))
+		h.GlobalFlags = append(h.GlobalFlags, flagToData(&globalFlags[i]))
 	}
 
 	// Examples.
 	for _, ex := range info.Examples {
-		h.Examples = append(h.Examples, ExampleJSON{
+		h.Examples = append(h.Examples, ExampleData{
 			Description: ex.Description,
 			Command:     ex.Command,
 		})
 	}
 
-	// Marshal to JSON.
-	data, err := json.MarshalIndent(h, "", "  ")
-	if err != nil {
-		return "{\"error\": \"" + err.Error() + "\"}"
-	}
-	return string(data) + "\n"
+	return h
 }
 
-func flagDefToJSON(f *cli.FlagDef) FlagJSON {
-	return FlagJSON{
+func flagToData(f *cli.FlagDef) FlagData {
+	return FlagData{
 		Name:        f.Name,
 		Short:       f.Short,
 		Alt:         f.Alt,
