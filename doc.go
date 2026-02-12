@@ -217,6 +217,23 @@
 //	    return config.FromMap(map[string]string{"port": "9090"})
 //	}
 //
+// [ConfigProvider.ConfigResolver] is called after CLI args are parsed, so
+// a --config flag can specify the config file path dynamically:
+//
+//	type App struct {
+//	    ConfigPath string `flag:"config" help:"Path to config file"`
+//	    Port       int    `flag:"port" help:"Port to listen on"`
+//	}
+//
+//	func (a *App) ConfigResolver() cli.ConfigResolver {
+//	    if a.ConfigPath == "" {
+//	        return nil
+//	    }
+//	    f, _ := os.Open(a.ConfigPath)
+//	    resolver, _ := config.FromJSON(f)
+//	    return resolver
+//	}
+//
 // Command-level resolvers take priority over the global resolver. Use
 // [config.Chain] to try multiple sources in order:
 //

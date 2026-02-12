@@ -1303,6 +1303,7 @@ type envConfigCmd struct {
 func (c *envConfigCmd) Run(_ context.Context) error { return nil }
 
 func TestExecute_EnvOverridesConfig(t *testing.T) {
+	// Env has higher priority than config: CLI > env > config > default
 	t.Setenv("CFG_PORT", "5555")
 
 	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
@@ -1315,7 +1316,24 @@ func TestExecute_EnvOverridesConfig(t *testing.T) {
 	cmd := &envConfigCmd{}
 	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(resolver))
 	require.NoError(t, err)
-	assert.Equal(t, 5555, cmd.Port)
+	assert.Equal(t, 5555, cmd.Port) // env wins over config
+}
+
+func TestExecute_ConfigFallbackWhenNoEnv(t *testing.T) {
+	t.Parallel()
+
+	// Config is used when env doesn't provide a value
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "port" {
+			return "9090", true
+		}
+		return "", false
+	})
+
+	cmd := &envConfigCmd{}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, 9090, cmd.Port) // config used as fallback
 }
 
 func TestExecute_ExplicitFlagOverridesConfig(t *testing.T) {

@@ -6553,3 +6553,69 @@ func TestIPFlag_Slice(t *testing.T) {
 	assert.Equal(t, "192.168.1.1", c.Hosts[0].String())
 	assert.Equal(t, "10.0.0.1", c.Hosts[1].String())
 }
+
+// --- ConfigProvider with --config flag ---
+
+// configFlagCmd demonstrates that ConfigProvider.ConfigResolver() is called
+// AFTER CLI args are parsed, allowing --config to specify the config source.
+type configFlagCmd struct {
+	ConfigPath string `flag:"config" help:"Path to config file"`
+	Port       int    `flag:"port" help:"Port to listen on"`
+	Host       string `flag:"host" help:"Host to bind to"`
+}
+
+func (c *configFlagCmd) Run(_ context.Context) error { return nil }
+
+func (c *configFlagCmd) ConfigResolver() ConfigResolver {
+	// ConfigResolver is called after CLI parsing, so c.ConfigPath is available.
+	if c.ConfigPath == "" {
+		return nil
+	}
+	// Simulate loading config based on the --config flag value.
+	configs := map[string]map[string]string{
+		"prod.json": {"port": "443", "host": "0.0.0.0"},
+		"dev.json":  {"port": "8080", "host": "localhost"},
+	}
+	if cfg, ok := configs[c.ConfigPath]; ok {
+		return func(key ConfigKey) (string, bool) {
+			v, found := cfg[key.Name]
+			return v, found
+		}
+	}
+	return nil
+}
+
+func TestConfigProvider_ConfigFlagAvailable(t *testing.T) {
+	t.Parallel()
+
+	// --config is parsed first, then ConfigResolver() uses it to load config.
+	c := &configFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--config", "prod.json"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "prod.json", c.ConfigPath)
+	assert.Equal(t, 443, c.Port)       // from config
+	assert.Equal(t, "0.0.0.0", c.Host) // from config
+}
+
+func TestConfigProvider_CLIOverridesConfig(t *testing.T) {
+	t.Parallel()
+
+	// CLI args take priority over config values.
+	c := &configFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{"--config", "prod.json", "--port", "9000"}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, 9000, c.Port)      // from CLI, overrides config
+	assert.Equal(t, "0.0.0.0", c.Host) // from config (not overridden)
+}
+
+func TestConfigProvider_NoConfigFlag(t *testing.T) {
+	t.Parallel()
+
+	// Without --config, ConfigResolver returns nil, fields stay at zero.
+	c := &configFlagCmd{}
+	_, _, err := defaultParseFlags(c, []string{}, defaults())
+	require.NoError(t, err)
+	assert.Equal(t, "", c.ConfigPath)
+	assert.Equal(t, 0, c.Port)
+	assert.Equal(t, "", c.Host)
+}

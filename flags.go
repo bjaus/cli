@@ -227,6 +227,13 @@ func hasProcessableFieldsRecurse(t reflect.Type) bool {
 // It returns remaining args, a set of flag names that were explicitly provided
 // (by CLI args, config resolver, or env vars), and any error. Validation is
 // deferred so that inheritance can fill in values before required/enum checks run.
+//
+// The resolution order is: CLI args first, then env vars, config, and defaults
+// as fallbacks for values not explicitly provided. This allows flags like
+// --config to be parsed before ConfigProvider.ConfigResolver() is called,
+// enabling the config file path to come from the command line.
+//
+// Priority (highest to lowest): CLI > env > config > default
 func defaultParseFlags(cmd Commander, args []string, opts *options) ([]string, map[string]bool, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
@@ -242,21 +249,26 @@ func defaultParseFlags(cmd Commander, args []string, opts *options) ([]string, m
 
 	fields := buildFieldMap(v.Type())
 
-	if err := applyDefaults(v, fields); err != nil {
+	// Phase 1: Parse CLI args first — they have highest priority.
+	remaining, err := parseExplicitFlags(v, args, fields, opts)
+	if err != nil {
 		return nil, nil, err
 	}
 
+	// Phase 2: Apply env vars as fallback for fields not set by CLI.
+	if err := applyEnv(v, fields, opts.envVarPrefix); err != nil {
+		return nil, nil, err
+	}
+
+	// Phase 3: Resolve config — ConfigProvider now has access to CLI-parsed
+	// values like --config, enabling dynamic config file paths.
 	resolver := resolveConfigResolver(cmd, opts)
 	if err := applyConfig(v, fields, resolver); err != nil {
 		return nil, nil, err
 	}
 
-	if err := applyEnv(v, fields, opts.envVarPrefix); err != nil {
-		return nil, nil, err
-	}
-
-	remaining, err := parseExplicitFlags(v, args, fields, opts)
-	if err != nil {
+	// Phase 4: Apply defaults as final fallback.
+	if err := applyDefaults(v, fields); err != nil {
 		return nil, nil, err
 	}
 
@@ -385,15 +397,16 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 
 func applyDefaults(v reflect.Value, fields map[string]*fieldInfo) error {
 	for _, fi := range fields {
-		if fi.def.Default != "" {
-			field := v.FieldByIndex(fi.index)
-			if err := setFieldValue(field, fi.def.Default); err != nil {
-				prefix := "--"
-				if fi.envOnly {
-					prefix = ""
-				}
-				return fmt.Errorf("%w: invalid default for %s%s: %w", ErrInvalidFlagValue, prefix, fi.def.Name, err)
+		if fi.provided || fi.def.Default == "" {
+			continue
+		}
+		field := v.FieldByIndex(fi.index)
+		if err := setFieldValue(field, fi.def.Default); err != nil {
+			prefix := "--"
+			if fi.envOnly {
+				prefix = ""
 			}
+			return fmt.Errorf("%w: invalid default for %s%s: %w", ErrInvalidFlagValue, prefix, fi.def.Name, err)
 		}
 	}
 	return nil
@@ -404,6 +417,9 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 		return nil
 	}
 	for _, fi := range fields {
+		if fi.provided {
+			continue
+		}
 		val, found := resolver(ConfigKey{Name: fi.def.Name, Parts: fi.parts})
 		if !found {
 			continue
@@ -423,7 +439,7 @@ func applyConfig(v reflect.Value, fields map[string]*fieldInfo, resolver ConfigR
 
 func applyEnv(v reflect.Value, fields map[string]*fieldInfo, envPrefix string) error {
 	for _, fi := range fields {
-		if fi.def.Env == "" {
+		if fi.provided || fi.def.Env == "" {
 			continue
 		}
 		// Support comma-separated env var names: env:"A,B" tries A first, then B.
