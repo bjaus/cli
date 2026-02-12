@@ -511,3 +511,52 @@ func TestRuntimeComplete_DescriptionOutput(t *testing.T) {
 	assert.Contains(t, output, "serve\tStart the server")
 	assert.Contains(t, output, "deploy\tDeploy the app")
 }
+
+// --- FlagNameFor tests ---
+
+type compFlagNameForCmd struct {
+	Region  string `flag:"region" short:"r" help:"AWS region"`
+	Port    int    `flag:"port" help:"Port number"`
+	Verbose bool   `flag:"verbose"`
+	NoTag   string // No flag tag, should use lowercase field name
+}
+
+func (c *compFlagNameForCmd) Run(_ context.Context) error { return nil }
+func (c *compFlagNameForCmd) Name() string                { return "myapp" }
+
+func TestFlagNameFor(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagNameForCmd{}
+
+	assert.Equal(t, "region", cli.FlagNameFor(cmd, &cmd.Region))
+	assert.Equal(t, "port", cli.FlagNameFor(cmd, &cmd.Port))
+	assert.Equal(t, "verbose", cli.FlagNameFor(cmd, &cmd.Verbose))
+	assert.Equal(t, "notag", cli.FlagNameFor(cmd, &cmd.NoTag))
+}
+
+func TestFlagNameFor_InvalidInput(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagNameForCmd{}
+	other := &compServeCmd{}
+
+	// Non-pointer value should return empty.
+	assert.Equal(t, "", cli.FlagNameFor(cmd, cmd.Region))
+
+	// Field from different struct should return empty.
+	assert.Equal(t, "", cli.FlagNameFor(cmd, &other.Port))
+}
+
+func TestFlagNameFor_InCompleteFlag(t *testing.T) {
+	t.Parallel()
+	// Demonstrate real-world usage pattern.
+	cmd := &compFlagNameForCmd{}
+	flag := "region"
+
+	// This is the pattern users would use.
+	if flag == cli.FlagNameFor(cmd, &cmd.Region) {
+		// Match!
+		assert.True(t, true)
+	} else {
+		t.Error("FlagNameFor should match the flag name")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -94,6 +95,43 @@ func (r CompletionResult) WithDirective(d ShellCompDirective) CompletionResult {
 func (r CompletionResult) WithActiveHelp(messages ...string) CompletionResult {
 	r.ActiveHelp = append(r.ActiveHelp, messages...)
 	return r
+}
+
+// FlagNameFor returns the flag name for a struct field, enabling type-safe
+// flag references in CompleteFlag implementations. Pass a pointer to the
+// command and a pointer to the specific field.
+//
+//	func (c *DeployCmd) CompleteFlag(ctx context.Context, flag, value string) cli.CompletionResult {
+//	    if flag == cli.FlagNameFor(c, &c.Region) {
+//	        return cli.Completions("us-east-1", "us-west-2")
+//	    }
+//	    return cli.NoCompletions()
+//	}
+//
+// Returns empty string if the field is not found or has no flag tag.
+func FlagNameFor[T any](cmd *T, fieldPtr any) string {
+	cmdVal := reflect.ValueOf(cmd).Elem()
+	cmdType := cmdVal.Type()
+
+	// Get the address the fieldPtr points to.
+	fieldVal := reflect.ValueOf(fieldPtr)
+	if fieldVal.Kind() != reflect.Ptr {
+		return ""
+	}
+	fieldAddr := fieldVal.Pointer()
+
+	// Find which field matches this address.
+	for i := range cmdType.NumField() {
+		if cmdVal.Field(i).CanAddr() && cmdVal.Field(i).Addr().Pointer() == fieldAddr {
+			field := cmdType.Field(i)
+			if flagName := field.Tag.Get("flag"); flagName != "" {
+				return flagName
+			}
+			// Fall back to lowercase field name if no flag tag.
+			return strings.ToLower(field.Name)
+		}
+	}
+	return ""
 }
 
 // activeHelpPrefix is prepended to active help messages. Shells recognize
