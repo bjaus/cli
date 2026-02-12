@@ -653,7 +653,7 @@ func validateFlagGroups(cmd Commander, provided map[string]bool) error {
 		switch group.Kind {
 		case GroupMutuallyExclusive:
 			if len(set) > 1 {
-				return fmt.Errorf("flags %s are mutually exclusive", strings.Join(set, ", "))
+				return fmt.Errorf("%w: %s", ErrMutuallyExclusive, strings.Join(set, ", "))
 			}
 		case GroupRequiredTogether:
 			if len(set) > 0 && len(set) != len(group.Flags) {
@@ -661,7 +661,7 @@ func validateFlagGroups(cmd Commander, provided map[string]bool) error {
 				for i, f := range group.Flags {
 					all[i] = "--" + f
 				}
-				return fmt.Errorf("flags %s must be set together", strings.Join(all, ", "))
+				return fmt.Errorf("%w: %s", ErrRequiredTogether, strings.Join(all, ", "))
 			}
 		case GroupOneRequired:
 			if len(set) != 1 {
@@ -669,7 +669,7 @@ func validateFlagGroups(cmd Commander, provided map[string]bool) error {
 				for i, f := range group.Flags {
 					all[i] = "--" + f
 				}
-				return fmt.Errorf("exactly one of %s is required", strings.Join(all, ", "))
+				return fmt.Errorf("%w: %s", ErrOneRequired, strings.Join(all, ", "))
 			}
 		}
 	}

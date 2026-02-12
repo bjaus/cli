@@ -35,11 +35,11 @@ func (h *helpCmd) Run(_ context.Context) error {
 	for _, name := range h.Args {
 		subs, err := allSubcommands(target)
 		if err != nil {
-			return fmt.Errorf("unknown command: %s", name)
+			return fmt.Errorf("%w: %s", ErrUnknownCommand, name)
 		}
 		sub := findSubcommand(subs, name, false, false)
 		if sub == nil {
-			return fmt.Errorf("unknown command: %s", name)
+			return fmt.Errorf("%w: %s", ErrUnknownCommand, name)
 		}
 		target = sub
 		chain = append(chain, sub)

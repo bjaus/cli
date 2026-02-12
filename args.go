@@ -127,7 +127,7 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 			for *argIdx < len(args) {
 				elemVal, err := parseScalarValue(f.Type.Elem(), args[*argIdx])
 				if err != nil {
-					return fmt.Errorf("invalid value for argument %q: %w", name, err)
+					return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
 				}
 				field.Set(reflect.Append(field, elemVal))
 				*argIdx++
@@ -138,11 +138,11 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 		// Scalar field: consume one positional arg.
 		if *argIdx < len(args) {
 			if err := setFieldValue(field, args[*argIdx]); err != nil {
-				return fmt.Errorf("invalid value for argument %q: %w", name, err)
+				return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
 			}
 			*argIdx++
 			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+				return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
 			}
 			continue
 		}
@@ -158,10 +158,10 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 					continue
 				}
 				if err := setFieldValue(field, envVal); err != nil {
-					return fmt.Errorf("invalid value for argument %q (from %s): %w", name, envName, err)
+					return fmt.Errorf("%w: %s (from %s): %w", ErrInvalidArgValue, name, envName, err)
 				}
 				if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-					return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+					return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
 				}
 				found = true
 				break
@@ -174,17 +174,17 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 		// Try default.
 		if def := f.Tag.Get("default"); def != "" {
 			if err := setFieldValue(field, def); err != nil {
-				return fmt.Errorf("invalid default for argument %q: %w", name, err)
+				return fmt.Errorf("%w: %s: invalid default: %w", ErrInvalidArgValue, name, err)
 			}
 			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return fmt.Errorf("%w: argument %s must be one of [%s]", ErrInvalidFlagValue, name, enumTag)
+				return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
 			}
 			continue
 		}
 
 		// Check required.
 		if tagBool(f.Tag, "required", true) {
-			return fmt.Errorf("missing required argument: %s", name)
+			return fmt.Errorf("%w: %s", ErrRequiredArg, name)
 		}
 	}
 
@@ -195,7 +195,7 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 func ExactArgs(n int) func([]string) error {
 	return func(args []string) error {
 		if len(args) != n {
-			return fmt.Errorf("expected exactly %d argument(s), got %d", n, len(args))
+			return fmt.Errorf("%w: expected exactly %d, got %d", ErrArgCount, n, len(args))
 		}
 		return nil
 	}
@@ -205,7 +205,7 @@ func ExactArgs(n int) func([]string) error {
 func MinArgs(n int) func([]string) error {
 	return func(args []string) error {
 		if len(args) < n {
-			return fmt.Errorf("expected at least %d argument(s), got %d", n, len(args))
+			return fmt.Errorf("%w: expected at least %d, got %d", ErrArgCount, n, len(args))
 		}
 		return nil
 	}
@@ -215,7 +215,7 @@ func MinArgs(n int) func([]string) error {
 func MaxArgs(n int) func([]string) error {
 	return func(args []string) error {
 		if len(args) > n {
-			return fmt.Errorf("expected at most %d argument(s), got %d", n, len(args))
+			return fmt.Errorf("%w: expected at most %d, got %d", ErrArgCount, n, len(args))
 		}
 		return nil
 	}
@@ -225,7 +225,7 @@ func MaxArgs(n int) func([]string) error {
 func RangeArgs(lo, hi int) func([]string) error {
 	return func(args []string) error {
 		if len(args) < lo || len(args) > hi {
-			return fmt.Errorf("expected between %d and %d argument(s), got %d", lo, hi, len(args))
+			return fmt.Errorf("%w: expected between %d and %d, got %d", ErrArgCount, lo, hi, len(args))
 		}
 		return nil
 	}
@@ -234,7 +234,7 @@ func RangeArgs(lo, hi int) func([]string) error {
 // NoArgs is an arg validator that rejects any arguments.
 func NoArgs(args []string) error {
 	if len(args) > 0 {
-		return fmt.Errorf("expected no arguments, got %d", len(args))
+		return fmt.Errorf("%w: expected none, got %d", ErrArgCount, len(args))
 	}
 	return nil
 }

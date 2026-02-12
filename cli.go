@@ -45,6 +45,8 @@ type options struct {
 	sortedHelp          bool
 	signalHandling      bool
 	interactive         bool
+	silenceErrors       bool
+	silenceUsage        bool
 	isTerminal          func() bool
 }
 
@@ -157,6 +159,19 @@ func WithStdin(r io.Reader) Option {
 	return func(o *options) { o.stdin = r }
 }
 
+// WithSilenceErrors suppresses the "Error: ..." message in [ExecuteAndExit].
+// The process still exits with the appropriate code. Use this when you want
+// to handle error output yourself but still use framework exit code handling.
+func WithSilenceErrors(enabled bool) Option {
+	return func(o *options) { o.silenceErrors = enabled }
+}
+
+// WithSilenceUsage suppresses the "Run 'app --help' for usage" hint that
+// normally appears after flag parsing errors in [ExecuteAndExit].
+func WithSilenceUsage(enabled bool) Option {
+	return func(o *options) { o.silenceUsage = enabled }
+}
+
 // Execute runs the command tree rooted at root with the given args and options.
 // It resolves subcommands, parses flags, runs lifecycle hooks, and executes
 // the target command.
@@ -179,6 +194,10 @@ func Execute(ctx context.Context, root Commander, args []string, opts ...Option)
 // errors (unknown flag, missing required flag, etc.) a usage hint is appended.
 // If the error implements [ExitCoder], its exit code is used; non-nil errors
 // default to exit code 1.
+//
+// Help signals ([ShowHelp], [ErrShowHelp], [ShowUsage], [ErrShowUsage]) are
+// handled specially: the framework renders the appropriate output and exits
+// with the signal's exit code without printing "Error: ...".
 func ExecuteAndExit(ctx context.Context, root Commander, args []string, opts ...Option) {
 	o := defaults()
 	for _, opt := range opts {
@@ -202,17 +221,26 @@ func ExecuteAndExit(ctx context.Context, root Commander, args []string, opts ...
 		return
 	}
 
-	formatError(o.stderr, root, err)
+	// Help signals already rendered output in execute(); just exit with their code.
+	if isHelpSignal(err) {
+		os.Exit(exitCode(err))
+	}
+
+	formatError(o, root, err)
 	os.Exit(exitCode(err))
 }
 
-// formatError writes the error message and optional usage hint to w.
-func formatError(w io.Writer, root Commander, err error) {
-	fmt.Fprintf(w, "Error: %s\n", err) //nolint:errcheck
+// formatError writes the error message and optional usage hint to stderr.
+func formatError(o *options, root Commander, err error) {
+	if o.silenceErrors {
+		return
+	}
 
-	if _, isExit := err.(ExitCoder); !isExit && isFlagOrCommandError(err) {
+	fmt.Fprintf(o.stderr, "Error: %s\n", err) //nolint:errcheck
+
+	if !o.silenceUsage && isUsageError(err) {
 		name := resolveInfo(root).name
-		fmt.Fprintf(w, "Run '%s --help' for usage.\n", name) //nolint:errcheck
+		fmt.Fprintf(o.stderr, "Run '%s --help' for usage.\n", name) //nolint:errcheck
 	}
 }
 

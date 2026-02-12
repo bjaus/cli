@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -553,8 +552,14 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	afterErr := runAfterHooks(ctx, afterHooks)
 
 	if runErr != nil {
-		if errors.Is(runErr, ErrShowHelp) {
-			return renderHelp(leaf, chain, opts)
+		// Check for help/usage signals and render appropriate output.
+		if hs := getHelpSignal(runErr); hs != nil {
+			if hs.full {
+				_ = renderHelp(leaf, chain, opts)
+			} else {
+				_ = renderUsage(leaf, chain, opts)
+			}
+			return runErr // propagate signal for exit code handling
 		}
 		return runErr
 	}
@@ -680,6 +685,77 @@ func runAfterHooks(ctx context.Context, hooks []Commander) error {
 		}
 	}
 	return firstErr
+}
+
+// renderUsage prints a brief usage line to stdout.
+func renderUsage(cmd Commander, chain []Commander, opts *options) error {
+	path := buildCommandPath(chain)
+	usage := buildUsageLine(cmd, path)
+	_, err := fmt.Fprintln(opts.stdout, usage)
+	return err
+}
+
+// buildCommandPath returns the full command path (e.g., "myapp cluster list").
+func buildCommandPath(chain []Commander) string {
+	var parts []string
+	for _, cmd := range chain {
+		parts = append(parts, resolveInfo(cmd).name)
+	}
+	return strings.Join(parts, " ")
+}
+
+// buildUsageLine constructs a usage line like "Usage: myapp serve [flags] <port>".
+func buildUsageLine(cmd Commander, path string) string {
+	var usage strings.Builder
+	usage.WriteString("Usage: ")
+	usage.WriteString(path)
+
+	// Add [flags] if the command has any flags.
+	flags := ScanFlags(cmd)
+	hasVisibleFlags := false
+	for i := range flags {
+		if !flags[i].Hidden {
+			hasVisibleFlags = true
+			break
+		}
+	}
+	if hasVisibleFlags {
+		usage.WriteString(" [flags]")
+	}
+
+	// Add positional args.
+	args := ScanArgs(cmd)
+	for _, arg := range args {
+		if arg.Required {
+			usage.WriteString(" <")
+			usage.WriteString(arg.Name)
+			usage.WriteString(">")
+		} else if arg.IsSlice {
+			usage.WriteString(" [")
+			usage.WriteString(arg.Name)
+			usage.WriteString("...]")
+		} else {
+			usage.WriteString(" [")
+			usage.WriteString(arg.Name)
+			usage.WriteString("]")
+		}
+	}
+
+	// Add [command] if it has subcommands.
+	if subs, err := allSubcommands(cmd); err == nil && len(subs) > 0 {
+		hasVisible := false
+		for _, sub := range subs {
+			if h, ok := sub.(Hider); !ok || !h.Hidden() {
+				hasVisible = true
+				break
+			}
+		}
+		if hasVisible {
+			usage.WriteString(" [command]")
+		}
+	}
+
+	return usage.String()
 }
 
 func renderHelp(cmd Commander, chain []Commander, opts *options) error {

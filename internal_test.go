@@ -3568,7 +3568,7 @@ func TestPopulateArgs_MissingRequired(t *testing.T) {
 	cmd := &internalArgCmd{}
 	_, err := populateArgs(cmd, []string{"a.txt"}, "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing required argument: dest")
+	assert.ErrorIs(t, err, ErrRequiredArg)
 }
 
 type internalOptionalArgCmd struct {
@@ -3775,7 +3775,7 @@ func TestValidateFlagGroups_OneRequired_None(t *testing.T) {
 	cmd := &oneRequiredGroupCmd{}
 	err := validateFlagGroups(cmd, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exactly one of")
+	assert.ErrorIs(t, err, ErrOneRequired)
 }
 
 func TestValidateFlagGroups_OneRequired_TooMany(t *testing.T) {
@@ -3783,7 +3783,7 @@ func TestValidateFlagGroups_OneRequired_TooMany(t *testing.T) {
 	cmd := &oneRequiredGroupCmd{}
 	err := validateFlagGroups(cmd, map[string]bool{"file": true, "stdin": true})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exactly one of")
+	assert.ErrorIs(t, err, ErrOneRequired)
 }
 
 func TestValidateFlagGroups_NoInterface(t *testing.T) {
@@ -4401,13 +4401,14 @@ func TestSignalHandling_Disabled(t *testing.T) {
 
 // --- Error Formatting ---
 
-func TestIsFlagOrCommandError(t *testing.T) {
+func TestIsUsageError(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
 		err  error
 		want bool
 	}{
+		// Flag errors
 		"unknown flag": {
 			err:  fmt.Errorf("%w: --foo", ErrUnknownFlag),
 			want: true,
@@ -4424,9 +4425,61 @@ func TestIsFlagOrCommandError(t *testing.T) {
 			err:  fmt.Errorf("%w: --port: not a number", ErrInvalidFlagValue),
 			want: true,
 		},
+		"parent ErrFlag": {
+			err:  fmt.Errorf("something: %w", ErrFlag),
+			want: true,
+		},
+		// Argument errors
+		"required arg": {
+			err:  fmt.Errorf("%w: src", ErrRequiredArg),
+			want: true,
+		},
+		"invalid arg value": {
+			err:  fmt.Errorf("%w: port: not a number", ErrInvalidArgValue),
+			want: true,
+		},
+		"arg count": {
+			err:  fmt.Errorf("%w: expected 2, got 3", ErrArgCount),
+			want: true,
+		},
+		"parent ErrArgument": {
+			err:  fmt.Errorf("something: %w", ErrArgument),
+			want: true,
+		},
+		// Command errors
+		"unknown command": {
+			err:  fmt.Errorf("%w: foo", ErrUnknownCommand),
+			want: true,
+		},
+		"parent ErrCommand": {
+			err:  fmt.Errorf("something: %w", ErrCommand),
+			want: true,
+		},
+		// Flag group errors
+		"mutually exclusive": {
+			err:  fmt.Errorf("%w: --a, --b", ErrMutuallyExclusive),
+			want: true,
+		},
+		"required together": {
+			err:  fmt.Errorf("%w: --a, --b", ErrRequiredTogether),
+			want: true,
+		},
+		"one required": {
+			err:  fmt.Errorf("%w: --a, --b", ErrOneRequired),
+			want: true,
+		},
+		"parent ErrFlagGroup": {
+			err:  fmt.Errorf("something: %w", ErrFlagGroup),
+			want: true,
+		},
+		// Non-usage errors
 		"unsupported type": {
 			err:  fmt.Errorf("%w: complex128", ErrUnsupportedType),
-			want: true,
+			want: false,
+		},
+		"invalid tag": {
+			err:  fmt.Errorf("%w: bad tag", ErrInvalidTag),
+			want: false,
 		},
 		"generic error": {
 			err:  fmt.Errorf("something went wrong"),
@@ -4445,7 +4498,7 @@ func TestIsFlagOrCommandError(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, isFlagOrCommandError(tt.err))
+			assert.Equal(t, tt.want, isUsageError(tt.err))
 		})
 	}
 }
@@ -4494,7 +4547,8 @@ func TestFormatError(t *testing.T) {
 			t.Parallel()
 
 			var buf bytes.Buffer
-			formatError(&buf, root, tt.err)
+			opts := &options{stderr: &buf}
+			formatError(opts, root, tt.err)
 
 			output := buf.String()
 			assert.Contains(t, output, tt.wantError)
@@ -4505,6 +4559,32 @@ func TestFormatError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatError_SilenceErrors(t *testing.T) {
+	t.Parallel()
+
+	root := &namedRoot{}
+	var buf bytes.Buffer
+	opts := &options{stderr: &buf, silenceErrors: true}
+
+	formatError(opts, root, fmt.Errorf("%w: --name", ErrRequiredFlag))
+
+	assert.Empty(t, buf.String())
+}
+
+func TestFormatError_SilenceUsage(t *testing.T) {
+	t.Parallel()
+
+	root := &namedRoot{}
+	var buf bytes.Buffer
+	opts := &options{stderr: &buf, silenceUsage: true}
+
+	formatError(opts, root, fmt.Errorf("%w: --name", ErrRequiredFlag))
+
+	output := buf.String()
+	assert.Contains(t, output, "Error: required flag not provided: --name")
+	assert.NotContains(t, output, "--help")
 }
 
 func TestExitCode(t *testing.T) {
@@ -5616,7 +5696,7 @@ func TestArgEnum_InvalidValue(t *testing.T) {
 
 	cmd := &argEnumCmd{}
 	err := Execute(context.Background(), cmd, []string{"x"})
-	require.ErrorIs(t, err, ErrInvalidFlagValue)
+	require.ErrorIs(t, err, ErrInvalidArgValue)
 	assert.Contains(t, err.Error(), "must be one of [a,b,c]")
 }
 
@@ -6473,7 +6553,7 @@ func TestPopulateArgs_EnumValidation(t *testing.T) {
 	cmd := &enumArgCmd{}
 	_, err := populateArgs(cmd, nil, "")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrInvalidFlagValue)
+	assert.ErrorIs(t, err, ErrInvalidArgValue)
 }
 
 // --- cli.Args as first-class type ---

@@ -79,3 +79,51 @@ func TestExitCoder_ErrorsAs(t *testing.T) {
 	// Plain wrapped error does not satisfy ExitCoder.
 	assert.False(t, errors.As(wrapped, &ec))
 }
+
+func TestHelpSignals(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		signal   error
+		wantMsg  string
+		wantCode int
+	}{
+		{
+			name:     "ShowHelp exits 0",
+			signal:   cli.ShowHelp,
+			wantMsg:  "show help",
+			wantCode: 0,
+		},
+		{
+			name:     "ErrShowHelp exits 1",
+			signal:   cli.ErrShowHelp,
+			wantMsg:  "show help",
+			wantCode: 1,
+		},
+		{
+			name:     "ShowUsage exits 0",
+			signal:   cli.ShowUsage,
+			wantMsg:  "show usage",
+			wantCode: 0,
+		},
+		{
+			name:     "ErrShowUsage exits 1",
+			signal:   cli.ErrShowUsage,
+			wantMsg:  "show usage",
+			wantCode: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, tt.wantMsg, tt.signal.Error())
+
+			var ec cli.ExitCoder
+			require.ErrorAs(t, tt.signal, &ec)
+			assert.Equal(t, tt.wantCode, ec.ExitCode())
+		})
+	}
+}

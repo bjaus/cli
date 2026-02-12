@@ -1729,7 +1729,7 @@ func TestExecute_ArgFields_MissingRequired(t *testing.T) {
 	cmd := &argCopyCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{"a.txt"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing required argument: dest")
+	assert.ErrorIs(t, err, cli.ErrRequiredArg)
 }
 
 func TestExecute_ArgFields_WithFlags(t *testing.T) {
@@ -1828,7 +1828,7 @@ func TestExecute_NoArgs_Invalid(t *testing.T) {
 	cmd := &noArgsCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{"unexpected"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "expected no arguments")
+	assert.ErrorIs(t, err, cli.ErrArgCount)
 }
 
 // --- Flag groups integration tests ---
@@ -1914,7 +1914,7 @@ func TestExecute_OneRequired_None(t *testing.T) {
 	cmd := &oneRequiredInputCmd{}
 	err := cli.Execute(context.Background(), cmd, nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exactly one of")
+	assert.ErrorIs(t, err, cli.ErrOneRequired)
 }
 
 func TestExecute_OneRequired_TooMany(t *testing.T) {
@@ -1922,7 +1922,7 @@ func TestExecute_OneRequired_TooMany(t *testing.T) {
 	cmd := &oneRequiredInputCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{"--file", "a.txt", "--stdin"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "exactly one of")
+	assert.ErrorIs(t, err, cli.ErrOneRequired)
 }
 
 // --- Passthrougher interface ---
@@ -1981,4 +1981,115 @@ func TestScanArgs_External(t *testing.T) {
 	require.Len(t, defs, 2)
 	assert.Equal(t, "source", defs[0].Name)
 	assert.Equal(t, "dest", defs[1].Name)
+}
+
+// --- Help signal tests ---
+
+type helpSignalCmd struct {
+	signal error
+}
+
+func (c *helpSignalCmd) Name() string        { return "myapp" }
+func (c *helpSignalCmd) Description() string { return "Test app for help signals" }
+func (c *helpSignalCmd) Run(_ context.Context) error {
+	return c.signal
+}
+
+func TestExecute_ShowHelp_RendersHelpAndPropagates(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &helpSignalCmd{signal: cli.ShowHelp}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStdout(&buf))
+
+	// Signal is propagated.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ShowHelp)
+
+	// Help was rendered.
+	assert.Contains(t, buf.String(), "Test app for help signals")
+
+	// Exit code is 0.
+	var ec cli.ExitCoder
+	require.ErrorAs(t, err, &ec)
+	assert.Equal(t, 0, ec.ExitCode())
+}
+
+func TestExecute_ErrShowHelp_RendersHelpAndPropagates(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &helpSignalCmd{signal: cli.ErrShowHelp}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStdout(&buf))
+
+	// Signal is propagated.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrShowHelp)
+
+	// Help was rendered.
+	assert.Contains(t, buf.String(), "Test app for help signals")
+
+	// Exit code is 1.
+	var ec cli.ExitCoder
+	require.ErrorAs(t, err, &ec)
+	assert.Equal(t, 1, ec.ExitCode())
+}
+
+type usageSignalCmd struct {
+	signal error
+	Port   int `flag:"port" short:"p" help:"Port to listen on"`
+}
+
+func (c *usageSignalCmd) Name() string        { return "myapp" }
+func (c *usageSignalCmd) Description() string { return "Test app" }
+func (c *usageSignalCmd) Run(_ context.Context) error {
+	return c.signal
+}
+
+func (c *usageSignalCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&simpleCmd{}}
+}
+
+func TestExecute_ShowUsage_RendersBriefUsage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &usageSignalCmd{signal: cli.ShowUsage}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStdout(&buf))
+
+	// Signal is propagated.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ShowUsage)
+
+	// Brief usage was rendered (starts with "Usage:").
+	output := buf.String()
+	assert.Contains(t, output, "Usage: myapp")
+	assert.Contains(t, output, "[flags]")
+	assert.Contains(t, output, "[command]")
+
+	// Exit code is 0.
+	var ec cli.ExitCoder
+	require.ErrorAs(t, err, &ec)
+	assert.Equal(t, 0, ec.ExitCode())
+}
+
+func TestExecute_ErrShowUsage_RendersBriefUsage(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	cmd := &usageSignalCmd{signal: cli.ErrShowUsage}
+	err := cli.Execute(context.Background(), cmd, nil, cli.WithStdout(&buf))
+
+	// Signal is propagated.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrShowUsage)
+
+	// Brief usage was rendered.
+	output := buf.String()
+	assert.Contains(t, output, "Usage: myapp")
+
+	// Exit code is 1.
+	var ec cli.ExitCoder
+	require.ErrorAs(t, err, &ec)
+	assert.Equal(t, 1, ec.ExitCode())
 }

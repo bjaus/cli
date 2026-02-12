@@ -1092,31 +1092,42 @@ Injected into `Run()`, hook methods, and any method accepting bound types.
 
 ### bjaus/cli
 
-Built-in DI via execution options:
+Built-in DI via `WithBindings()` option using `github.com/bjaus/bind`:
 
-- `Bind(v)` — register value matched by concrete type
-- `BindTo(v, iface)` — register as interface: `cli.BindTo(myDB, (*Database)(nil))`
-- `BindProvider[T](func() (T, error))` — lazy factory called per execution
-- `BindSingleton[T](func() (T, error))` — singleton factory, called once and cached
+- `bind.Value(v)` — register value matched by concrete type
+- `bind.Interface(v, (*Iface)(nil))` — register as interface
+- `bind.Provider(func() (T, error))` — lazy factory called per execution
+- `bind.Singleton(func() (T, error))` — singleton factory, called once and cached
+
+```go
+cli.Execute(ctx, root, args,
+    cli.WithBindings(
+        bind.Value(db),
+        bind.Interface(cache, (*Cache)(nil)),
+        bind.Singleton(newDB),
+    ),
+)
+```
 
 Injected into struct fields across the entire command chain. Fields with `flag:`,
 `arg:`, or `env:` tags are skipped. Matching: exact type first, then interface check.
 
 `cli.Args` (positional arguments) is auto-bound so commands can declare an
-`Args cli.Args` field.
+`Args cli.Args` field. Bindings are also accessible via `bind.Get[T](ctx)` in Run.
 
 ### Comparison
 
-| Feature             | cobra | urfave/cli | kong                 | bjaus/cli             |
-| ------------------- | ----- | ---------- | -------------------- | --------------------- |
-| Built-in DI         | No    | No         | Yes                  | Yes                   |
-| Type binding        | -     | -          | Yes                  | Yes                   |
-| Interface binding   | -     | -          | Yes (`BindTo`)       | Yes (`BindTo`)        |
-| Provider functions  | -     | -          | Yes                  | Yes (`BindProvider`)  |
-| Singleton providers | -     | -          | Yes                  | Yes (`BindSingleton`) |
-| Runtime binding     | -     | -          | Yes (`Context.Bind`) | No                    |
-| Auto-bound types    | -     | -          | `*Context`, `*Kong`  | `cli.Args`            |
-| Inject into hooks   | -     | -          | Yes                  | Yes (bound values)    |
+| Feature             | cobra | urfave/cli | kong                 | bjaus/cli                 |
+| ------------------- | ----- | ---------- | -------------------- | ------------------------- |
+| Built-in DI         | No    | No         | Yes                  | Yes                       |
+| Type binding        | -     | -          | Yes                  | Yes (`bind.Value`)        |
+| Interface binding   | -     | -          | Yes (`BindTo`)       | Yes (`bind.Interface`)    |
+| Provider functions  | -     | -          | Yes                  | Yes (`bind.Provider`)     |
+| Singleton providers | -     | -          | Yes                  | Yes (`bind.Singleton`)    |
+| Runtime binding     | -     | -          | Yes (`Context.Bind`) | No                        |
+| Auto-bound types    | -     | -          | `*Context`, `*Kong`  | `cli.Args`                |
+| Inject into hooks   | -     | -          | Yes                  | Yes (bound values)        |
+| Context lookup      | -     | -          | -                    | Yes (`bind.Get[T](ctx)`)  |
 
 ---
 
@@ -1290,10 +1301,10 @@ func TestServe(t *testing.T) {
 
 ## 14. Documentation Generation
 
-| Feature          | cobra                   | urfave/cli        | kong | bjaus/cli                               |
-| ---------------- | ----------------------- | ----------------- | ---- | --------------------------------------- |
-| Man pages        | `doc.GenManTree()`      | `cli-docs` module | No   | `doc.Man()` / `doc.ManTree()`           |
-| Markdown         | `doc.GenMarkdownTree()` | `cli-docs` module | No   | `doc.Markdown()` / `doc.MarkdownTree()` |
+| Feature          | cobra                   | urfave/cli        | kong | bjaus/cli                                       |
+| ---------------- | ----------------------- | ----------------- | ---- | ----------------------------------------------- |
+| Man pages        | `doc.GenManTree()`      | `cli-docs` module | No   | `doc.GenManPage()` / `doc.GenManTree()`         |
+| Markdown         | `doc.GenMarkdownTree()` | `cli-docs` module | No   | `doc.GenMarkdown()` / `doc.GenMarkdownTree()`   |
 | YAML             | `doc.GenYamlTree()`     | No                | No   | No                                      |
 | reStructuredText | `doc.GenReSTTree()`     | No                | No   | No                                      |
 | Tabular markdown | No                      | `cli-docs` module | No   | No                                      |
