@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/bjaus/bind"
 )
 
 // Commander is the core interface every command must implement.
@@ -34,7 +36,7 @@ type options struct {
 	configResolver      ConfigResolver
 	flagNormalizer      func(string) string
 	envVarPrefix        string
-	bindings            []binding
+	bindOpts            []bind.Option
 	suggest             bool
 	shortOptionHandling bool
 	prefixMatching      bool

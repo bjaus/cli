@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/bjaus/bind"
 )
 
 // resolvedCommand holds the result of walking the command tree.
@@ -509,11 +511,12 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 
 	// Inject bound dependencies into command structs.
 	// Auto-bind positional args so commands can declare an Args field.
-	bindings := make([]binding, len(opts.bindings), len(opts.bindings)+1)
-	copy(bindings, opts.bindings)
-	bindings = append(bindings, binding{value: Args(resolved.positional)})
-	if err := injectBindings(chain, bindings); err != nil {
-		return err
+	bindOpts := append(opts.bindOpts, bind.Value(Args(resolved.positional)))
+	ctx = bind.With(ctx, bindOpts...)
+	for _, cmd := range chain {
+		if err := bind.Inject(ctx, cmd); err != nil {
+			return err
+		}
 	}
 
 	// Print deprecation warnings.

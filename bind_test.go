@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bjaus/bind"
 	"github.com/bjaus/cli"
 )
 
@@ -43,7 +44,7 @@ func TestBind(t *testing.T) {
 	cmd := &bindTestCmd{}
 
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.Bind(db),
+		cli.WithBindings(bind.Value(db)),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -70,7 +71,7 @@ func TestBindTo(t *testing.T) {
 	cmd := &bindToCmd{}
 
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindTo(cache, (*Cache)(nil)),
+		cli.WithBindings(bind.Interface(cache, (*Cache)(nil))),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -89,7 +90,7 @@ func TestBindNoMatchingBinding(t *testing.T) {
 	cmd := &bindTestCmd{}
 
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindTo(&redisCache{}, (*Cache)(nil)), // bind cache, not DB
+		cli.WithBindings(bind.Interface(&redisCache{}, (*Cache)(nil))),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -126,7 +127,7 @@ func TestBindSkipsFlagFields(t *testing.T) {
 
 	// Bind an int - it should NOT inject into Port because it has flag tag.
 	err := cli.Execute(context.Background(), c, []string{},
-		cli.Bind(9999),
+		cli.WithBindings(bind.Value(9999)),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -167,8 +168,10 @@ func TestBindInChain(t *testing.T) {
 	parent := &bindParentCmd{}
 
 	err := cli.Execute(context.Background(), parent, []string{"child"},
-		cli.Bind(db),
-		cli.BindTo(cache, (*Cache)(nil)),
+		cli.WithBindings(
+			bind.Value(db),
+			bind.Interface(cache, (*Cache)(nil)),
+		),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -221,7 +224,7 @@ func (c *argsFlagsCmd) Run(ctx context.Context) error {
 	return nil
 }
 
-// --- BindProvider ---
+// --- Provider ---
 
 type providerCmd struct {
 	DB *mockDB
@@ -233,10 +236,10 @@ func TestBindProvider(t *testing.T) {
 	calls := 0
 	cmd := &providerCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindProvider(func() (*mockDB, error) {
+		cli.WithBindings(bind.Provider(func() (*mockDB, error) {
 			calls++
 			return &mockDB{name: "provided"}, nil
-		}),
+		})),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -252,9 +255,9 @@ func TestBindProvider(t *testing.T) {
 func TestBindProvider_Error(t *testing.T) {
 	cmd := &providerCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindProvider(func() (*mockDB, error) {
+		cli.WithBindings(bind.Provider(func() (*mockDB, error) {
 			return nil, fmt.Errorf("connection failed")
-		}),
+		})),
 	)
 	if err == nil {
 		t.Fatal("expected error from provider")
@@ -264,7 +267,7 @@ func TestBindProvider_Error(t *testing.T) {
 	}
 }
 
-// --- BindSingleton ---
+// --- Singleton ---
 
 func TestBindSingleton(t *testing.T) {
 	calls := 0
@@ -272,10 +275,10 @@ func TestBindSingleton(t *testing.T) {
 	cmd := &providerCmd{}
 
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindSingleton(func() (*mockDB, error) {
+		cli.WithBindings(bind.Singleton(func() (*mockDB, error) {
 			calls++
 			return db, nil
-		}),
+		})),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -292,8 +295,10 @@ type singletonParentCmd struct {
 	DB *mockDB
 }
 
-func (c *singletonParentCmd) Run(_ context.Context) error   { return nil }
-func (c *singletonParentCmd) Subcommands() []cli.Commander     { return []cli.Commander{&singletonChildCmd{}} }
+func (c *singletonParentCmd) Run(_ context.Context) error { return nil }
+func (c *singletonParentCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&singletonChildCmd{}}
+}
 
 type singletonChildCmd struct {
 	DB *mockDB
@@ -307,10 +312,10 @@ func TestBindSingleton_CachedAcrossChain(t *testing.T) {
 	parent := &singletonParentCmd{}
 
 	err := cli.Execute(context.Background(), parent, []string{"child"},
-		cli.BindSingleton(func() (*mockDB, error) {
+		cli.WithBindings(bind.Singleton(func() (*mockDB, error) {
 			calls++
 			return &mockDB{name: "shared"}, nil
-		}),
+		})),
 	)
 	if err != nil {
 		t.Fatalf("Execute failed: %v", err)
@@ -327,9 +332,9 @@ func TestBindSingleton_CachedAcrossChain(t *testing.T) {
 func TestBindSingleton_Error(t *testing.T) {
 	cmd := &providerCmd{}
 	err := cli.Execute(context.Background(), cmd, []string{},
-		cli.BindSingleton(func() (*mockDB, error) {
+		cli.WithBindings(bind.Singleton(func() (*mockDB, error) {
 			return nil, fmt.Errorf("init failed")
-		}),
+		})),
 	)
 	if err == nil {
 		t.Fatal("expected error from singleton")
@@ -352,5 +357,52 @@ func TestBindArgsWithFlags(t *testing.T) {
 	}
 	if len(c.Args) != 2 || c.Args[0] != "file1.txt" || c.Args[1] != "file2.txt" {
 		t.Errorf("Args = %v, want [file1.txt file2.txt]", c.Args)
+	}
+}
+
+// contextLookupCmd demonstrates using bind.Get[T](ctx) in Run.
+type contextLookupCmd struct {
+	DB *mockDB // still populated via struct injection
+
+	// These are set in Run to verify context lookup works.
+	gotDB    *mockDB
+	gotCache Cache
+}
+
+func (c *contextLookupCmd) Run(ctx context.Context) error {
+	// Use context-based lookup instead of struct injection.
+	c.gotDB = bind.Get[*mockDB](ctx)
+	c.gotCache = bind.Get[Cache](ctx)
+	return nil
+}
+
+func TestBindContextLookup(t *testing.T) {
+	db := &mockDB{name: "context-test"}
+	cache := &redisCache{prefix: "ctx"}
+	cmd := &contextLookupCmd{}
+
+	err := cli.Execute(context.Background(), cmd, []string{},
+		cli.WithBindings(
+			bind.Value(db),
+			bind.Interface(cache, (*Cache)(nil)),
+		),
+	)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Struct injection should work.
+	if cmd.DB != db {
+		t.Errorf("struct injection: DB = %v, want %v", cmd.DB, db)
+	}
+
+	// Context lookup should also work.
+	if cmd.gotDB != db {
+		t.Errorf("bind.Get[*mockDB]: got %v, want %v", cmd.gotDB, db)
+	}
+	if cmd.gotCache == nil {
+		t.Error("bind.Get[Cache] returned nil")
+	} else if cmd.gotCache.Get("key") != "ctx:key" {
+		t.Errorf("bind.Get[Cache].Get(key) = %q, want %q", cmd.gotCache.Get("key"), "ctx:key")
 	}
 }
