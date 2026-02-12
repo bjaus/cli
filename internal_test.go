@@ -3678,6 +3678,222 @@ func TestAllSubcommands_DiscoveredAliasesTracked(t *testing.T) {
 	assert.Equal(t, "plugin", resolveInfo(subs[0]).name)
 }
 
+// --- Embedded Commander subcommands ---
+
+type embeddedServeCmd struct {
+	Port int `flag:"port" default:"8080"`
+	ran  bool
+}
+
+func (c *embeddedServeCmd) Name() string                { return "serve" }
+func (c *embeddedServeCmd) Run(_ context.Context) error { c.ran = true; return nil }
+
+type embeddedConfigCmd struct {
+	ran bool
+}
+
+func (c *embeddedConfigCmd) Name() string                { return "config" }
+func (c *embeddedConfigCmd) Run(_ context.Context) error { c.ran = true; return nil }
+
+type embeddedParentCmd struct {
+	Verbose bool             `flag:"verbose"`
+	Serve   embeddedServeCmd // implements Commander → subcommand
+	Config  embeddedConfigCmd
+}
+
+func (c *embeddedParentCmd) Run(_ context.Context) error { return nil }
+
+func TestAllSubcommands_EmbeddedCommander(t *testing.T) {
+	t.Parallel()
+
+	parent := &embeddedParentCmd{}
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 2)
+
+	names := make([]string, len(subs))
+	for i, s := range subs {
+		names[i] = resolveInfo(s).name
+	}
+	assert.Contains(t, names, "serve")
+	assert.Contains(t, names, "config")
+}
+
+type embeddedWithInterfaceCmd struct {
+	Serve embeddedServeCmd
+}
+
+func (c *embeddedWithInterfaceCmd) Run(_ context.Context) error { return nil }
+func (c *embeddedWithInterfaceCmd) Subcommands() []Commander {
+	return []Commander{&embeddedConfigCmd{}}
+}
+
+func TestAllSubcommands_EmbeddedAndInterface(t *testing.T) {
+	t.Parallel()
+
+	parent := &embeddedWithInterfaceCmd{}
+	subs, err := allSubcommands(parent)
+	require.NoError(t, err)
+	require.Len(t, subs, 2) // embedded "serve" + interface "config"
+
+	names := make([]string, len(subs))
+	for i, s := range subs {
+		names[i] = resolveInfo(s).name
+	}
+	assert.Contains(t, names, "serve")
+	assert.Contains(t, names, "config")
+}
+
+type embeddedWithFlagTagCmd struct {
+	Serve embeddedServeCmd `flag:"serve"` // invalid: Commander with flag tag
+}
+
+func (c *embeddedWithFlagTagCmd) Run(_ context.Context) error { return nil }
+
+func TestAllSubcommands_EmbeddedWithFlagTag_Error(t *testing.T) {
+	t.Parallel()
+
+	parent := &embeddedWithFlagTagCmd{}
+	_, err := allSubcommands(parent)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrInvalidTag)
+	assert.Contains(t, err.Error(), "implements Commander but has flag tag")
+}
+
+type duplicateNameCmd1 struct{}
+
+func (c *duplicateNameCmd1) Name() string                { return "dupe" }
+func (c *duplicateNameCmd1) Run(_ context.Context) error { return nil }
+
+type duplicateNameCmd2 struct{}
+
+func (c *duplicateNameCmd2) Name() string                { return "dupe" }
+func (c *duplicateNameCmd2) Run(_ context.Context) error { return nil }
+
+type embeddedDuplicateNamesCmd struct {
+	A duplicateNameCmd1
+	B duplicateNameCmd2
+}
+
+func (c *embeddedDuplicateNamesCmd) Run(_ context.Context) error { return nil }
+
+func TestAllSubcommands_DuplicateNames_Error(t *testing.T) {
+	t.Parallel()
+
+	parent := &embeddedDuplicateNamesCmd{}
+	_, err := allSubcommands(parent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate subcommand name")
+}
+
+type embeddedAndInterfaceCollisionCmd struct {
+	Serve embeddedServeCmd // name: "serve"
+}
+
+func (c *embeddedAndInterfaceCollisionCmd) Run(_ context.Context) error { return nil }
+func (c *embeddedAndInterfaceCollisionCmd) Subcommands() []Commander {
+	return []Commander{&embeddedServeCmd{}} // also "serve" — collision!
+}
+
+func TestAllSubcommands_EmbeddedAndInterfaceCollision_Error(t *testing.T) {
+	t.Parallel()
+
+	parent := &embeddedAndInterfaceCollisionCmd{}
+	_, err := allSubcommands(parent)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "subcommand name collision")
+	assert.Contains(t, err.Error(), "serve")
+}
+
+// --- Branching commands ---
+
+type branchDeleteCmd struct {
+	Force  bool `flag:"force"`
+	userID int
+}
+
+func (c *branchDeleteCmd) Name() string { return "delete" }
+func (c *branchDeleteCmd) Run(ctx context.Context) error {
+	c.userID = Get[int](ctx, "id")
+	return nil
+}
+
+type branchRenameCmd struct {
+	NewName string `arg:"name"`
+	userID  int
+}
+
+func (c *branchRenameCmd) Name() string { return "rename" }
+func (c *branchRenameCmd) Run(ctx context.Context) error {
+	c.userID = Get[int](ctx, "id")
+	return nil
+}
+
+type branchingUserCmd struct {
+	ID     int             `arg:"id"`
+	Delete branchDeleteCmd // subcommand
+	Rename branchRenameCmd // subcommand
+}
+
+func (c *branchingUserCmd) Name() string                { return "user" }
+func (c *branchingUserCmd) Run(_ context.Context) error { return nil }
+
+func TestIsBranchingCommand(t *testing.T) {
+	t.Parallel()
+
+	// Has both arg and Commander fields → branching
+	assert.True(t, isBranchingCommand(&branchingUserCmd{}))
+
+	// Has only Commander fields → not branching
+	assert.False(t, isBranchingCommand(&embeddedParentCmd{}))
+
+	// Has only arg fields → not branching
+	assert.False(t, isBranchingCommand(&internalArgCmd{}))
+}
+
+type branchingAppCmd struct {
+	User branchingUserCmd
+}
+
+func (c *branchingAppCmd) Name() string                { return "app" }
+func (c *branchingAppCmd) Run(_ context.Context) error { return nil }
+
+func TestExecute_Branching(t *testing.T) {
+	t.Parallel()
+
+	app := &branchingAppCmd{}
+	err := Execute(context.Background(), app, []string{"user", "42", "delete", "--force"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 42, app.User.ID)
+	assert.True(t, app.User.Delete.Force)
+	assert.Equal(t, 42, app.User.Delete.userID)
+}
+
+func TestExecute_BranchingWithSubcommandArg(t *testing.T) {
+	t.Parallel()
+
+	app := &branchingAppCmd{}
+	err := Execute(context.Background(), app, []string{"user", "123", "rename", "newname"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 123, app.User.ID)
+	assert.Equal(t, "newname", app.User.Rename.NewName)
+	assert.Equal(t, 123, app.User.Rename.userID)
+}
+
+func TestExecute_EmbeddedSubcommands(t *testing.T) {
+	t.Parallel()
+
+	app := &embeddedParentCmd{}
+	err := Execute(context.Background(), app, []string{"--verbose", "serve", "--port", "9090"})
+	require.NoError(t, err)
+
+	assert.True(t, app.Verbose)
+	assert.True(t, app.Serve.ran)
+	assert.Equal(t, 9090, app.Serve.Port)
+}
+
 // --- discoverDir error on unreadable existing directory ---
 
 func TestDiscoverDir_UnreadableDirectory(t *testing.T) {

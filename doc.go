@@ -132,6 +132,54 @@
 //
 // Only one [Args] field is allowed per command.
 //
+// # Subcommands
+//
+// Subcommands can be declared via the [Subcommander] interface or by embedding
+// struct fields that implement [Commander]:
+//
+//	type AppCmd struct {
+//	    Verbose bool      `flag:"verbose"`
+//	    Serve   ServeCmd  // implements Commander → subcommand
+//	    Config  ConfigCmd // implements Commander → subcommand
+//	}
+//
+// Named struct fields whose type implements [Commander] become subcommands.
+// The command name comes from the embedded type (via [Namer] or derived from
+// the type name). Anonymous embedded structs are for flag promotion, not
+// subcommands.
+//
+// Embedded subcommands, [Subcommander] interface, and [Discoverer] interface
+// can be used together. Name collisions between embedded fields and Subcommander
+// return an error — fix by removing the duplicate. Discovered plugins silently
+// yield to built-in commands since users don't control plugin names.
+//
+// # Branching Arguments
+//
+// When a command has both positional arg fields and embedded Commander fields,
+// it becomes a "branching" command. Positional args are consumed before
+// subcommand resolution, enabling patterns like:
+//
+//	app user 42 delete --force
+//	app user 42 rename newname
+//
+// Definition:
+//
+//	type UserCmd struct {
+//	    ID     int       `arg:"id"`   // consumed first
+//	    Delete DeleteCmd              // subcommand, resolved after ID
+//	    Rename RenameCmd              // subcommand, resolved after ID
+//	}
+//
+// Subcommands access parent arg values via context:
+//
+//	func (d *DeleteCmd) Run(ctx context.Context) error {
+//	    userID := cli.Get[int](ctx, "id")
+//	    // ...
+//	}
+//
+// Branching is automatic — no special tag required. The framework detects
+// the presence of both arg-tagged fields and Commander fields.
+//
 // # Embedded Structs and Prefix
 //
 // Anonymous embedded structs have their flags promoted, just like Go's own

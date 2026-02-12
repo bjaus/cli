@@ -542,28 +542,48 @@ Positional arguments are declared via `arg` struct tags:
 
 ```go
 type CopyCmd struct {
-    Src  string   `arg:"src" help:"Source file"`
-    Dst  string   `arg:"dst" help:"Destination file"`
-    Rest []string `arg:"extra" help:"Additional files"`
+    Src string `arg:"src" help:"Source file"`
+    Dst string `arg:"dst" help:"Destination file"`
 }
 ```
 
-Scalar fields are required by default; slice fields consume remaining args. Supports
-`env`, `default`, `enum`, and `required` tags on args.
+Scalar fields are required by default. Use `cli.Args` (no tag needed) to capture
+all positional args or remaining args when combined with named fields:
+
+```go
+type GrepCmd struct {
+    Pattern string   `arg:"pattern" help:"Search pattern"`
+    Args    cli.Args // captures remaining args (files to search)
+}
+
+func (g *GrepCmd) Run(ctx context.Context) error {
+    if g.Args.Empty() {
+        return errors.New("no files specified")
+    }
+    for _, file := range g.Args {
+        // search file for pattern
+    }
+}
+```
+
+`Args` provides convenience methods: `Len`, `Empty`, `First`, `Last`, `Get`,
+`Contains`, `Index`, `Tail`.
+
+Supports `env`, `default`, `enum`, and `required` tags on named args.
 
 Built-in validators: `NoArgs`, `ExactArgs(n)`, `MinArgs(n)`, `MaxArgs(n)`,
 `RangeArgs(lo, hi)` — returned from the `ArgsValidator` interface.
 
 ### Comparison
 
-| Feature        | cobra             | urfave/cli          | kong               | bjaus/cli             |
-| -------------- | ----------------- | ------------------- | ------------------ | --------------------- |
-| Typed binding  | No ([]string)     | Yes (v3)            | Yes (struct tags)  | Yes (struct tags)     |
-| Validation     | Function-based    | Min/Max on variadic | Struct constraints | Interface + functions |
-| Variadic       | Always ([]string) | `*Args` types       | Slice field        | Slice field           |
-| Branching args | No                | No                  | Yes                | No                    |
-| Env fallback   | No                | No                  | Yes (`env:""`)     | Yes (`env:""`)        |
-| Default values | No                | Yes                 | Yes (`default:""`) | Yes (`default:""`)    |
+| Feature        | cobra             | urfave/cli          | kong               | bjaus/cli                  |
+| -------------- | ----------------- | ------------------- | ------------------ | -------------------------- |
+| Typed binding  | No ([]string)     | Yes (v3)            | Yes (struct tags)  | Yes (struct tags)          |
+| Validation     | Function-based    | Min/Max on variadic | Struct constraints | Interface + functions      |
+| Variadic       | Always ([]string) | `*Args` types       | Slice field        | `cli.Args` type            |
+| Branching args | No                | No                  | Yes                | Yes (automatic)            |
+| Env fallback   | No                | No                  | Yes (`env:""`)     | Yes (`env:""`)             |
+| Default values | No                | Yes                 | Yes (`default:""`) | Yes (`default:""`)
 
 ---
 
@@ -597,13 +617,23 @@ type CLI struct {
 }
 ```
 
-**bjaus/cli**: Interface method:
+**bjaus/cli**: Struct embedding or interface method:
 
 ```go
+// Struct embedding — fields implementing Commander become subcommands
+type ServerCmd struct {
+    Start StartCmd  // implements Commander → subcommand
+    Stop  StopCmd   // implements Commander → subcommand
+}
+
+// Or via interface for dynamic commands
 func (s *ServerCmd) Subcommands() []cli.Commander {
-    return []cli.Commander{&StartCmd{}, &StopCmd{}}
+    return []cli.Commander{&PluginCmd{}}
 }
 ```
+
+Both approaches can be combined. Name collisions between embedded and Subcommander
+return an error — the developer must fix the duplicate.
 
 ### Advanced Subcommand Features
 

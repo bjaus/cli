@@ -3,13 +3,17 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"time"
 )
+
+var commanderType = reflect.TypeFor[Commander]()
 
 // PluginInfo is the optional JSON metadata a plugin can return via its
 // info flag (default "--cli-info"). All fields are optional — a plugin
@@ -214,46 +218,209 @@ func AllSubcommands(cmd Commander) ([]Commander, error) {
 }
 
 func allSubcommands(cmd Commander) ([]Commander, error) {
+	// Built-in commands (embedded + Subcommander) must not collide — that's a
+	// developer error. Discovered commands (plugins) silently yield to built-ins.
+
+	// 1. Scan struct fields for embedded Commander implementations.
+	embedded, err := scanEmbeddedCommands(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build name set from embedded commands (tracks source for error messages).
+	type nameSource struct {
+		source string // "embedded field X" or "Subcommander"
+	}
+	builtinNames := make(map[string]nameSource, len(embedded)*2)
+	for _, s := range embedded {
+		info := resolveInfo(s)
+		builtinNames[info.name] = nameSource{source: "embedded field"}
+		for _, alias := range info.aliases {
+			builtinNames[alias] = nameSource{source: "embedded field"}
+		}
+	}
+
+	// 2. Add Subcommander interface results — error on collision with embedded.
 	var subs []Commander
 	if p, ok := cmd.(Subcommander); ok {
-		subs = p.Subcommands()
-	}
-
-	d, ok := cmd.(Discoverer)
-	if !ok {
-		return subs, nil
-	}
-
-	discovered, err := d.Discover()
-	if err != nil {
-		return subs, err
-	}
-
-	// Build a set of existing names for collision detection.
-	existing := make(map[string]bool, len(subs)*2)
-	for _, s := range subs {
-		info := resolveInfo(s)
-		existing[info.name] = true
-		for _, alias := range info.aliases {
-			existing[alias] = true
+		for _, s := range p.Subcommands() {
+			info := resolveInfo(s)
+			if src, exists := builtinNames[info.name]; exists {
+				return nil, fmt.Errorf("subcommand name collision: %q defined by both %s and Subcommander interface", info.name, src.source)
+			}
+			for _, alias := range info.aliases {
+				if src, exists := builtinNames[alias]; exists {
+					return nil, fmt.Errorf("subcommand alias collision: %q defined by both %s and Subcommander interface", alias, src.source)
+				}
+			}
+			subs = append(subs, s)
+			builtinNames[info.name] = nameSource{source: "Subcommander"}
+			for _, alias := range info.aliases {
+				builtinNames[alias] = nameSource{source: "Subcommander"}
+			}
 		}
 	}
 
-	merged := make([]Commander, len(subs), len(subs)+len(discovered))
-	copy(merged, subs)
-	for _, disc := range discovered {
-		info := resolveInfo(disc)
-		if existing[info.name] {
-			continue
+	// 3. Add Discoverer interface results — silently skip collisions with built-ins.
+	// Plugins should yield to built-in commands since users don't control plugin names.
+	var discovered []Commander
+	if d, ok := cmd.(Discoverer); ok {
+		disc, err := d.Discover()
+		if err != nil {
+			return nil, err
 		}
-		merged = append(merged, disc)
-		existing[info.name] = true
-		for _, alias := range info.aliases {
-			existing[alias] = true
+		for _, s := range disc {
+			info := resolveInfo(s)
+			if _, exists := builtinNames[info.name]; exists {
+				continue // plugin yields to built-in
+			}
+			discovered = append(discovered, s)
+			builtinNames[info.name] = nameSource{source: "Discoverer"}
+			for _, alias := range info.aliases {
+				builtinNames[alias] = nameSource{source: "Discoverer"}
+			}
 		}
 	}
+
+	// Merge all sources.
+	merged := make([]Commander, 0, len(embedded)+len(subs)+len(discovered))
+	merged = append(merged, embedded...)
+	merged = append(merged, subs...)
+	merged = append(merged, discovered...)
 
 	return merged, nil
+}
+
+// isBranchingCommand returns true if cmd has both positional arg fields and
+// embedded Commander fields. Branching commands consume their args before
+// subcommand resolution, enabling patterns like: app user 42 delete
+func isBranchingCommand(cmd Commander) bool {
+	v := reflect.ValueOf(cmd)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return false
+	}
+
+	hasArgs := false
+	hasCommanders := false
+	t := v.Type()
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+
+		// Check for arg tag.
+		if _, has := f.Tag.Lookup("arg"); has {
+			hasArgs = true
+		}
+
+		// Check for cli.Args type (first-class arg capture).
+		if f.Type == argsType {
+			hasArgs = true
+		}
+
+		// Check for Commander implementation (non-anonymous only).
+		if !f.Anonymous {
+			fieldType := f.Type
+			if fieldType.Kind() == reflect.Ptr {
+				fieldType = fieldType.Elem()
+			}
+			if reflect.PointerTo(fieldType).Implements(commanderType) {
+				hasCommanders = true
+			}
+		}
+
+		if hasArgs && hasCommanders {
+			return true
+		}
+	}
+
+	return false
+}
+
+// scanEmbeddedCommands scans a command's struct fields for embedded Commander
+// implementations. Fields that implement Commander become subcommands.
+//
+// Rules:
+//   - Only named (non-anonymous) exported fields are considered
+//   - Field must implement Commander interface
+//   - Field must NOT have flag/arg/env tags (returns error if it does)
+//   - Duplicate command names return an error
+func scanEmbeddedCommands(cmd Commander) ([]Commander, error) {
+	v := reflect.ValueOf(cmd)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil, nil
+	}
+
+	t := v.Type()
+	var subs []Commander
+	names := make(map[string]string) // command name -> field name (for error messages)
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+
+		// Skip unexported fields.
+		if !f.IsExported() {
+			continue
+		}
+
+		// Skip anonymous (embedded) fields — those are for flag promotion.
+		if f.Anonymous {
+			continue
+		}
+
+		// Check if field type implements Commander.
+		fieldType := f.Type
+		if fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
+		}
+
+		// For value types, we need pointer to check interface implementation.
+		ptrType := reflect.PointerTo(fieldType)
+		if !ptrType.Implements(commanderType) {
+			continue
+		}
+
+		// Field implements Commander — validate it has no CLI tags.
+		if _, has := f.Tag.Lookup("flag"); has {
+			return nil, fmt.Errorf("%w: field %q implements Commander but has flag tag", ErrInvalidTag, f.Name)
+		}
+		if _, has := f.Tag.Lookup("arg"); has {
+			return nil, fmt.Errorf("%w: field %q implements Commander but has arg tag", ErrInvalidTag, f.Name)
+		}
+		if _, has := f.Tag.Lookup("env"); has {
+			return nil, fmt.Errorf("%w: field %q implements Commander but has env tag", ErrInvalidTag, f.Name)
+		}
+
+		// Get the Commander value.
+		fv := v.Field(i)
+		if fv.Kind() == reflect.Ptr {
+			if fv.IsNil() {
+				// Initialize nil pointer.
+				fv.Set(reflect.New(fieldType))
+			}
+			fv = fv.Elem()
+		}
+		sub := fv.Addr().Interface().(Commander)
+
+		// Check for name collision.
+		info := resolveInfo(sub)
+		if existingField, exists := names[info.name]; exists {
+			return nil, fmt.Errorf("duplicate subcommand name %q: fields %q and %q", info.name, existingField, f.Name)
+		}
+		names[info.name] = f.Name
+
+		subs = append(subs, sub)
+	}
+
+	return subs, nil
 }
 
 func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Commander, error) {

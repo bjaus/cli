@@ -5,8 +5,10 @@ import (
 	"reflect"
 )
 
-type contextStoreKey struct{}
-type leafKey struct{}
+type (
+	contextStoreKey struct{}
+	leafKey         struct{}
+)
 
 type contextStore struct {
 	values map[string]any
@@ -162,12 +164,21 @@ func storeFlagsRecurse(ctx context.Context, v reflect.Value, t reflect.Type, pre
 			ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
 			continue
 		}
+
+		// Arg-tagged field: store value for subcommand access via Get().
+		argName, hasArg := f.Tag.Lookup("arg")
+		if hasArg {
+			if argName == "" {
+				argName = camelToKebab(f.Name)
+			}
+			ctx = setContextValue(ctx, prefix+argName, v.Field(i).Interface())
+			continue
+		}
+
 		// Standalone env field: has env tag but no flag or arg tag.
 		if f.Tag.Get("env") != "" {
-			if _, hasArg := f.Tag.Lookup("arg"); !hasArg {
-				name = camelToKebab(f.Name)
-				ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
-			}
+			name = camelToKebab(f.Name)
+			ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
 		}
 	}
 	return ctx

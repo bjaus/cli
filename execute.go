@@ -11,6 +11,7 @@ import (
 type resolvedCommand struct {
 	chain      []Commander
 	chainArgs  [][]string // per-command flag args, aligned with chain
+	branchArgs [][]string // per-command positional args for branching commands
 	positional []string
 }
 
@@ -52,6 +53,7 @@ func (fi flagIndex) isBool(name string) bool {
 func resolveCommand(root Commander, args []string, opts *options) (*resolvedCommand, error) {
 	chain := []Commander{root}
 	chainArgs := [][]string{nil}
+	branchArgs := make([][]string, 1) // positional args for branching commands
 	remaining := args
 
 	for {
@@ -72,6 +74,33 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 			remaining = expandShortOptions(remaining, fi)
 		}
 
+		// For branching commands (has both arg fields and subcommands),
+		// consume positional args before looking for subcommands.
+		if isBranchingCommand(current) {
+			cmdFlags, positional, rest := scanBranchingLevel(remaining, fi, current)
+			chainArgs[idx] = cmdFlags
+			branchArgs[idx] = positional
+			remaining = rest
+
+			// Now look for subcommand in remaining args.
+			sub := findSubcommandInArgs(remaining, subs, opts.prefixMatching, opts.caseInsensitive)
+			if sub == nil {
+				// Check for Fallbacker interface.
+				if d, ok := current.(Fallbacker); ok {
+					chain = append(chain, d.Fallback())
+					chainArgs = append(chainArgs, nil)
+					branchArgs = append(branchArgs, nil)
+					continue
+				}
+				break
+			}
+			chain = append(chain, sub.sub)
+			chainArgs = append(chainArgs, nil)
+			branchArgs = append(branchArgs, nil)
+			remaining = sub.remaining
+			continue
+		}
+
 		cmdFlags, next, found := scanLevel(remaining, fi, subs, opts.prefixMatching, opts.caseInsensitive)
 		chainArgs[idx] = cmdFlags
 
@@ -80,6 +109,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 			if d, ok := current.(Fallbacker); ok {
 				chain = append(chain, d.Fallback())
 				chainArgs = append(chainArgs, nil)
+				branchArgs = append(branchArgs, nil)
 				if next != nil {
 					remaining = next
 				}
@@ -93,6 +123,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 
 		chain = append(chain, found.sub)
 		chainArgs = append(chainArgs, nil)
+		branchArgs = append(branchArgs, nil)
 		remaining = found.remaining
 	}
 
@@ -110,6 +141,7 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 	return &resolvedCommand{
 		chain:      chain,
 		chainArgs:  chainArgs,
+		branchArgs: branchArgs,
 		positional: positional,
 	}, nil
 }
@@ -267,6 +299,66 @@ func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive 
 	return match
 }
 
+// scanBranchingLevel scans args for a branching command, returning flags,
+// positional args for the branch, and remaining args. This consumes positional
+// args before we look for subcommands.
+func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) (flags, positional, rest []string) {
+	numBranchArgs := countBranchArgs(cmd)
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" {
+			rest = append(rest, args[i+1:]...)
+			return
+		}
+
+		// Try to consume known flag.
+		if strings.HasPrefix(arg, "-") {
+			if consumed, ok := tryConsumeFlag(args, i, fi); ok {
+				flags = append(flags, args[i:i+consumed]...)
+				i += consumed - 1
+				continue
+			}
+		}
+
+		// Non-flag: is it a branch arg or rest?
+		if len(positional) < numBranchArgs {
+			positional = append(positional, arg)
+		} else {
+			rest = append(rest, arg)
+		}
+	}
+	return
+}
+
+// countBranchArgs returns the number of positional args a command expects
+// (based on arg-tagged fields, not including cli.Args).
+func countBranchArgs(cmd Commander) int {
+	defs := ScanArgs(cmd)
+	count := 0
+	for _, d := range defs {
+		if d.IsSlice {
+			continue // slice args consume remaining, not counted
+		}
+		count++
+	}
+	return count
+}
+
+// findSubcommandInArgs finds the first subcommand match in args.
+func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInsensitive bool) *subMatch {
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if sub := findSubcommand(subs, arg, prefixMatch, caseInsensitive); sub != nil {
+			return &subMatch{sub: sub, remaining: args[i+1:]}
+		}
+	}
+	return nil
+}
+
 // expandShortOptions expands combined short flags like -abc into -a -b -c.
 // All flags except the last must be bool/counter (no-value). The last flag
 // can take a value from the next argument.
@@ -349,6 +441,15 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	provided, err := parseFlagChain(resolved, chain, leafPassthrough, opts)
 	if err != nil {
 		return err
+	}
+
+	// Populate branch args on branching commands in the chain.
+	for i, cmd := range chain {
+		if i < len(resolved.branchArgs) && len(resolved.branchArgs[i]) > 0 {
+			if _, err := populateArgs(cmd, resolved.branchArgs[i], opts.envVarPrefix); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Save original positional args for ArgsValidator. populateArgs
