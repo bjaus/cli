@@ -247,11 +247,32 @@ type Suggester interface {
 
 // --- Config interfaces (all optional) ---
 
-// ConfigKey identifies a flag for config resolution. Name is the full
-// prefixed flag name (e.g. "db-host"). Parts decomposes the name into
-// prefix segments and base name (e.g. ["db", "host"]), useful for
-// resolvers backed by nested configuration formats (YAML, TOML).
-// For unprefixed flags, Parts contains a single element equal to Name.
+// ConfigKey identifies a flag for config resolution.
+//
+//   - Name is the full prefixed flag name (e.g. "db-host", "db-primary-host").
+//   - Parts decomposes the name by prefix boundaries, not individual dashes.
+//
+// Parts is useful for resolvers backed by nested configuration formats
+// (YAML, TOML). Each prefix tag value (minus trailing separator) becomes
+// one part, with the base flag name as the final part.
+//
+// Examples:
+//
+//	// Simple flag: --port
+//	ConfigKey{Name: "port", Parts: []string{"port"}}
+//
+//	// Prefixed struct: DB struct with prefix:"db-"
+//	// Flag: --db-host
+//	ConfigKey{Name: "db-host", Parts: []string{"db", "host"}}
+//
+//	// Nested prefixes: Primary struct with prefix:"db-primary-"
+//	// Flag: --db-primary-host
+//	ConfigKey{Name: "db-primary-host", Parts: []string{"db-primary", "host"}}
+//
+// Note: Parts splits only on prefix boundaries, NOT all dashes. A flag
+// --db-primary-host with prefix:"db-primary-" creates Parts: ["db-primary", "host"],
+// not ["db", "primary", "host"]. To get finer granularity, use nested structs
+// with separate prefix tags.
 type ConfigKey struct {
 	Name  string
 	Parts []string
