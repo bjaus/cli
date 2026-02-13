@@ -166,6 +166,8 @@ func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseI
 		arg := args[i]
 
 		if arg == "--" {
+			// Preserve "--" in output so it flows to separateLeafArgs,
+			// which will strip it and treat everything after as positional.
 			next = append(next, args[i:]...)
 			return cmdFlags, next, nil
 		}

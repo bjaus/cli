@@ -2030,6 +2030,62 @@ func TestExecute_OneRequired_TooMany(t *testing.T) {
 	assert.ErrorIs(t, err, cli.ErrOneRequired)
 }
 
+// --- Double-dash (end-of-flags) handling ---
+
+type doubleDashCmd struct {
+	Verbose bool `flag:"verbose" short:"v" help:"Enable verbose output"`
+	Args    cli.Args
+	gotArgs []string
+}
+
+func (c *doubleDashCmd) Run(_ context.Context) error {
+	c.gotArgs = c.Args
+	return nil
+}
+
+func TestExecute_DoubleDash_TreatsRemainingAsPositional(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		args        []string
+		wantVerbose bool
+		wantArgs    []string
+	}{
+		"flags after -- are positional": {
+			args:        []string{"--verbose", "--", "--not-a-flag", "arg1"},
+			wantVerbose: true,
+			wantArgs:    []string{"--not-a-flag", "arg1"},
+		},
+		"double dash alone": {
+			args:        []string{"--", "foo", "bar"},
+			wantVerbose: false,
+			wantArgs:    []string{"foo", "bar"},
+		},
+		"double dash strips itself": {
+			args:        []string{"--"},
+			wantVerbose: false,
+			wantArgs:    nil,
+		},
+		"flags before double dash still parsed": {
+			args:        []string{"-v", "--", "-v"},
+			wantVerbose: true,
+			wantArgs:    []string{"-v"},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := &doubleDashCmd{}
+			err := cli.Execute(context.Background(), cmd, tt.args)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantVerbose, cmd.Verbose)
+			assert.Equal(t, tt.wantArgs, cmd.gotArgs)
+		})
+	}
+}
+
 // --- Passthrougher interface ---
 
 type passthroughWithFlagsCmd struct {
