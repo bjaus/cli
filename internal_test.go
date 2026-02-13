@@ -5502,7 +5502,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `placeholder:"NAME"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "placeholder requires flag",
 		},
@@ -5511,7 +5511,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `hidden:"true"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "hidden requires flag",
 		},
@@ -5520,7 +5520,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Env string `inherit:"env"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "inherit tag removed",
 		},
@@ -5529,7 +5529,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Secret string `flag:"secret" default-mask:"****"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "default-mask renamed to mask",
 		},
@@ -5538,7 +5538,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Token string `flag:"-" env:"TOKEN"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: `flag:"-" removed`,
 		},
@@ -5547,7 +5547,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `required:"true"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "required requires flag, arg, or env tag",
 		},
@@ -5556,7 +5556,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `default:"x"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "default requires flag, arg, or env tag",
 		},
@@ -5565,7 +5565,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Mode string `enum:"a,b"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "enum requires flag, arg, or env tag",
 		},
@@ -5574,7 +5574,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `help:"something"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "help requires flag, arg, or env tag",
 		},
@@ -5583,7 +5583,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `mask:"****"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "mask requires flag, arg, or env tag",
 		},
@@ -5592,7 +5592,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Port int `flag:"port" short:"p" default:"8080" help:"Port"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 		},
 		"valid standalone env": {
@@ -5600,7 +5600,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Token string `env:"TOKEN" required:"true" help:"API token"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 		},
 		"valid arg with enum": {
@@ -5608,7 +5608,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Mode string `arg:"mode" enum:"a,b,c" help:"Mode"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 		},
 		"prefix on non-struct": {
@@ -5616,7 +5616,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					Name string `prefix:"db-"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "prefix requires struct type",
 		},
@@ -5628,7 +5628,7 @@ func TestValidateStructTags(t *testing.T) {
 				type cmd struct {
 					inner `prefix:"db-"`
 				}
-				return reflect.TypeOf(cmd{})
+				return reflect.TypeFor[cmd]()
 			},
 			wantErr: "prefix cannot be used on anonymous",
 		},
@@ -6331,7 +6331,7 @@ func (c *flagFieldPrefixCmd) Run(_ context.Context) error { return nil }
 func TestFlagFieldPath_PrefixStruct(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(flagFieldPrefixCmd{})
+	typ := reflect.TypeFor[flagFieldPrefixCmd]()
 	path := flagFieldPath(typ, "db-host", nil, "")
 	require.NotNil(t, path)
 	// Should resolve to DB.Host (indices 0, 0).
@@ -6341,7 +6341,7 @@ func TestFlagFieldPath_PrefixStruct(t *testing.T) {
 func TestFlagFieldPath_NoMatch(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(flagFieldPrefixCmd{})
+	typ := reflect.TypeFor[flagFieldPrefixCmd]()
 	path := flagFieldPath(typ, "nonexistent", nil, "")
 	assert.Nil(t, path)
 }
@@ -6359,7 +6359,7 @@ func (c *flagFieldEmbeddedCmd) Run(_ context.Context) error { return nil }
 func TestFlagFieldPath_EmbeddedStruct(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(flagFieldEmbeddedCmd{})
+	typ := reflect.TypeFor[flagFieldEmbeddedCmd]()
 	path := flagFieldPath(typ, "format", nil, "")
 	require.NotNil(t, path)
 	// Should resolve to embedded.Format (indices 0, 0).
@@ -6375,7 +6375,7 @@ func (c *flagFieldAutoNameCmd) Run(_ context.Context) error { return nil }
 func TestFlagFieldPath_AutoKebabName(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(flagFieldAutoNameCmd{})
+	typ := reflect.TypeFor[flagFieldAutoNameCmd]()
 	path := flagFieldPath(typ, "output-dir", nil, "")
 	require.NotNil(t, path)
 	assert.Equal(t, []int{0}, path)
@@ -6391,7 +6391,7 @@ func (c *flagFieldNoFlagCmd) Run(_ context.Context) error { return nil }
 func TestFlagFieldPath_SkipNonFlagField(t *testing.T) {
 	t.Parallel()
 
-	typ := reflect.TypeOf(flagFieldNoFlagCmd{})
+	typ := reflect.TypeFor[flagFieldNoFlagCmd]()
 	path := flagFieldPath(typ, "port", nil, "")
 	require.NotNil(t, path)
 	// NotAFlag at index 0 has no flag tag → skip; Port at index 1 matches.
@@ -7135,4 +7135,30 @@ func TestConfigProvider_NoConfigFlag(t *testing.T) {
 	assert.Equal(t, "", c.ConfigPath)
 	assert.Equal(t, 0, c.Port)
 	assert.Equal(t, "", c.Host)
+}
+
+func TestWithSilenceErrors(t *testing.T) {
+	t.Parallel()
+
+	opts := defaults()
+	assert.False(t, opts.silenceErrors)
+
+	WithSilenceErrors(true)(opts)
+	assert.True(t, opts.silenceErrors)
+
+	WithSilenceErrors(false)(opts)
+	assert.False(t, opts.silenceErrors)
+}
+
+func TestWithSilenceUsage(t *testing.T) {
+	t.Parallel()
+
+	opts := defaults()
+	assert.False(t, opts.silenceUsage)
+
+	WithSilenceUsage(true)(opts)
+	assert.True(t, opts.silenceUsage)
+
+	WithSilenceUsage(false)(opts)
+	assert.False(t, opts.silenceUsage)
 }
