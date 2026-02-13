@@ -1546,3 +1546,158 @@ func TestFlagRightDeprecated(t *testing.T) {
 		t.Error("output missing deprecation message")
 	}
 }
+
+// --- Tree renderer sorted tests ---
+
+func TestTreeRendererSorted(t *testing.T) {
+	root := &testRoot{}
+	flags := cli.ScanFlags(root)
+	args := cli.ScanArgs(root)
+
+	renderer := help.Tree(help.WithSorted())
+	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)
+
+	// Should have tree characters.
+	if !strings.Contains(output, "├──") && !strings.Contains(output, "└──") {
+		t.Error("tree output missing tree characters")
+	}
+	// Subcommands should be sorted: serve before status.
+	serveIdx := strings.Index(output, "serve")
+	statusIdx := strings.Index(output, "status")
+	if serveIdx == -1 || statusIdx == -1 {
+		t.Error("missing subcommand in output")
+	}
+	if serveIdx > statusIdx {
+		t.Error("subcommands should be sorted alphabetically")
+	}
+}
+
+// nestedRootCmd has nested subcommands for testing tree renderer.
+type nestedRootCmd struct{}
+
+func (c *nestedRootCmd) Name() string                  { return "nested" }
+func (c *nestedRootCmd) Description() string           { return "Nested root" }
+func (c *nestedRootCmd) Run(ctx context.Context) error { return nil }
+func (c *nestedRootCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&nestedParentCmd{}}
+}
+
+type nestedParentCmd struct{}
+
+func (c *nestedParentCmd) Name() string                  { return "parent" }
+func (c *nestedParentCmd) Description() string           { return "Parent command" }
+func (c *nestedParentCmd) Run(ctx context.Context) error { return nil }
+func (c *nestedParentCmd) Subcommands() []cli.Commander {
+	return []cli.Commander{&nestedChildCmd{}}
+}
+
+type nestedChildCmd struct{}
+
+func (c *nestedChildCmd) Name() string                  { return "child" }
+func (c *nestedChildCmd) Description() string           { return "Child command" }
+func (c *nestedChildCmd) Run(ctx context.Context) error { return nil }
+
+func TestTreeRendererNestedSubcommands(t *testing.T) {
+	root := &nestedRootCmd{}
+	flags := cli.ScanFlags(root)
+	args := cli.ScanArgs(root)
+
+	renderer := help.Tree()
+	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)
+
+	// Should show parent command.
+	if !strings.Contains(output, "parent") {
+		t.Error("output missing parent command")
+	}
+	// Should show nested child.
+	if !strings.Contains(output, "child") {
+		t.Error("output missing nested child command")
+	}
+}
+
+// --- Man renderer additional tests ---
+
+func TestManRendererNoDescription(t *testing.T) {
+	cmd := &noDescCmd{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Man()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Should have NAME section.
+	if !strings.Contains(output, "NAME") {
+		t.Error("output missing NAME section")
+	}
+	// Should NOT have description in NAME section (just the name).
+	if strings.Contains(output, " - ") {
+		t.Error("output should not have description separator for command without description")
+	}
+}
+
+type noDescCmd struct{}
+
+func (c *noDescCmd) Name() string                  { return "nodesc" }
+func (c *noDescCmd) Run(ctx context.Context) error { return nil }
+
+func TestManRendererWithArgs(t *testing.T) {
+	cmd := &cmdWithArgsForMan{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Man()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Should have ARGUMENTS section.
+	if !strings.Contains(output, "ARGUMENTS") {
+		t.Error("output missing ARGUMENTS section")
+	}
+	if !strings.Contains(output, "input") {
+		t.Error("output missing arg name")
+	}
+}
+
+type cmdWithArgsForMan struct {
+	Input string `arg:"input" help:"Input file" required:"true"`
+}
+
+func (c *cmdWithArgsForMan) Name() string                  { return "argscmd" }
+func (c *cmdWithArgsForMan) Description() string           { return "Command with args" }
+func (c *cmdWithArgsForMan) Run(ctx context.Context) error { return nil }
+
+// --- Markdown renderer additional tests ---
+
+func TestMarkdownRendererNoSubcommands(t *testing.T) {
+	cmd := &testCmd{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Markdown()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Should have Usage section.
+	if !strings.Contains(output, "## Usage") {
+		t.Error("output missing Usage section")
+	}
+	// Should NOT have Commands section (no subcommands).
+	if strings.Contains(output, "## Commands") {
+		t.Error("output should not have Commands section for leaf command")
+	}
+}
+
+func TestMarkdownRendererSorted(t *testing.T) {
+	root := &testRoot{}
+	flags := cli.ScanFlags(root)
+	args := cli.ScanArgs(root)
+
+	renderer := help.Markdown(help.WithSorted())
+	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)
+
+	// Should have Commands section.
+	if !strings.Contains(output, "## Commands") {
+		t.Error("output missing Commands section")
+	}
+}
