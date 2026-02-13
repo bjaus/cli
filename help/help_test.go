@@ -1293,3 +1293,28 @@ func TestMustTemplateFilePanic(t *testing.T) {
 	}()
 	help.MustTemplateFile("/nonexistent/path/template.txt")
 }
+
+func TestDetectColorNoColor(t *testing.T) {
+	// NO_COLOR should disable color.
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("TERM", "xterm-256color")
+
+	opts := &help.Options{ColorAuto: true}
+	c := help.NewColorizer(opts)
+
+	if c.Enabled() {
+		t.Error("color should be disabled when NO_COLOR is set")
+	}
+}
+
+func TestDetectColorDumbTerm(t *testing.T) {
+	// TERM=dumb should disable color.
+	t.Setenv("TERM", "dumb")
+
+	opts := &help.Options{ColorAuto: true}
+	c := help.NewColorizer(opts)
+
+	if c.Enabled() {
+		t.Error("color should be disabled when TERM=dumb")
+	}
+}
