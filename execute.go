@@ -455,7 +455,7 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 		return err
 	}
 
-	ctx = storeFlags(ctx, chain)
+	ctx = storeArgs(ctx, chain)
 	ctx, err = injectDependencies(ctx, chain, resolved.positional, opts.bindOpts)
 	if err != nil {
 		return err

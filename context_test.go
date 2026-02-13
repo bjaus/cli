@@ -95,36 +95,31 @@ func TestSet_MultipleKeys(t *testing.T) {
 	assert.True(t, cli.Get[bool](ctx, "verbose"))
 }
 
-// --- Integration: flags are available via Get/Lookup after Execute ---
+// --- Integration: args are available via Get/Lookup after Execute ---
 
-type contextParent struct {
-	Env string `flag:"env" default:"dev"`
-	t   *testing.T
+type contextArgChild struct {
+	t *testing.T
 }
 
-func (c *contextParent) Run(_ context.Context) error { return nil }
-func (c *contextParent) Name() string                { return "app" }
-func (c *contextParent) Subcommands() []cli.Commander {
-	return []cli.Commander{&contextChild{t: c.t}}
-}
-
-type contextChild struct {
-	Port int `flag:"port" default:"8080"`
-	t    *testing.T
-}
-
-func (c *contextChild) Run(ctx context.Context) error {
-	assert.Equal(c.t, "prod", cli.Get[string](ctx, "env"))
-	assert.Equal(c.t, 9090, cli.Get[int](ctx, "port"))
+func (c *contextArgChild) Run(ctx context.Context) error {
+	assert.Equal(c.t, 42, cli.Get[int](ctx, "user-id"))
 	return nil
 }
 
-func (c *contextChild) Name() string { return "serve" }
+func (c *contextArgChild) Name() string { return "delete" }
 
-func TestExecute_FlagsAvailableViaContext(t *testing.T) {
-	t.Parallel()
+type contextArgParent struct {
+	UserID int             `arg:"user-id"`
+	Delete contextArgChild // embedded Commander field triggers branching
+	t      *testing.T
+}
 
-	parent := &contextParent{t: t}
-	err := cli.Execute(context.Background(), parent, []string{"--env", "prod", "serve", "--port", "9090"})
+func (c *contextArgParent) Run(_ context.Context) error { return nil }
+func (c *contextArgParent) Name() string                { return "user" }
+
+func TestExecute_ArgsAvailableViaContext(t *testing.T) {
+	parent := &contextArgParent{t: t}
+	parent.Delete.t = t
+	err := cli.Execute(context.Background(), parent, []string{"42", "delete"})
 	require.NoError(t, err)
 }

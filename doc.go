@@ -245,12 +245,17 @@
 //
 // # Context Values
 //
-// The framework automatically stores every parsed flag value in the context
-// before [Beforer] hooks run. Subcommands can retrieve any ancestor's
-// flag value without declaring struct fields:
+// The framework provides [Set], [Get], and [Lookup] for sharing values between
+// commands via context. Use these in [Beforer.Before] hooks to share computed
+// values (database connections, loggers, etc.) with downstream commands:
+//
+//	func (a *App) Before(ctx context.Context) (context.Context, error) {
+//	    db, _ := sql.Open("postgres", a.DSN)
+//	    return cli.Set(ctx, "db", db), nil
+//	}
 //
 //	func (s *ServeCmd) Run(ctx context.Context) error {
-//	    env := cli.Get[string](ctx, "env") // from parent's --env flag
+//	    db := cli.Get[*sql.DB](ctx, "db")
 //	    // ...
 //	}
 //
@@ -260,16 +265,10 @@
 //   - [Get] — retrieve a value by name; returns zero value if missing or type mismatch
 //   - [Lookup] — retrieve a value by name; returns (value, ok) for safe checking
 //
-// User code can also call [Set] in a [Beforer.Before] hook to share
-// arbitrary values (database connections, loggers, etc.) with downstream
-// commands:
-//
-//	func (a *App) Before(ctx context.Context) (context.Context, error) {
-//	    return cli.Set(ctx, "db", a.db), nil
-//	}
-//
-// This complements struct-based inheritance: use context values when you want
-// loose coupling or need to share non-flag data.
+// Note: Flag values are NOT stored in context. Access flags via struct fields
+// directly, using flag inheritance for child commands that need parent values.
+// Positional arg values ARE stored in context to support branching command
+// patterns (e.g., "app user 42 delete") where child commands need parent args.
 //
 // # Config
 //

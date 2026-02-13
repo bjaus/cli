@@ -6,13 +6,10 @@ import (
 )
 
 type (
-	contextStoreKey struct{}
-	leafKey         struct{}
+	argStoreKey  struct{}
+	userValueKey struct{ name string }
+	leafKey      struct{}
 )
-
-type contextStore struct {
-	values map[string]any
-}
 
 // Leaf returns the leaf (target) command from the context. The framework
 // stores the leaf before [Beforer] hooks run, so parent commands can
@@ -53,10 +50,8 @@ func Leaf(ctx context.Context) Commander {
 // Set stores a named value in the context. The returned context contains
 // the value and should be used for subsequent operations.
 //
-// The framework automatically calls Set for every parsed flag value before
-// [Beforer] hooks run, so flag values are available to all commands in
-// the chain via [Get] or [Lookup]. User code can also call Set in a
-// [Beforer.Before] hook to share arbitrary values with downstream commands:
+// Use Set in a [Beforer.Before] hook to share computed values with
+// downstream commands:
 //
 //	func (a *App) Before(ctx context.Context) (context.Context, error) {
 //	    db, err := openDB(a.DSN)
@@ -66,12 +61,16 @@ func Leaf(ctx context.Context) Commander {
 //	    return cli.Set(ctx, "db", db), nil
 //	}
 //
-//	func (s *ServeCmd) Run(ctx context.Context, args []string) error {
+//	func (s *ServeCmd) Run(ctx context.Context) error {
 //	    db := cli.Get[*sql.DB](ctx, "db")
 //	    // ...
 //	}
+//
+// Note: Flag values are not stored in context. Access flags via struct
+// fields directly, using flag inheritance for child commands that need
+// parent flag values.
 func Set[T any](ctx context.Context, name string, val T) context.Context {
-	return setContextValue(ctx, name, val)
+	return context.WithValue(ctx, userValueKey{name}, val)
 }
 
 // Get retrieves a named value from the context. It returns the zero value
@@ -80,7 +79,7 @@ func Set[T any](ctx context.Context, name string, val T) context.Context {
 // Use [Lookup] when you need to distinguish between a missing value and a
 // stored zero value.
 //
-//	env := cli.Get[string](ctx, "env")
+//	db := cli.Get[*sql.DB](ctx, "db")
 func Get[T any](ctx context.Context, name string) T {
 	val, _ := Lookup[T](ctx, name)
 	return val
@@ -90,40 +89,40 @@ func Get[T any](ctx context.Context, name string) T {
 // value and false if the name is not found or if the stored value's type
 // does not match T.
 //
-//	env, ok := cli.Lookup[string](ctx, "env")
+//	db, ok := cli.Lookup[*sql.DB](ctx, "db")
 func Lookup[T any](ctx context.Context, name string) (T, bool) {
-	store, ok := ctx.Value(contextStoreKey{}).(*contextStore)
-	if !ok {
-		var zero T
-		return zero, false
+	// Check user-set values first (they can shadow arg values).
+	if val := ctx.Value(userValueKey{name}); val != nil {
+		if typed, ok := val.(T); ok {
+			return typed, true
+		}
 	}
-	raw, exists := store.values[name]
-	if !exists {
-		var zero T
-		return zero, false
+
+	// Fall back to arg store (for branching command patterns).
+	if store, ok := ctx.Value(argStoreKey{}).(map[string]any); ok {
+		if raw, exists := store[name]; exists {
+			if typed, ok := raw.(T); ok {
+				return typed, true
+			}
+		}
 	}
-	typed, ok := raw.(T)
-	if !ok {
-		var zero T
-		return zero, false
-	}
-	return typed, true
+
+	var zero T
+	return zero, false
 }
 
-func setContextValue(ctx context.Context, name string, val any) context.Context {
-	store, ok := ctx.Value(contextStoreKey{}).(*contextStore)
-	if !ok {
-		store = &contextStore{values: make(map[string]any)}
-		ctx = context.WithValue(ctx, contextStoreKey{}, store)
-	}
-	store.values[name] = val
-	return ctx
-}
+// storeArgs reads all arg-tagged fields from each command in the chain and
+// stores their values in a single immutable map. This enables child commands
+// to access parent positional args in branching command patterns like:
+//
+//	app user 42 delete --force
+//
+// where DeleteCmd needs access to the user ID from UserCmd.
+//
+// Called after flag parsing and inheritance, before Before hooks.
+func storeArgs(ctx context.Context, chain []Commander) context.Context {
+	store := make(map[string]any)
 
-// storeFlags reads all flag-tagged and standalone env-tagged fields from each
-// command in the chain and stores their current values in the context. Called
-// after flag parsing and inheritance, before Before hooks.
-func storeFlags(ctx context.Context, chain []Commander) context.Context {
 	for _, cmd := range chain {
 		v := reflect.ValueOf(cmd)
 		if v.Kind() == reflect.Ptr {
@@ -132,54 +131,42 @@ func storeFlags(ctx context.Context, chain []Commander) context.Context {
 		if v.Kind() != reflect.Struct {
 			continue
 		}
-		ctx = storeFlagsRecurse(ctx, v, v.Type(), "")
+		storeArgsRecurse(v, v.Type(), "", store)
 	}
-	return ctx
+
+	if len(store) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, argStoreKey{}, store)
 }
 
-func storeFlagsRecurse(ctx context.Context, v reflect.Value, t reflect.Type, prefix string) context.Context {
+func storeArgsRecurse(v reflect.Value, t reflect.Type, prefix string, store map[string]any) {
 	for i := range t.NumField() {
 		f := t.Field(i)
 
 		// Named struct with prefix: recurse.
 		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
 			if pfx := f.Tag.Get("prefix"); pfx != "" {
-				ctx = storeFlagsRecurse(ctx, v.Field(i), f.Type, prefix+pfx)
+				storeArgsRecurse(v.Field(i), f.Type, prefix+pfx, store)
 				continue
 			}
-			// Fall through: may be a custom type with flag tag.
+			// Fall through: may be a custom type with arg tag.
 		}
 
 		// Anonymous embedded struct: recurse with promotion.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			ctx = storeFlagsRecurse(ctx, v.Field(i), f.Type, prefix)
+			storeArgsRecurse(v.Field(i), f.Type, prefix, store)
 			continue
 		}
 
-		name, hasFlag := f.Tag.Lookup("flag")
-		if hasFlag {
-			if name == "" {
-				name = camelToKebab(f.Name)
-			}
-			ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
-			continue
-		}
-
-		// Arg-tagged field: store value for subcommand access via Get().
+		// Only store arg-tagged fields (not flags or standalone env).
 		argName, hasArg := f.Tag.Lookup("arg")
-		if hasArg {
-			if argName == "" {
-				argName = camelToKebab(f.Name)
-			}
-			ctx = setContextValue(ctx, prefix+argName, v.Field(i).Interface())
+		if !hasArg {
 			continue
 		}
-
-		// Standalone env field: has env tag but no flag or arg tag.
-		if f.Tag.Get("env") != "" {
-			name = camelToKebab(f.Name)
-			ctx = setContextValue(ctx, prefix+name, v.Field(i).Interface())
+		if argName == "" {
+			argName = camelToKebab(f.Name)
 		}
+		store[prefix+argName] = v.Field(i).Interface()
 	}
-	return ctx
 }

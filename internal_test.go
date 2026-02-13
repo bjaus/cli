@@ -4149,86 +4149,106 @@ func TestDiscoverPATH_NonExecutableFile(t *testing.T) {
 	assert.Empty(t, runners)
 }
 
-// --- storeFlags ---
+// --- storeArgs ---
 
-type internalStoreFlagsParent struct {
-	Env     string `flag:"env"`
-	Verbose bool   `flag:"verbose"`
+type internalStoreArgsParent struct {
+	UserID int `arg:"user-id"`
 }
 
-func (c *internalStoreFlagsParent) Run(_ context.Context) error { return nil }
+func (c *internalStoreArgsParent) Run(_ context.Context) error { return nil }
 
-type internalStoreFlagsChild struct {
-	Port int `flag:"port"`
+type internalStoreArgsChild struct {
+	Name string `arg:"name"`
 }
 
-func (c *internalStoreFlagsChild) Run(_ context.Context) error { return nil }
+func (c *internalStoreArgsChild) Run(_ context.Context) error { return nil }
 
-func TestStoreFlags(t *testing.T) {
+func TestStoreArgs(t *testing.T) {
 	t.Parallel()
 
-	parent := &internalStoreFlagsParent{Env: "prod", Verbose: true}
-	child := &internalStoreFlagsChild{Port: 9090}
+	parent := &internalStoreArgsParent{UserID: 42}
+	child := &internalStoreArgsChild{Name: "alice"}
 	chain := []Commander{parent, child}
 
-	ctx := storeFlags(context.Background(), chain)
+	ctx := storeArgs(context.Background(), chain)
 
-	env, ok := Lookup[string](ctx, "env")
+	userID, ok := Lookup[int](ctx, "user-id")
 	require.True(t, ok)
-	assert.Equal(t, "prod", env)
+	assert.Equal(t, 42, userID)
 
-	verbose, ok := Lookup[bool](ctx, "verbose")
+	name, ok := Lookup[string](ctx, "name")
 	require.True(t, ok)
-	assert.True(t, verbose)
-
-	port, ok := Lookup[int](ctx, "port")
-	require.True(t, ok)
-	assert.Equal(t, 9090, port)
+	assert.Equal(t, "alice", name)
 }
 
-func TestStoreFlags_NonStructSkipped(t *testing.T) {
+func TestStoreArgs_NonStructSkipped(t *testing.T) {
 	t.Parallel()
 
 	fn := RunFunc(func(_ context.Context) error { return nil })
 	chain := []Commander{fn}
 
-	ctx := storeFlags(context.Background(), chain)
+	ctx := storeArgs(context.Background(), chain)
 
-	// No flags stored, Lookup returns false.
+	// No args stored, Lookup returns false.
 	_, ok := Lookup[string](ctx, "anything")
 	assert.False(t, ok)
 }
 
-func TestStoreFlags_ChildOverwritesParent(t *testing.T) {
+func TestStoreArgs_ChildOverwritesParent(t *testing.T) {
 	t.Parallel()
 
-	parent := &internalStoreFlagsParent{Env: "dev"}
-	child := &struct {
-		Env string `flag:"env"`
+	parent := &struct {
+		ID int `arg:"id"`
 		internalBareCmd
-	}{Env: "prod"}
+	}{ID: 1}
+	child := &struct {
+		ID int `arg:"id"`
+		internalBareCmd
+	}{ID: 2}
 	chain := []Commander{parent, child}
 
-	ctx := storeFlags(context.Background(), chain)
+	ctx := storeArgs(context.Background(), chain)
 
 	// Child is processed after parent, so child's value wins.
-	assert.Equal(t, "prod", Get[string](ctx, "env"))
+	assert.Equal(t, 2, Get[int](ctx, "id"))
 }
 
-func TestStoreFlags_AutoDerivedName(t *testing.T) {
+func TestStoreArgs_AutoDerivedName(t *testing.T) {
 	t.Parallel()
 
 	cmd := &struct {
-		OutputFormat string `flag:""`
+		TargetEnv string `arg:""`
 		internalBareCmd
-	}{OutputFormat: "json"}
+	}{TargetEnv: "prod"}
 	chain := []Commander{cmd}
 
-	ctx := storeFlags(context.Background(), chain)
+	ctx := storeArgs(context.Background(), chain)
 
-	val, ok := Lookup[string](ctx, "output-format")
+	val, ok := Lookup[string](ctx, "target-env")
 	require.True(t, ok)
-	assert.Equal(t, "json", val)
+	assert.Equal(t, "prod", val)
+}
+
+func TestStoreArgs_FlagsNotStored(t *testing.T) {
+	t.Parallel()
+
+	cmd := &struct {
+		Port   int    `flag:"port"`
+		Target string `arg:"target"`
+		internalBareCmd
+	}{Port: 8080, Target: "prod"}
+	chain := []Commander{cmd}
+
+	ctx := storeArgs(context.Background(), chain)
+
+	// Args are stored.
+	target, ok := Lookup[string](ctx, "target")
+	require.True(t, ok)
+	assert.Equal(t, "prod", target)
+
+	// Flags are NOT stored.
+	_, ok = Lookup[int](ctx, "port")
+	assert.False(t, ok)
 }
 
 // --- HelpAppender / HelpPrepender ---
@@ -5141,25 +5161,6 @@ func TestEnvOnly_NotInHelp(t *testing.T) {
 	assert.NotContains(t, text, "token")
 	assert.NotContains(t, text, "TEST_TOKEN")
 	assert.Contains(t, text, "port")
-}
-
-func TestEnvOnly_StoredInContext(t *testing.T) {
-	t.Setenv("TEST_TOKEN", "ctx-val")
-
-	cmd := &envOnlyCaptureCmd{}
-	err := Execute(context.Background(), cmd, nil)
-	require.NoError(t, err)
-	assert.Equal(t, "ctx-val", cmd.captured)
-}
-
-type envOnlyCaptureCmd struct {
-	Token    string `env:"TEST_TOKEN" required:"true"`
-	captured string
-}
-
-func (c *envOnlyCaptureCmd) Run(ctx context.Context) error {
-	c.captured = Get[string](ctx, "token")
-	return nil
 }
 
 func TestEnvOnly_ConfigResolver(t *testing.T) {
@@ -6096,18 +6097,6 @@ func TestEmbedded_InHelpOutput(t *testing.T) {
 	assert.Contains(t, text, "--limit")
 }
 
-func TestEmbedded_InContext(t *testing.T) {
-	t.Parallel()
-
-	cmd := &embeddedListCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--format", "json"}, defaults())
-	require.NoError(t, err)
-
-	ctx := storeFlags(context.Background(), []Commander{cmd})
-	assert.Equal(t, "json", Get[string](ctx, "format"))
-	assert.Equal(t, 50, Get[int](ctx, "limit"))
-}
-
 func TestBuildFlagIndex_Embedded(t *testing.T) {
 	t.Parallel()
 
@@ -6202,19 +6191,6 @@ func TestPrefix_InHelpOutput(t *testing.T) {
 	assert.Contains(t, text, "--db-host")
 	assert.Contains(t, text, "--db-port")
 	assert.Contains(t, text, "--port")
-}
-
-func TestPrefix_InContext(t *testing.T) {
-	t.Parallel()
-
-	cmd := &prefixServeCmd{}
-	_, _, err := defaultParseFlags(cmd, []string{"--db-host", "remote"}, defaults())
-	require.NoError(t, err)
-
-	ctx := storeFlags(context.Background(), []Commander{cmd})
-	assert.Equal(t, "remote", Get[string](ctx, "db-host"))
-	assert.Equal(t, 5432, Get[int](ctx, "db-port"))
-	assert.Equal(t, 8080, Get[int](ctx, "port"))
 }
 
 func TestBuildFlagIndex_Prefix(t *testing.T) {
