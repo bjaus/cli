@@ -6696,7 +6696,7 @@ func TestArgs_Index(t *testing.T) {
 func TestArgs_Tail(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, Args{"b", "c"}, Args{"a", "b", "c"}.Tail())
-	assert.Nil(t, Args{"a"}.Tail())
+	assert.Empty(t, Args{"a"}.Tail()) // returns empty slice, not nil
 	assert.Nil(t, Args{}.Tail())
 }
 

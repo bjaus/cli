@@ -65,9 +65,9 @@ func (a Args) Contains(s string) bool { return slices.Contains(a, s) }
 // Index returns the index of s or -1 if not found.
 func (a Args) Index(s string) int { return slices.Index(a, s) }
 
-// Tail returns all arguments after the first, or nil if there are 0-1 arguments.
+// Tail returns all arguments after the first, or nil if empty.
 func (a Args) Tail() Args {
-	if len(a) <= 1 {
+	if len(a) == 0 {
 		return nil
 	}
 	return a[1:]
