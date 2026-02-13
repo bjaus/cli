@@ -248,7 +248,10 @@ func defaultParseFlags(cmd Commander, args []string, opts *options) ([]string, m
 		return nil, nil, err
 	}
 
-	fields := buildFieldMap(v.Type())
+	fields, err := buildFieldMap(v.Type())
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Phase 1: Parse CLI args first — they have highest priority.
 	remaining, err := parseExplicitFlags(v, args, fields, opts)
@@ -288,22 +291,28 @@ func collectProvided(fields map[string]*fieldInfo) map[string]bool {
 	return provided
 }
 
-func buildFieldMap(t reflect.Type) map[string]*fieldInfo {
+func buildFieldMap(t reflect.Type) (map[string]*fieldInfo, error) {
 	fields := make(map[string]*fieldInfo)
-	buildFieldMapRecurse(t, fields, nil, "", nil)
-	return fields
+	if err := buildFieldMapRecurse(t, fields, nil, "", nil); err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
-func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPath []int, prefix string, parts []string) {
+func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPath []int, prefix string, parts []string) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
 		currentPath := append(append([]int{}, indexPath...), i)
 
-		if handlePrefixedStruct(f, fields, currentPath, prefix, parts) {
+		if handled, err := handlePrefixedStruct(f, fields, currentPath, prefix, parts); err != nil {
+			return err
+		} else if handled {
 			continue
 		}
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			buildFieldMapRecurse(f.Type, fields, currentPath, prefix, parts)
+			if err := buildFieldMapRecurse(f.Type, fields, currentPath, prefix, parts); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -315,26 +324,31 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 		fullName := prefix + name
 		aliases := extractFieldAliases(f, prefix)
 
-		if shouldSkipDueToShadowing(fields, fullName, envOnly, currentPath) {
+		if skip, err := checkDuplicateFlag(fields, fullName, envOnly, currentPath); err != nil {
+			return err
+		} else if skip {
 			continue
 		}
 
 		fi := buildFieldInfo(f, currentPath, parts, name, fullName, aliases, envOnly)
 		registerFieldInfo(fields, fi, fullName, envOnly, aliases)
 	}
+	return nil
 }
 
-func handlePrefixedStruct(f reflect.StructField, fields map[string]*fieldInfo, currentPath []int, prefix string, parts []string) bool {
+func handlePrefixedStruct(f reflect.StructField, fields map[string]*fieldInfo, currentPath []int, prefix string, parts []string) (bool, error) {
 	if f.Type.Kind() != reflect.Struct || f.Anonymous {
-		return false
+		return false, nil
 	}
 	pfx := f.Tag.Get("prefix")
 	if pfx == "" {
-		return false
+		return false, nil
 	}
 	part := strings.TrimRight(pfx, "-._/")
-	buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx, append(parts, part))
-	return true
+	if err := buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx, append(parts, part)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func resolveFieldSource(f reflect.StructField) (string, bool, bool) {
@@ -363,15 +377,28 @@ func extractFieldAliases(f reflect.StructField, prefix string) []string {
 	return aliases
 }
 
-func shouldSkipDueToShadowing(fields map[string]*fieldInfo, fullName string, envOnly bool, currentPath []int) bool {
+// checkDuplicateFlag returns (skip, error). It returns an error if a duplicate
+// flag is found at the same depth (same-struct duplicate). It returns skip=true
+// if the existing flag should shadow this one (embedded struct being overridden).
+func checkDuplicateFlag(fields map[string]*fieldInfo, fullName string, envOnly bool, currentPath []int) (bool, error) {
 	primaryKey := "--" + fullName
 	if envOnly {
 		primaryKey = ":" + fullName
 	}
-	if existing, ok := fields[primaryKey]; ok && len(existing.index) <= len(currentPath) {
-		return true
+	existing, ok := fields[primaryKey]
+	if !ok {
+		return false, nil
 	}
-	return false
+	// Same depth means same-struct duplicate — this is an error.
+	if len(existing.index) == len(currentPath) {
+		return false, fmt.Errorf("%w: --%s", ErrDuplicateFlag, fullName)
+	}
+	// Shorter existing path means outer field shadows embedded — skip this one.
+	if len(existing.index) < len(currentPath) {
+		return true, nil
+	}
+	// Longer existing path means this field shadows embedded — don't skip.
+	return false, nil
 }
 
 func buildFieldInfo(f reflect.StructField, currentPath []int, parts []string, name, fullName string, aliases []string, envOnly bool) *fieldInfo {
@@ -660,7 +687,10 @@ func ValidateFlags(cmd Commander, provided map[string]bool) error {
 		return nil
 	}
 
-	fields := buildFieldMap(v.Type())
+	fields, err := buildFieldMap(v.Type())
+	if err != nil {
+		return err
+	}
 	for key, fi := range fields {
 		if provided[fi.def.Name] {
 			fi.provided = true

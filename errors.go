@@ -82,6 +82,9 @@ var (
 
 	// ErrInvalidFlagValue indicates a flag value could not be parsed or is invalid.
 	ErrInvalidFlagValue = newSentinel("invalid flag value", ErrFlag)
+
+	// ErrDuplicateFlag indicates multiple fields have the same flag name.
+	ErrDuplicateFlag = newSentinel("duplicate flag name", ErrFlag)
 )
 
 // --- Argument errors ---
