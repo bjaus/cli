@@ -100,7 +100,7 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 func BuildData(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef, sorted bool) Data {
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
-	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 
 	h := Data{
 		Name:            chainNames,

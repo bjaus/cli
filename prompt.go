@@ -124,7 +124,7 @@ func readPrompt(flag FlagDef, w io.Writer, scanner *bufio.Scanner) (string, erro
 	if label == "" {
 		label = flag.Name
 	}
-	fmt.Fprintf(w, "%s: ", label) //nolint:errcheck
+	fmt.Fprintf(w, "%s: ", label) //nolint:errcheck // best-effort prompt output
 	if scanner.Scan() {
 		return scanner.Text(), nil
 	}

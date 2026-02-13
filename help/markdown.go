@@ -42,7 +42,7 @@ func (r *markdownRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, 
 
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
-	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 	visible := VisibleSubcommands(allSubs)
 
 	r.writeMdTitle(&b, chainNames)

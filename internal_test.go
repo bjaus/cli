@@ -2759,7 +2759,7 @@ exit 1`,
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			info := queryPluginInfo(path, "--cli-info")
+			info := queryPluginInfo(path, "--cli-info", 2*time.Second)
 			if tt.want == nil {
 				assert.Nil(t, info)
 			} else {
@@ -3554,6 +3554,24 @@ func TestScanArgs_NonStruct(t *testing.T) {
 
 // --- populateArgs ---
 
+type variadicNotLastCmd struct {
+	Files  []string `arg:"files" help:"Files to process"`
+	Output string   `arg:"output" help:"Output destination"`
+}
+
+func (c *variadicNotLastCmd) Run(_ context.Context) error { return nil }
+
+func TestPopulateArgs_VariadicNotLast(t *testing.T) {
+	t.Parallel()
+
+	// Variadic (slice) args must come last since they consume all remaining args.
+	cmd := &variadicNotLastCmd{}
+	_, err := populateArgs(cmd, []string{"a.txt", "b.txt", "out.txt"}, "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrArgOrder)
+	assert.Contains(t, err.Error(), "variadic argument must be last")
+}
+
 func TestPopulateArgs(t *testing.T) {
 	t.Parallel()
 
@@ -4073,7 +4091,7 @@ func TestDiscoverDir_UnreadableDirectory(t *testing.T) {
 	})
 
 	seen := make(map[string]bool)
-	runners, err := discoverDir(unreadable, seen, "--cli-info")
+	runners, err := discoverDir(unreadable, seen, "--cli-info", 2*time.Second)
 	require.Error(t, err)
 	assert.Nil(t, runners)
 }
@@ -4095,7 +4113,7 @@ func TestDiscoverPATH_UnreadableEntry(t *testing.T) {
 	t.Setenv("PATH", unreadable)
 
 	seen := make(map[string]bool)
-	runners := discoverPATH("myapp", seen, "--cli-info")
+	runners := discoverPATH("myapp", seen, "--cli-info", 2*time.Second)
 	assert.Empty(t, runners)
 }
 
@@ -4111,7 +4129,7 @@ func TestDiscoverPATH_DirectoryEntry(t *testing.T) {
 	t.Setenv("PATH", dir)
 
 	seen := make(map[string]bool)
-	runners := discoverPATH("myapp", seen, "--cli-info")
+	runners := discoverPATH("myapp", seen, "--cli-info", 2*time.Second)
 	assert.Empty(t, runners)
 }
 
@@ -4127,7 +4145,7 @@ func TestDiscoverPATH_NonExecutableFile(t *testing.T) {
 	t.Setenv("PATH", dir)
 
 	seen := make(map[string]bool)
-	runners := discoverPATH("myapp", seen, "--cli-info")
+	runners := discoverPATH("myapp", seen, "--cli-info", 2*time.Second)
 	assert.Empty(t, runners)
 }
 

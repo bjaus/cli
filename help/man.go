@@ -41,7 +41,7 @@ func (r *manRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flags
 
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
-	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 	visible := VisibleSubcommands(allSubs)
 
 	r.writeManName(&b, c, chainNames, info)

@@ -39,7 +39,7 @@ func (r *treeRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 
 	r.writeTreeRoot(&b, c, chainNames, info)
 
-	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 	visible := r.sortedSubcommands(allSubs)
 	visibleFlags := r.sortedFlags(flags)
 	visibleGlobal := r.sortedFlags(globalFlags)
@@ -110,7 +110,7 @@ func (r *treeRenderer) writeTreeSubcommands(b *strings.Builder, c *Colorizer, vi
 }
 
 func (r *treeRenderer) writeTreeChildSubcommands(b *strings.Builder, c *Colorizer, s cli.Commander, idx, total int, isLastParent bool) {
-	childSubs, _ := cli.AllSubcommands(s) //nolint:errcheck
+	childSubs, _ := cli.AllSubcommands(s) //nolint:errcheck // best-effort in help rendering
 	childVisible := r.sortedSubcommands(childSubs)
 	childPrefix := "│   "
 	if isLastParent || idx == total-1 {

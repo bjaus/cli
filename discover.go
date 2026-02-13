@@ -69,9 +69,11 @@ func (e *ExternalCommand) Run(ctx context.Context) error {
 type DiscoverOption func(*discoverConfig)
 
 type discoverConfig struct {
-	dirs       []string
-	pathPrefix string // non-empty enables PATH scanning
-	infoFlag   string
+	dirs        []string
+	pathPrefix  string // non-empty enables PATH scanning
+	infoFlag    string
+	infoTimeout time.Duration // timeout for plugin info queries
+	warnFunc    func(err error)
 }
 
 // WithDir adds a directory to scan for plugin executables. Directories
@@ -118,6 +120,35 @@ func WithInfoFlag(flag string) DiscoverOption {
 	}
 }
 
+// WithInfoTimeout sets the timeout for plugin metadata queries. The
+// default is 2 seconds. If a plugin does not respond within the timeout,
+// it is still registered but will have no description or aliases.
+// This prevents slow or hanging plugins from blocking CLI startup.
+func WithInfoTimeout(d time.Duration) DiscoverOption {
+	return func(c *discoverConfig) {
+		c.infoTimeout = d
+	}
+}
+
+// WithWarnFunc sets a callback for non-fatal warnings during discovery.
+// Warnings include unreadable directories and plugin metadata timeouts.
+// If not set, warnings are silently ignored and discovery continues.
+// This is useful for logging partial failures without aborting discovery.
+//
+// Example:
+//
+//	cli.Discover(
+//	    cli.WithDirs(cli.DefaultDirs("myapp")...),
+//	    cli.WithWarnFunc(func(err error) {
+//	        log.Printf("plugin discovery warning: %v", err)
+//	    }),
+//	)
+func WithWarnFunc(fn func(err error)) DiscoverOption {
+	return func(c *discoverConfig) {
+		c.warnFunc = fn
+	}
+}
+
 // Discover scans directories and optionally PATH for plugin executables
 // and returns them as [Commander] values. Each discovered executable is
 // wrapped in an [ExternalCommand].
@@ -153,7 +184,8 @@ func WithInfoFlag(flag string) DiscoverOption {
 //	}
 func Discover(opts ...DiscoverOption) ([]Commander, error) {
 	cfg := &discoverConfig{
-		infoFlag: "--cli-info",
+		infoFlag:    "--cli-info",
+		infoTimeout: 2 * time.Second,
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -164,8 +196,12 @@ func Discover(opts ...DiscoverOption) ([]Commander, error) {
 
 	// Scan directories (higher priority).
 	for _, dir := range cfg.dirs {
-		found, err := discoverDir(dir, seen, cfg.infoFlag)
+		found, err := discoverDir(dir, seen, cfg.infoFlag, cfg.infoTimeout)
 		if err != nil {
+			if cfg.warnFunc != nil {
+				cfg.warnFunc(fmt.Errorf("plugin directory %s: %w", dir, err))
+				continue // warn and continue instead of failing
+			}
 			return nil, err
 		}
 		runners = append(runners, found...)
@@ -173,7 +209,7 @@ func Discover(opts ...DiscoverOption) ([]Commander, error) {
 
 	// Scan PATH (lower priority).
 	if cfg.pathPrefix != "" {
-		found := discoverPATH(cfg.pathPrefix, seen, cfg.infoFlag)
+		found := discoverPATH(cfg.pathPrefix, seen, cfg.infoFlag, cfg.infoTimeout)
 		runners = append(runners, found...)
 	}
 
@@ -425,7 +461,7 @@ func scanEmbeddedCommands(cmd Commander) ([]Commander, error) {
 	return subs, nil
 }
 
-func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Commander, error) {
+func discoverDir(dir string, seen map[string]bool, infoFlag string, timeout time.Duration) ([]Commander, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -450,12 +486,12 @@ func discoverDir(dir string, seen map[string]bool, infoFlag string) ([]Commander
 		}
 		seen[name] = true
 
-		runners = append(runners, newExternalCommand(path, name, infoFlag))
+		runners = append(runners, newExternalCommand(path, name, infoFlag, timeout))
 	}
 	return runners, nil
 }
 
-func discoverPATH(prefix string, seen map[string]bool, infoFlag string) []Commander {
+func discoverPATH(prefix string, seen map[string]bool, infoFlag string, timeout time.Duration) []Commander {
 	pathPrefix := prefix + "-"
 	var runners []Commander
 
@@ -486,20 +522,20 @@ func discoverPATH(prefix string, seen map[string]bool, infoFlag string) []Comman
 			}
 			seen[cmdName] = true
 
-			runners = append(runners, newExternalCommand(path, cmdName, infoFlag))
+			runners = append(runners, newExternalCommand(path, cmdName, infoFlag, timeout))
 		}
 	}
 
 	return runners
 }
 
-func newExternalCommand(path, name, infoFlag string) *ExternalCommand {
+func newExternalCommand(path, name, infoFlag string, timeout time.Duration) *ExternalCommand {
 	ext := &ExternalCommand{
 		Path: path,
 		Cmd:  name,
 	}
 
-	if info := queryPluginInfo(path, infoFlag); info != nil {
+	if info := queryPluginInfo(path, infoFlag, timeout); info != nil {
 		if info.Name != "" {
 			ext.Cmd = info.Name
 		}
@@ -510,8 +546,11 @@ func newExternalCommand(path, name, infoFlag string) *ExternalCommand {
 	return ext
 }
 
-func queryPluginInfo(path, flag string) *PluginInfo {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+// queryPluginInfo executes a plugin with the info flag to retrieve metadata.
+// If the plugin times out, returns non-zero, or returns invalid JSON, nil is
+// returned and the plugin is still usable (just without metadata).
+func queryPluginInfo(path, flag string, timeout time.Duration) *PluginInfo {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, path, flag).Output()

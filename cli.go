@@ -236,11 +236,11 @@ func formatError(o *options, root Commander, err error) {
 		return
 	}
 
-	fmt.Fprintf(o.stderr, "Error: %s\n", err) //nolint:errcheck
+	fmt.Fprintf(o.stderr, "Error: %s\n", err) //nolint:errcheck // best-effort error output
 
 	if !o.silenceUsage && isUsageError(err) {
 		name := resolveInfo(root).name
-		fmt.Fprintf(o.stderr, "Run '%s --help' for usage.\n", name) //nolint:errcheck
+		fmt.Fprintf(o.stderr, "Run '%s --help' for usage.\n", name) //nolint:errcheck // best-effort error output
 	}
 }
 

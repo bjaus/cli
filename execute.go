@@ -509,7 +509,11 @@ func populateBranchArgs(resolved *resolvedCommand, chain []Commander, envPrefix 
 }
 
 func populateLeafArgs(leaf Commander, resolved *resolvedCommand, envPrefix string) error {
-	if defs := ScanArgs(leaf); len(defs) > 0 {
+	defs, err := scanArgsValidated(leaf)
+	if err != nil {
+		return err
+	}
+	if len(defs) > 0 {
 		remaining, err := populateArgs(leaf, resolved.positional, envPrefix)
 		if err != nil {
 			return err

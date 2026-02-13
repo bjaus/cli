@@ -44,7 +44,10 @@ func Template(tmplStr string, opts ...Option) (cli.HelpRenderer, error) {
 	}, nil
 }
 
-// MustTemplate is like Template but panics on parse error.
+// MustTemplate is like [Template] but panics if the template cannot be parsed.
+// Use this for templates that are compile-time constants where parse errors
+// indicate programmer error. For templates loaded at runtime, use [Template]
+// and handle the error explicitly.
 func MustTemplate(tmplStr string, opts ...Option) cli.HelpRenderer {
 	r, err := Template(tmplStr, opts...)
 	if err != nil {
@@ -64,7 +67,10 @@ func TemplateFile(path string, opts ...Option) (cli.HelpRenderer, error) {
 	return Template(string(data), opts...)
 }
 
-// MustTemplateFile is like TemplateFile but panics on error.
+// MustTemplateFile is like [TemplateFile] but panics if the file cannot be
+// read or the template cannot be parsed. Use this for templates that are
+// bundled with your application where errors indicate programmer error.
+// For user-provided template files, use [TemplateFile] and handle errors.
 func MustTemplateFile(path string, opts ...Option) cli.HelpRenderer {
 	r, err := TemplateFile(path, opts...)
 	if err != nil {

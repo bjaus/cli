@@ -147,18 +147,18 @@ func RuntimeComplete(ctx context.Context, root Commander, args []string, w io.Wr
 
 	// Output active help messages first.
 	for _, msg := range result.ActiveHelp {
-		fmt.Fprintln(w, activeHelpPrefix+msg) //nolint:errcheck
+		fmt.Fprintln(w, activeHelpPrefix+msg) //nolint:errcheck // best-effort completion output
 	}
 
 	// Output completions.
 	for _, c := range result.Completions {
 		if c.Description != "" {
-			fmt.Fprintf(w, "%s\t%s\n", c.Value, c.Description) //nolint:errcheck
+			fmt.Fprintf(w, "%s\t%s\n", c.Value, c.Description) //nolint:errcheck // best-effort completion output
 		} else {
-			fmt.Fprintln(w, c.Value) //nolint:errcheck
+			fmt.Fprintln(w, c.Value) //nolint:errcheck // best-effort completion output
 		}
 	}
-	fmt.Fprintf(w, ":%d\n", int(result.Directive)) //nolint:errcheck
+	fmt.Fprintf(w, ":%d\n", int(result.Directive)) //nolint:errcheck // best-effort completion output
 }
 
 // computeCompletions resolves the command chain and returns a CompletionResult.
@@ -290,7 +290,7 @@ func completeFlagValue(ctx context.Context, target Commander, contextArgs []stri
 }
 
 func completeSubcommandNames(target Commander, toComplete string) CompletionResult {
-	subs, _ := allSubcommands(target) //nolint:errcheck
+	subs, _ := allSubcommands(target) //nolint:errcheck // best-effort in completion
 	var candidates []Completion
 	for _, sub := range subs {
 		info := resolveInfo(sub)

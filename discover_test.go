@@ -362,6 +362,42 @@ func TestDiscover_UnreadableDirectory(t *testing.T) {
 	assert.Nil(t, runners)
 }
 
+func TestDiscover_UnreadableDirectory_WithWarnFunc(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-specific permission test")
+	}
+
+	dir := t.TempDir()
+	readable := filepath.Join(dir, "readable")
+	unreadable := filepath.Join(dir, "noperm")
+
+	require.NoError(t, os.Mkdir(readable, 0o755))
+	require.NoError(t, os.Mkdir(unreadable, 0o000))
+	t.Cleanup(func() {
+		_ = os.Chmod(unreadable, 0o750) //nolint:errcheck,gosec // best-effort cleanup
+	})
+
+	writePlugin(t, filepath.Join(readable, "plugin"), `#!/bin/sh
+echo "works"`)
+
+	var warnings []error
+	runners, err := cli.Discover(
+		cli.WithDir(unreadable),
+		cli.WithDir(readable),
+		cli.WithWarnFunc(func(err error) {
+			warnings = append(warnings, err)
+		}),
+	)
+
+	// With WarnFunc, discovery continues despite unreadable directory.
+	require.NoError(t, err)
+	assert.Len(t, runners, 1)
+	assert.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0].Error(), "noperm")
+}
+
 // --- WithDirs convenience ---
 
 func TestWithDirs(t *testing.T) {

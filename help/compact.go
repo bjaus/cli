@@ -55,7 +55,7 @@ func (r *compactRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, f
 	}
 
 	// Subcommands (single line)
-	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in help rendering
 	visible := VisibleSubcommands(allSubs)
 	if len(visible) > 0 {
 		if r.opts.Sorted {

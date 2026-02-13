@@ -9,27 +9,40 @@ import (
 
 // ScanArgs inspects a command's struct tags and returns positional arg definitions.
 // This is exported so custom [HelpRenderer] implementations can inspect a command's args.
+// If the arg definitions are invalid (e.g., variadic arg not last), returns nil.
 func ScanArgs(cmd Commander) []ArgDef {
+	defs, _ := scanArgsValidated(cmd)
+	return defs
+}
+
+// scanArgsValidated inspects a command's struct tags and returns positional arg definitions.
+// Returns an error if the arg definitions are invalid (e.g., variadic arg not last).
+func scanArgsValidated(cmd Commander) ([]ArgDef, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
 	}
 	if v.Kind() != reflect.Struct {
-		return nil
+		return nil, nil
 	}
 
 	var defs []ArgDef
-	scanArgsRecurse(v.Type(), &defs)
-	return defs
+	var sawVariadic bool
+	if err := scanArgsRecurse(v.Type(), &defs, &sawVariadic); err != nil {
+		return nil, err
+	}
+	return defs, nil
 }
 
-func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
+func scanArgsRecurse(t reflect.Type, defs *[]ArgDef, sawVariadic *bool) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
 
 		// Anonymous embedded struct: promote args.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			scanArgsRecurse(f.Type, defs)
+			if err := scanArgsRecurse(f.Type, defs, sawVariadic); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -42,6 +55,15 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 		}
 
 		isSlice := f.Type.Kind() == reflect.Slice
+
+		// Variadic args must come last since they consume all remaining args.
+		if *sawVariadic {
+			return fmt.Errorf("%w: variadic argument must be last", ErrArgOrder)
+		}
+		if isSlice {
+			*sawVariadic = true
+		}
+
 		required := tagBool(f.Tag, "required", !isSlice) // non-slice args required by default
 
 		*defs = append(*defs, ArgDef{
@@ -56,12 +78,18 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef) {
 			IsSlice:  isSlice,
 		})
 	}
+	return nil
 }
 
 // populateArgs sets struct fields tagged with `arg` from positional arguments,
 // environment variables, and defaults. Also populates any cli.Args field with
 // remaining arguments. Returns unconsumed positional arguments.
 func populateArgs(cmd Commander, args []string, envPrefix string) ([]string, error) {
+	// Validate arg order before populating (variadic args must come last).
+	if _, err := scanArgsValidated(cmd); err != nil {
+		return nil, err
+	}
+
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()

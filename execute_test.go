@@ -1305,6 +1305,93 @@ func TestExecute_FlagInheritance_TypeMismatch(t *testing.T) {
 	assert.Equal(t, "", child.Env)
 }
 
+// Both parent and child have required flag with same name.
+type inheritRequiredParent struct {
+	Env   string `flag:"env" required:"true" help:"Target environment"`
+	child cli.Commander
+}
+
+func (p *inheritRequiredParent) Run(_ context.Context) error  { return nil }
+func (p *inheritRequiredParent) Name() string                 { return "app" }
+func (p *inheritRequiredParent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
+
+func TestExecute_FlagInheritance_BothRequired(t *testing.T) {
+	t.Parallel()
+
+	// When parent and child both require --env, providing it to parent satisfies both.
+	child := &inheritRequiredChild{}
+	parent := &inheritRequiredParent{child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"--env", "prod", "serve"})
+	require.NoError(t, err)
+	assert.Equal(t, "prod", parent.Env)
+	assert.Equal(t, "prod", child.Env)
+}
+
+func TestExecute_FlagInheritance_BothRequiredMissing(t *testing.T) {
+	t.Parallel()
+
+	// When parent's required flag is missing, error is reported.
+	child := &inheritRequiredChild{}
+	parent := &inheritRequiredParent{child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"serve"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required")
+}
+
+// Config resolver interaction with inherited flags.
+type inheritConfigChild struct {
+	Env  string `flag:"env" help:"Target environment"`
+	Port int    `flag:"port" default:"8080" help:"Listen port"`
+}
+
+func (c *inheritConfigChild) Run(_ context.Context) error { return nil }
+func (c *inheritConfigChild) Name() string                { return "serve" }
+
+func TestExecute_FlagInheritance_ConfigResolver(t *testing.T) {
+	t.Parallel()
+
+	// Config provides value for child, which marks the flag as "provided".
+	// Inheritance only applies when flag is NOT in child's provided set.
+	// Priority: child CLI > child env > config > inherited > default
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "env" {
+			return "from-config", true
+		}
+		return "", false
+	})
+
+	child := &inheritConfigChild{}
+	parent := &inheritParent{child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"--env", "from-parent", "serve"},
+		cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	// Config value takes priority over inheritance since config marks flag as provided.
+	assert.Equal(t, "from-config", child.Env)
+}
+
+func TestExecute_FlagInheritance_ConfigFallback(t *testing.T) {
+	t.Parallel()
+
+	// When no CLI arg or env provides value, config is used.
+	resolver := cli.ConfigResolver(func(key cli.ConfigKey) (string, bool) {
+		if key.Name == "env" {
+			return "from-config", true
+		}
+		return "", false
+	})
+
+	child := &inheritConfigChild{}
+	parent := &inheritParent{child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"serve"},
+		cli.WithConfigResolver(resolver))
+	require.NoError(t, err)
+	assert.Equal(t, "from-config", child.Env)
+}
+
 // --- Hidden flag inheritance tests (replaces inherit tag) ---
 
 type hiddenInheritParent struct {
@@ -1764,6 +1851,24 @@ func TestExecute_ArgFields_SliceEmpty(t *testing.T) {
 	cmd := &argSliceCmd{}
 	err := cli.Execute(context.Background(), cmd, nil)
 	require.NoError(t, err) // slice args optional by default
+}
+
+type argVariadicNotLast struct {
+	Files  []string `arg:"files" help:"Files to process"`
+	Output string   `arg:"output" help:"Output destination"`
+}
+
+func (c *argVariadicNotLast) Run(_ context.Context) error { return nil }
+
+func TestExecute_ArgFields_VariadicNotLast(t *testing.T) {
+	t.Parallel()
+
+	// Variadic (slice) args must come last since they consume all remaining args.
+	// Defining a scalar arg after a variadic is a programmer error.
+	cmd := &argVariadicNotLast{}
+	err := cli.Execute(context.Background(), cmd, []string{"a.txt", "b.txt", "out.txt"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrArgOrder)
 }
 
 // --- ArgsValidator ---

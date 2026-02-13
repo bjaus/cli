@@ -30,7 +30,8 @@ import (
 //
 //	ErrArgument ─────┬── ErrRequiredArg
 //	                 ├── ErrInvalidArgValue
-//	                 └── ErrArgCount
+//	                 ├── ErrArgCount
+//	                 └── ErrArgOrder
 //
 //	ErrCommand ──────┴── ErrUnknownCommand
 //
@@ -102,6 +103,10 @@ var (
 
 	// ErrArgCount indicates the wrong number of positional arguments was provided.
 	ErrArgCount = newSentinel("wrong number of arguments", ErrArgument)
+
+	// ErrArgOrder indicates positional arguments are defined in an invalid order.
+	// Variadic (slice) arguments must come last since they consume all remaining args.
+	ErrArgOrder = newSentinel("invalid argument order", ErrArgument)
 )
 
 // --- Command errors ---
