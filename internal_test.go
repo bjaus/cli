@@ -5496,6 +5496,24 @@ func TestValidateStructTags(t *testing.T) {
 			},
 			wantErr: "short tag cannot be empty",
 		},
+		"enum value invalid for int": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Count int `flag:"count" enum:"one,two,three"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "enum value \"one\" is not valid for type int",
+		},
+		"enum value valid for int": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Count int `flag:"count" enum:"1,2,3"`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "", // no error expected
+		},
 		"counter without flag": {
 			makeType: func() reflect.Type {
 				type cmd struct {

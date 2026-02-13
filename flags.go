@@ -1214,6 +1214,52 @@ func validateTypeConstraints(f reflect.StructField) error {
 	if f.Tag.Get("sep") != "" && kind != reflect.Slice {
 		return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
 	}
+	if err := validateEnumValues(f); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateEnumValues checks that all enum values can be parsed as the field type.
+func validateEnumValues(f reflect.StructField) error {
+	enumTag := f.Tag.Get("enum")
+	if enumTag == "" {
+		return nil
+	}
+
+	kind := f.Type.Kind()
+	// String types can have any enum values.
+	if kind == reflect.String {
+		return nil
+	}
+
+	vals := strings.Split(enumTag, ",")
+	for _, v := range vals {
+		if err := checkEnumValueType(v, kind, f.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkEnumValueType(val string, kind reflect.Kind, fieldName string) error {
+	var err error
+	switch kind {
+	case reflect.Int, reflect.Int64:
+		_, err = strconv.ParseInt(val, 10, 64)
+	case reflect.Uint, reflect.Uint64:
+		_, err = strconv.ParseUint(val, 10, 64)
+	case reflect.Float64:
+		_, err = strconv.ParseFloat(val, 64)
+	case reflect.Bool:
+		_, err = strconv.ParseBool(val)
+	default:
+		// Other types: allow any enum values, runtime will validate.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%w: field %s: enum value %q is not valid for type %s", ErrInvalidTag, fieldName, val, kind)
+	}
 	return nil
 }
 
