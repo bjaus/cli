@@ -22,7 +22,7 @@ jobs:
 
       - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.5.0
 
   test:
     name: Test (Go ${{ matrix.go-version }})
