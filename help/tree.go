@@ -37,126 +37,121 @@ func (r *treeRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
 
-	// Root command line.
-	b.WriteString(c.Command(chainNames))
-	if info.Description != "" {
-		b.WriteString(" - ")
-		b.WriteString(info.Description)
-	}
-	b.WriteByte('\n')
+	r.writeTreeRoot(&b, c, chainNames, info)
 
-	// Collect all items to render.
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
-	visible := VisibleSubcommands(allSubs)
-	if r.opts.Sorted {
-		slices.SortFunc(visible, func(a, b cli.Commander) int {
-			return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
-		})
-	}
+	visible := r.sortedSubcommands(allSubs)
+	visibleFlags := r.sortedFlags(flags)
+	visibleGlobal := r.sortedFlags(globalFlags)
 
-	visibleFlags := VisibleFlags(flags)
-	if r.opts.Sorted {
-		slices.SortFunc(visibleFlags, func(a, b cli.FlagDef) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-	}
-
-	visibleGlobal := VisibleFlags(globalFlags)
-	if r.opts.Sorted {
-		slices.SortFunc(visibleGlobal, func(a, b cli.FlagDef) int {
-			return strings.Compare(a.Name, b.Name)
-		})
-	}
-
-	// Calculate max widths.
 	maxCmdWidth := MaxCommandWidth(visible)
-	maxFlagWidth := MaxFlagWidth(visibleFlags)
-	if gw := MaxFlagWidth(visibleGlobal); gw > maxFlagWidth {
-		maxFlagWidth = gw
-	}
+	maxFlagWidth := maxFlagWidthOf(visibleFlags, visibleGlobal)
 
-	// Count total items for determining last item.
 	totalItems := len(visible) + len(visibleFlags) + len(visibleGlobal)
 	if len(args) > 0 {
 		totalItems++
 	}
 	currentItem := 0
 
-	// Render subcommands.
-	for i, s := range visible {
-		currentItem++
-		isLast := currentItem == totalItems
-		prefix := "├── "
-		if isLast {
-			prefix = "└── "
-		}
-		sInfo := ResolveInfo(s)
-		fmt.Fprintf(&b, "%s%-*s  %s\n", prefix, maxCmdWidth, c.Command(sInfo.Name), sInfo.Description)
-
-		// Render nested subcommands recursively.
-		childSubs, _ := cli.AllSubcommands(s) //nolint:errcheck
-		childVisible := VisibleSubcommands(childSubs)
-		if r.opts.Sorted && len(childVisible) > 0 {
-			slices.SortFunc(childVisible, func(a, b cli.Commander) int {
-				return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
-			})
-		}
-		childPrefix := "│   "
-		if isLast || i == len(visible)-1 {
-			childPrefix = "    "
-		}
-		for j, cs := range childVisible {
-			csInfo := ResolveInfo(cs)
-			childIsLast := j == len(childVisible)-1
-			childMarker := "├── "
-			if childIsLast {
-				childMarker = "└── "
-			}
-			fmt.Fprintf(&b, "%s%s%s  %s\n", childPrefix, childMarker, c.Command(csInfo.Name), csInfo.Description)
-		}
-	}
-
-	// Render flags.
-	for i := range visibleFlags {
-		f := &visibleFlags[i]
-		currentItem++
-		isLast := currentItem == totalItems
-		prefix := "├── "
-		if isLast {
-			prefix = "└── "
-		}
-		left := FlagLeft(f)
-		right := FlagRight(f)
-		padding := maxFlagWidth - len(left)
-		fmt.Fprintf(&b, "%s%s%s  %s\n", prefix, c.Flag(left), strings.Repeat(" ", padding), right)
-	}
-
-	// Render args summary.
-	if len(args) > 0 {
-		currentItem++
-		isLast := currentItem == totalItems
-		prefix := "├── "
-		if isLast {
-			prefix = "└── "
-		}
-		argUsage := BuildArgUsage(args)
-		fmt.Fprintf(&b, "%s%s %s\n", prefix, c.Section("Args:"), argUsage)
-	}
-
-	// Render global flags.
-	for i := range visibleGlobal {
-		f := &visibleGlobal[i]
-		currentItem++
-		isLast := currentItem == totalItems
-		prefix := "├── "
-		if isLast {
-			prefix = "└── "
-		}
-		left := FlagLeft(f)
-		right := FlagRight(f)
-		padding := maxFlagWidth - len(left)
-		fmt.Fprintf(&b, "%s%s%s  %s %s\n", prefix, c.Flag(left), strings.Repeat(" ", padding), right, c.Dim("(global)"))
-	}
+	r.writeTreeSubcommands(&b, c, visible, maxCmdWidth, &currentItem, totalItems)
+	r.writeTreeFlags(&b, c, visibleFlags, maxFlagWidth, &currentItem, totalItems, false)
+	r.writeTreeArgs(&b, c, args, &currentItem, totalItems)
+	r.writeTreeFlags(&b, c, visibleGlobal, maxFlagWidth, &currentItem, totalItems, true)
 
 	return b.String()
+}
+
+func (r *treeRenderer) writeTreeRoot(b *strings.Builder, c *Colorizer, chainNames string, info CommandInfo) {
+	b.WriteString(c.Command(chainNames))
+	if info.Description != "" {
+		b.WriteString(" - ")
+		b.WriteString(info.Description)
+	}
+	b.WriteByte('\n')
+}
+
+func (r *treeRenderer) sortedSubcommands(allSubs []cli.Commander) []cli.Commander {
+	visible := VisibleSubcommands(allSubs)
+	if r.opts.Sorted && len(visible) > 0 {
+		slices.SortFunc(visible, func(a, b cli.Commander) int {
+			return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
+		})
+	}
+	return visible
+}
+
+func (r *treeRenderer) sortedFlags(flags []cli.FlagDef) []cli.FlagDef {
+	visible := VisibleFlags(flags)
+	if r.opts.Sorted && len(visible) > 0 {
+		slices.SortFunc(visible, func(a, b cli.FlagDef) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+	}
+	return visible
+}
+
+func maxFlagWidthOf(visibleFlags, visibleGlobal []cli.FlagDef) int {
+	maxFlagWidth := MaxFlagWidth(visibleFlags)
+	if gw := MaxFlagWidth(visibleGlobal); gw > maxFlagWidth {
+		maxFlagWidth = gw
+	}
+	return maxFlagWidth
+}
+
+func (r *treeRenderer) writeTreeSubcommands(b *strings.Builder, c *Colorizer, visible []cli.Commander, maxCmdWidth int, currentItem *int, totalItems int) {
+	for i, s := range visible {
+		*currentItem++
+		prefix := treePrefix(*currentItem == totalItems)
+		sInfo := ResolveInfo(s)
+		fmt.Fprintf(b, "%s%-*s  %s\n", prefix, maxCmdWidth, c.Command(sInfo.Name), sInfo.Description)
+
+		r.writeTreeChildSubcommands(b, c, s, i, len(visible), *currentItem == totalItems)
+	}
+}
+
+func (r *treeRenderer) writeTreeChildSubcommands(b *strings.Builder, c *Colorizer, s cli.Commander, idx, total int, isLastParent bool) {
+	childSubs, _ := cli.AllSubcommands(s) //nolint:errcheck
+	childVisible := r.sortedSubcommands(childSubs)
+	childPrefix := "│   "
+	if isLastParent || idx == total-1 {
+		childPrefix = "    "
+	}
+	for j, cs := range childVisible {
+		csInfo := ResolveInfo(cs)
+		childMarker := treePrefix(j == len(childVisible)-1)
+		fmt.Fprintf(b, "%s%s%s  %s\n", childPrefix, childMarker, c.Command(csInfo.Name), csInfo.Description)
+	}
+}
+
+func (r *treeRenderer) writeTreeFlags(b *strings.Builder, c *Colorizer, flags []cli.FlagDef, maxFlagWidth int, currentItem *int, totalItems int, isGlobal bool) {
+	for i := range flags {
+		f := &flags[i]
+		*currentItem++
+		prefix := treePrefix(*currentItem == totalItems)
+		left := FlagLeft(f)
+		right := FlagRight(f)
+		padding := maxFlagWidth - len(left)
+		if isGlobal {
+			fmt.Fprintf(b, "%s%s%s  %s %s\n", prefix, c.Flag(left), strings.Repeat(" ", padding), right, c.Dim("(global)"))
+		} else {
+			fmt.Fprintf(b, "%s%s%s  %s\n", prefix, c.Flag(left), strings.Repeat(" ", padding), right)
+		}
+	}
+}
+
+func (r *treeRenderer) writeTreeArgs(b *strings.Builder, c *Colorizer, args []cli.ArgDef, currentItem *int, totalItems int) {
+	if len(args) == 0 {
+		return
+	}
+	*currentItem++
+	prefix := treePrefix(*currentItem == totalItems)
+	argUsage := BuildArgUsage(args)
+	fmt.Fprintf(b, "%s%s %s\n", prefix, c.Section("Args:"), argUsage)
+}
+
+func treePrefix(isLast bool) string {
+	if isLast {
+		return "└── "
+	}
+	return "├── "
 }

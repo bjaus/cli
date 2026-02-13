@@ -88,204 +88,245 @@ func genMarkdown(cmd cli.Commander, chain []cli.Commander) string {
 	info := cmdInfo(cmd)
 	path := commandPath(chain)
 
-	// Title
-	fmt.Fprintf(&b, "# %s\n\n", path)
+	writeMdHeader(&b, path, info)
 
-	// Description
-	if info.description != "" {
-		fmt.Fprintf(&b, "%s\n\n", info.description)
-	}
-	if info.longDescription != "" {
-		fmt.Fprintf(&b, "%s\n\n", info.longDescription)
-	}
-
-	// Usage
-	b.WriteString("## Usage\n\n")
-	b.WriteString("```\n")
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
-	if len(allSubs) > 0 {
-		fmt.Fprintf(&b, "%s [command]\n", path)
-	}
 	flags := cli.ScanFlags(cmd)
 	args := cli.ScanArgs(cmd)
-	argUsage := mdArgUsage(args)
-	if hasVisible(flags) {
-		fmt.Fprintf(&b, "%s [flags] %s\n", path, argUsage)
-	} else {
-		fmt.Fprintf(&b, "%s %s\n", path, argUsage)
-	}
-	b.WriteString("```\n\n")
 
-	// Examples
-	if e, ok := cmd.(cli.Exampler); ok {
-		examples := e.Examples()
-		if len(examples) > 0 {
-			b.WriteString("## Examples\n\n")
-			for _, ex := range examples {
-				if ex.Description != "" {
-					fmt.Fprintf(&b, "%s:\n\n", ex.Description)
-				}
-				fmt.Fprintf(&b, "```\n%s\n```\n\n", ex.Command)
-			}
-		}
-	}
-
-	// Subcommands
-	visSubs := visibleSubs(allSubs)
-	if len(visSubs) > 0 {
-		b.WriteString("## Commands\n\n")
-		b.WriteString("| Command | Description |\n")
-		b.WriteString("|---------|-------------|\n")
-		for _, s := range visSubs {
-			si := cmdInfo(s)
-			fmt.Fprintf(&b, "| `%s` | %s |\n", si.name, si.description)
-		}
-		b.WriteString("\n")
-	}
-
-	// Flags
-	visible := visibleFlags(flags)
-	if len(visible) > 0 {
-		b.WriteString("## Flags\n\n")
-		b.WriteString("| Flag | Type | Default | Description |\n")
-		b.WriteString("|------|------|---------|-------------|\n")
-		for i := range visible {
-			f := &visible[i]
-			flag := "`--" + f.Name + "`"
-			if f.Short != "" {
-				flag = "`-" + f.Short + "`, " + flag
-			}
-			for _, alt := range f.Alt {
-				flag += ", `--" + alt + "`"
-			}
-			typeName := f.TypeName
-			if f.IsBool || f.IsCounter {
-				typeName = ""
-			}
-			desc := f.Help
-			if f.Deprecated != "" {
-				desc += " **(DEPRECATED: " + f.Deprecated + ")**"
-			}
-			if f.Required {
-				desc += " **(required)**"
-			}
-			if f.Enum != "" {
-				desc += " [" + strings.ReplaceAll(f.Enum, ",", "\\|") + "]"
-			}
-			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", flag, typeName, f.Default, desc)
-		}
-		b.WriteString("\n")
-	}
-
-	// Arguments
-	if len(args) > 0 {
-		b.WriteString("## Arguments\n\n")
-		b.WriteString("| Argument | Default | Description |\n")
-		b.WriteString("|----------|---------|-------------|\n")
-		for i := range args {
-			a := &args[i]
-			desc := a.Help
-			if a.Required {
-				desc += " **(required)**"
-			}
-			if a.Enum != "" {
-				desc += " [" + strings.ReplaceAll(a.Enum, ",", "\\|") + "]"
-			}
-			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", a.Name, a.Default, desc)
-		}
-		b.WriteString("\n")
-	}
+	writeMdUsage(&b, path, args, flags, allSubs)
+	writeMdExamples(&b, cmd)
+	writeMdSubcommands(&b, allSubs)
+	writeMdFlagsSection(&b, flags)
+	writeMdArgsSection(&b, args)
 
 	return b.String()
+}
+
+func writeMdHeader(b *strings.Builder, path string, info simpleInfo) {
+	fmt.Fprintf(b, "# %s\n\n", path)
+	if info.description != "" {
+		fmt.Fprintf(b, "%s\n\n", info.description)
+	}
+	if info.longDescription != "" {
+		fmt.Fprintf(b, "%s\n\n", info.longDescription)
+	}
+}
+
+func writeMdUsage(b *strings.Builder, path string, args []cli.ArgDef, flags []cli.FlagDef, allSubs []cli.Commander) {
+	b.WriteString("## Usage\n\n")
+	b.WriteString("```\n")
+	if len(allSubs) > 0 {
+		fmt.Fprintf(b, "%s [command]\n", path)
+	}
+	argUsage := mdArgUsage(args)
+	if hasVisible(flags) {
+		fmt.Fprintf(b, "%s [flags] %s\n", path, argUsage)
+	} else {
+		fmt.Fprintf(b, "%s %s\n", path, argUsage)
+	}
+	b.WriteString("```\n\n")
+}
+
+func writeMdExamples(b *strings.Builder, cmd cli.Commander) {
+	e, ok := cmd.(cli.Exampler)
+	if !ok {
+		return
+	}
+	examples := e.Examples()
+	if len(examples) == 0 {
+		return
+	}
+	b.WriteString("## Examples\n\n")
+	for _, ex := range examples {
+		if ex.Description != "" {
+			fmt.Fprintf(b, "%s:\n\n", ex.Description)
+		}
+		fmt.Fprintf(b, "```\n%s\n```\n\n", ex.Command)
+	}
+}
+
+func writeMdSubcommands(b *strings.Builder, allSubs []cli.Commander) {
+	visSubs := visibleSubs(allSubs)
+	if len(visSubs) == 0 {
+		return
+	}
+	b.WriteString("## Commands\n\n")
+	b.WriteString("| Command | Description |\n")
+	b.WriteString("|---------|-------------|\n")
+	for _, s := range visSubs {
+		si := cmdInfo(s)
+		fmt.Fprintf(b, "| `%s` | %s |\n", si.name, si.description)
+	}
+	b.WriteString("\n")
+}
+
+func writeMdFlagsSection(b *strings.Builder, flags []cli.FlagDef) {
+	visible := visibleFlags(flags)
+	if len(visible) == 0 {
+		return
+	}
+	b.WriteString("## Flags\n\n")
+	b.WriteString("| Flag | Type | Default | Description |\n")
+	b.WriteString("|------|------|---------|-------------|\n")
+	for i := range visible {
+		writeMdFlagRow(b, &visible[i])
+	}
+	b.WriteString("\n")
+}
+
+func writeMdFlagRow(b *strings.Builder, f *cli.FlagDef) {
+	flag := "`--" + f.Name + "`"
+	if f.Short != "" {
+		flag = "`-" + f.Short + "`, " + flag
+	}
+	for _, alt := range f.Alt {
+		flag += ", `--" + alt + "`"
+	}
+	typeName := f.TypeName
+	if f.IsBool || f.IsCounter {
+		typeName = ""
+	}
+	desc := f.Help
+	if f.Deprecated != "" {
+		desc += " **(DEPRECATED: " + f.Deprecated + ")**"
+	}
+	if f.Required {
+		desc += " **(required)**"
+	}
+	if f.Enum != "" {
+		desc += " [" + strings.ReplaceAll(f.Enum, ",", "\\|") + "]"
+	}
+	fmt.Fprintf(b, "| %s | %s | %s | %s |\n", flag, typeName, f.Default, desc)
+}
+
+func writeMdArgsSection(b *strings.Builder, args []cli.ArgDef) {
+	if len(args) == 0 {
+		return
+	}
+	b.WriteString("## Arguments\n\n")
+	b.WriteString("| Argument | Default | Description |\n")
+	b.WriteString("|----------|---------|-------------|\n")
+	for i := range args {
+		a := &args[i]
+		desc := a.Help
+		if a.Required {
+			desc += " **(required)**"
+		}
+		if a.Enum != "" {
+			desc += " [" + strings.ReplaceAll(a.Enum, ",", "\\|") + "]"
+		}
+		fmt.Fprintf(b, "| `%s` | %s | %s |\n", a.Name, a.Default, desc)
+	}
+	b.WriteString("\n")
 }
 
 func genManPage(cmd cli.Commander, chain []cli.Commander, header *ManHeader) string {
 	var b strings.Builder
 	info := cmdInfo(cmd)
 	path := commandPath(chain)
-	section := manSection(header)
 
-	// Header
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
+
+	writeManHeader(&b, path, header)
+	writeManName(&b, path, info)
+	writeManSynopsis(&b, path, args, flags)
+	writeManDescription(&b, info)
+	writeManOptions(&b, flags)
+	writeManCommands(&b, allSubs)
+
+	return b.String()
+}
+
+func writeManHeader(b *strings.Builder, path string, header *ManHeader) {
+	section := manSection(header)
 	source := ""
 	manual := ""
 	if header != nil {
 		source = header.Source
 		manual = header.Manual
 	}
-	fmt.Fprintf(&b, ".TH %q %q \"\" %q %q\n", strings.ToUpper(strings.ReplaceAll(path, " ", "-")), section, source, manual)
+	fmt.Fprintf(b, ".TH %q %q \"\" %q %q\n", strings.ToUpper(strings.ReplaceAll(path, " ", "-")), section, source, manual)
+}
 
-	// Name
+func writeManName(b *strings.Builder, path string, info simpleInfo) {
 	b.WriteString(".SH NAME\n")
 	if info.description != "" {
-		fmt.Fprintf(&b, "%s \\- %s\n", path, info.description)
+		fmt.Fprintf(b, "%s \\- %s\n", path, info.description)
 	} else {
-		fmt.Fprintf(&b, "%s\n", path)
+		fmt.Fprintf(b, "%s\n", path)
 	}
+}
 
-	// Synopsis
+func writeManSynopsis(b *strings.Builder, path string, args []cli.ArgDef, flags []cli.FlagDef) {
 	b.WriteString(".SH SYNOPSIS\n")
-	flags := cli.ScanFlags(cmd)
-	args := cli.ScanArgs(cmd)
 	argUsage := mdArgUsage(args)
 	if hasVisible(flags) {
-		fmt.Fprintf(&b, ".B %s\n[\\fIflags\\fR] %s\n", path, manEscape(argUsage))
+		fmt.Fprintf(b, ".B %s\n[\\fIflags\\fR] %s\n", path, manEscape(argUsage))
 	} else {
-		fmt.Fprintf(&b, ".B %s\n%s\n", path, manEscape(argUsage))
+		fmt.Fprintf(b, ".B %s\n%s\n", path, manEscape(argUsage))
 	}
+}
 
-	// Description — prefer long description in DESCRIPTION section.
+func writeManDescription(b *strings.Builder, info simpleInfo) {
 	switch {
 	case info.longDescription != "":
 		b.WriteString(".SH DESCRIPTION\n")
-		fmt.Fprintf(&b, "%s\n", manEscape(info.longDescription))
+		fmt.Fprintf(b, "%s\n", manEscape(info.longDescription))
 	case info.description != "":
 		b.WriteString(".SH DESCRIPTION\n")
-		fmt.Fprintf(&b, "%s\n", manEscape(info.description))
+		fmt.Fprintf(b, "%s\n", manEscape(info.description))
 	}
+}
 
-	// Options
+func writeManOptions(b *strings.Builder, flags []cli.FlagDef) {
 	visible := visibleFlags(flags)
-	if len(visible) > 0 {
-		b.WriteString(".SH OPTIONS\n")
-		for i := range visible {
-			f := &visible[i]
-			var flag string
-			if f.Short != "" {
-				flag = fmt.Sprintf("\\fB-%s\\fR, \\fB--%s\\fR", f.Short, f.Name)
-			} else {
-				flag = fmt.Sprintf("\\fB--%s\\fR", f.Name)
-			}
-			for _, alt := range f.Alt {
-				flag += fmt.Sprintf(", \\fB--%s\\fR", alt)
-			}
-			if !f.IsBool && !f.IsCounter {
-				flag += " \\fI" + f.TypeName + "\\fR"
-			}
-			fmt.Fprintf(&b, ".TP\n%s\n", flag)
-			if f.Help != "" {
-				fmt.Fprintf(&b, "%s\n", manEscape(f.Help))
-			}
-			if f.Default != "" {
-				fmt.Fprintf(&b, "Default: %s\n", manEscape(f.Default))
-			}
+	if len(visible) == 0 {
+		return
+	}
+	b.WriteString(".SH OPTIONS\n")
+	for i := range visible {
+		writeManFlagEntry(b, &visible[i])
+	}
+}
+
+func writeManFlagEntry(b *strings.Builder, f *cli.FlagDef) {
+	var flag string
+	if f.Short != "" {
+		flag = fmt.Sprintf("\\fB-%s\\fR, \\fB--%s\\fR", f.Short, f.Name)
+	} else {
+		flag = fmt.Sprintf("\\fB--%s\\fR", f.Name)
+	}
+	for _, alt := range f.Alt {
+		flag += fmt.Sprintf(", \\fB--%s\\fR", alt)
+	}
+	if !f.IsBool && !f.IsCounter {
+		flag += " \\fI" + f.TypeName + "\\fR"
+	}
+	fmt.Fprintf(b, ".TP\n%s\n", flag)
+	if f.Help != "" {
+		fmt.Fprintf(b, "%s\n", manEscape(f.Help))
+	}
+	if f.Default != "" {
+		fmt.Fprintf(b, "Default: %s\n", manEscape(f.Default))
+	}
+}
+
+func writeManCommands(b *strings.Builder, allSubs []cli.Commander) {
+	visSubs := visibleSubs(allSubs)
+	if len(visSubs) == 0 {
+		return
+	}
+	b.WriteString(".SH COMMANDS\n")
+	for _, s := range visSubs {
+		si := cmdInfo(s)
+		fmt.Fprintf(b, ".TP\n\\fB%s\\fR\n", si.name)
+		if si.description != "" {
+			fmt.Fprintf(b, "%s\n", manEscape(si.description))
 		}
 	}
-
-	// Subcommands
-	manSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
-	manVisSubs := visibleSubs(manSubs)
-	if len(manVisSubs) > 0 {
-		b.WriteString(".SH COMMANDS\n")
-		for _, s := range manVisSubs {
-			si := cmdInfo(s)
-			fmt.Fprintf(&b, ".TP\n\\fB%s\\fR\n", si.name)
-			if si.description != "" {
-				fmt.Fprintf(&b, "%s\n", manEscape(si.description))
-			}
-		}
-	}
-
-	return b.String()
 }
 
 // helpers

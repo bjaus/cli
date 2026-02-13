@@ -409,13 +409,10 @@ func expandShortOptions(args []string, fi flagIndex) []string {
 }
 
 func execute(ctx context.Context, root Commander, args []string, opts *options) error {
-	// Strip program name if args[0] looks like a binary path.
-	// This allows callers to pass os.Args directly.
 	cmdName := resolveInfo(root).name
 	args = stripProgramName(args, cmdName)
 
-	// Intercept __complete before any lifecycle hooks, flag parsing, or validation.
-	if len(args) > 0 && args[0] == "__complete" {
+	if isCompletionRequest(args) {
 		RuntimeComplete(ctx, root, args[1:], opts.stdout)
 		return nil
 	}
@@ -428,105 +425,118 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	chain := resolved.chain
 	leaf := chain[len(chain)-1]
 
-	// Check --version before help.
-	if v := findVersioner(chain); v != nil && versionRequested(resolved) {
-		_, err := fmt.Fprintln(opts.stdout, v.Version())
+	if handled, err := handleVersionOrHelp(resolved, chain, leaf, opts); handled {
 		return err
 	}
 
-	if helpRequested(resolved) {
-		return renderHelp(leaf, chain, opts)
-	}
-
-	// Initializer hooks (parent-first) — runs before any parsing.
 	ctx, err = runInitializerHooks(ctx, chain)
 	if err != nil {
 		return err
 	}
 
-	// Check if leaf disables flag parsing (passthrough mode).
-	leafPassthrough := false
-	if pt, ok := leaf.(Passthrougher); ok {
-		leafPassthrough = pt.Passthrough()
-	}
-
-	// Parse and validate flags for all commands in the chain.
-	provided, err := parseFlagChain(resolved, chain, leafPassthrough, opts)
+	provided, err := parseFlagChain(resolved, chain, isPassthrough(leaf), opts)
 	if err != nil {
 		return err
 	}
 
-	// Populate branch args on branching commands in the chain.
-	for i, cmd := range chain {
-		if i < len(resolved.branchArgs) && len(resolved.branchArgs[i]) > 0 {
-			if _, err := populateArgs(cmd, resolved.branchArgs[i], opts.envVarPrefix); err != nil {
-				return err
-			}
-		}
-	}
-
-	// Save original positional args for ArgsValidator. populateArgs
-	// consumes arg-tagged fields, so the validator should see the raw
-	// positional args the user provided, not the leftovers.
-	originalPositional := resolved.positional
-
-	// Populate arg-tagged struct fields on the leaf command.
-	if defs := ScanArgs(leaf); len(defs) > 0 {
-		remaining, err := populateArgs(leaf, resolved.positional, opts.envVarPrefix)
-		if err != nil {
-			return err
-		}
-		resolved.positional = remaining
-	}
-
-	// Defaulter hooks — compute defaults after parsing, before validation.
-	if err := runDefaulterHooks(chain); err != nil {
+	if err := populateBranchArgs(resolved, chain, opts.envVarPrefix); err != nil {
 		return err
 	}
 
-	// Validate positional args and leaf command.
+	originalPositional := resolved.positional
+	if err := populateLeafArgs(leaf, resolved, opts.envVarPrefix); err != nil {
+		return err
+	}
+
+	if err := runDefaulterHooks(chain); err != nil {
+		return err
+	}
 	if err := runValidation(leaf, originalPositional); err != nil {
 		return err
 	}
 
-	// Store parsed flag values in context for Get/Lookup access.
 	ctx = storeFlags(ctx, chain)
-
-	// Inject bound dependencies into command structs.
-	// Auto-bind positional args so commands can declare an Args field.
-	allBindOpts := append([]bind.Option{}, opts.bindOpts...)
-	allBindOpts = append(allBindOpts, bind.Value(Args(resolved.positional)))
-	ctx = bind.With(ctx, allBindOpts...)
-	for _, cmd := range chain {
-		if err := bind.Inject(ctx, cmd); err != nil {
-			return err
-		}
+	ctx, err = injectDependencies(ctx, chain, resolved.positional, opts.bindOpts)
+	if err != nil {
+		return err
 	}
 
-	// Print deprecation warnings.
 	printDeprecationWarnings(chain, provided, opts)
-
-	// Store the leaf command in context so parent Before hooks can inspect it.
 	ctx = context.WithValue(ctx, leafKey{}, leaf)
 
-	// Before hooks (parent-first).
 	ctx, afterHooks, err := runBeforeHooks(ctx, chain)
 	if err != nil {
 		return err
 	}
 
-	// Build and wrap run function.
+	runErr := buildRunFunc(leaf)(ctx)
+	afterErr := runAfterHooks(ctx, afterHooks)
+
+	return handleRunResult(runErr, afterErr, leaf, chain, opts)
+}
+
+func isCompletionRequest(args []string) bool {
+	return len(args) > 0 && args[0] == "__complete"
+}
+
+func handleVersionOrHelp(resolved *resolvedCommand, chain []Commander, leaf Commander, opts *options) (bool, error) {
+	if v := findVersioner(chain); v != nil && versionRequested(resolved) {
+		_, err := fmt.Fprintln(opts.stdout, v.Version())
+		return true, err
+	}
+	if helpRequested(resolved) {
+		return true, renderHelp(leaf, chain, opts)
+	}
+	return false, nil
+}
+
+func isPassthrough(leaf Commander) bool {
+	if pt, ok := leaf.(Passthrougher); ok {
+		return pt.Passthrough()
+	}
+	return false
+}
+
+func populateBranchArgs(resolved *resolvedCommand, chain []Commander, envPrefix string) error {
+	for i, cmd := range chain {
+		if i < len(resolved.branchArgs) && len(resolved.branchArgs[i]) > 0 {
+			if _, err := populateArgs(cmd, resolved.branchArgs[i], envPrefix); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func populateLeafArgs(leaf Commander, resolved *resolvedCommand, envPrefix string) error {
+	if defs := ScanArgs(leaf); len(defs) > 0 {
+		remaining, err := populateArgs(leaf, resolved.positional, envPrefix)
+		if err != nil {
+			return err
+		}
+		resolved.positional = remaining
+	}
+	return nil
+}
+
+func injectDependencies(ctx context.Context, chain []Commander, positional []string, bindOpts []bind.Option) (context.Context, error) {
+	allBindOpts := append([]bind.Option{}, bindOpts...)
+	allBindOpts = append(allBindOpts, bind.Value(Args(positional)))
+	ctx = bind.With(ctx, allBindOpts...)
+	for _, cmd := range chain {
+		if err := bind.Inject(ctx, cmd); err != nil {
+			return ctx, err
+		}
+	}
+	return ctx, nil
+}
+
+func buildRunFunc(leaf Commander) RunFunc {
 	fn := RunFunc(leaf.Run)
 	if m, ok := leaf.(Middlewarer); ok {
 		fn = applyMiddleware(fn, m.Middleware())
 	}
-
-	runErr := fn(ctx)
-
-	// After hooks (child-first, always runs).
-	afterErr := runAfterHooks(ctx, afterHooks)
-
-	return handleRunResult(runErr, afterErr, leaf, chain, opts)
+	return fn
 }
 
 func runInitializerHooks(ctx context.Context, chain []Commander) (context.Context, error) {

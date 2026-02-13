@@ -352,6 +352,23 @@ func sortFlags(flags []FlagDef) {
 }
 
 func renderSubcommands(b *strings.Builder, subs []Commander, sorted bool) {
+	uncategorized, categoryMap, categoryOrder := groupSubcommands(subs)
+	if len(uncategorized) == 0 && len(categoryMap) == 0 {
+		return
+	}
+
+	if sorted {
+		sortSubcommandGroups(uncategorized, categoryMap, categoryOrder)
+	}
+
+	maxWidth := calcMaxCommandWidth(subs)
+	renderCommandGroup(b, "Commands", uncategorized, maxWidth)
+	for _, cat := range categoryOrder {
+		renderCommandGroup(b, cat, categoryMap[cat], maxWidth)
+	}
+}
+
+func groupSubcommands(subs []Commander) ([]Commander, map[string][]Commander, []string) {
 	var uncategorized []Commander
 	categoryMap := make(map[string][]Commander)
 	var categoryOrder []string
@@ -361,39 +378,36 @@ func renderSubcommands(b *strings.Builder, subs []Commander, sorted bool) {
 		if si.hidden {
 			continue
 		}
-
+		cat := ""
 		if c, ok := s.(Categorizer); ok {
-			if cat := c.Category(); cat != "" {
-				if _, exists := categoryMap[cat]; !exists {
-					categoryOrder = append(categoryOrder, cat)
-				}
-				categoryMap[cat] = append(categoryMap[cat], s)
-			} else {
-				uncategorized = append(uncategorized, s)
+			cat = c.Category()
+		}
+		if cat != "" {
+			if _, exists := categoryMap[cat]; !exists {
+				categoryOrder = append(categoryOrder, cat)
 			}
+			categoryMap[cat] = append(categoryMap[cat], s)
 		} else {
 			uncategorized = append(uncategorized, s)
 		}
 	}
+	return uncategorized, categoryMap, categoryOrder
+}
 
-	if len(uncategorized) == 0 && len(categoryMap) == 0 {
-		return
+func sortSubcommandGroups(uncategorized []Commander, categoryMap map[string][]Commander, categoryOrder []string) {
+	sortCommanders := func(rs []Commander) {
+		slices.SortFunc(rs, func(a, b Commander) int {
+			return strings.Compare(resolveInfo(a).name, resolveInfo(b).name)
+		})
 	}
-
-	if sorted {
-		sortCommanders := func(rs []Commander) {
-			slices.SortFunc(rs, func(a, b Commander) int {
-				return strings.Compare(resolveInfo(a).name, resolveInfo(b).name)
-			})
-		}
-		sortCommanders(uncategorized)
-		for cat := range categoryMap {
-			sortCommanders(categoryMap[cat])
-		}
-		slices.Sort(categoryOrder)
+	sortCommanders(uncategorized)
+	for cat := range categoryMap {
+		sortCommanders(categoryMap[cat])
 	}
+	slices.Sort(categoryOrder)
+}
 
-	// Find max name width across all visible commands for alignment.
+func calcMaxCommandWidth(subs []Commander) int {
 	maxWidth := 0
 	for _, s := range subs {
 		si := resolveInfo(s)
@@ -401,23 +415,17 @@ func renderSubcommands(b *strings.Builder, subs []Commander, sorted bool) {
 			maxWidth = len(si.name)
 		}
 	}
+	return maxWidth
+}
 
-	// Uncategorized commands.
-	if len(uncategorized) > 0 {
-		b.WriteString("\nCommands:\n")
-		for _, s := range uncategorized {
-			si := resolveInfo(s)
-			fmt.Fprintf(b, "  %-*s  %s\n", maxWidth, si.name, si.description)
-		}
+func renderCommandGroup(b *strings.Builder, header string, cmds []Commander, maxWidth int) {
+	if len(cmds) == 0 {
+		return
 	}
-
-	// Categorized groups.
-	for _, cat := range categoryOrder {
-		fmt.Fprintf(b, "\n%s:\n", cat)
-		for _, s := range categoryMap[cat] {
-			si := resolveInfo(s)
-			fmt.Fprintf(b, "  %-*s  %s\n", maxWidth, si.name, si.description)
-		}
+	fmt.Fprintf(b, "\n%s:\n", header)
+	for _, s := range cmds {
+		si := resolveInfo(s)
+		fmt.Fprintf(b, "  %-*s  %s\n", maxWidth, si.name, si.description)
 	}
 }
 

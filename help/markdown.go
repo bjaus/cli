@@ -43,11 +43,26 @@ func (r *markdownRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, 
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	visible := VisibleSubcommands(allSubs)
 
-	// Title
-	fmt.Fprintf(&b, "# %s\n\n", chainNames)
+	r.writeMdTitle(&b, chainNames)
+	r.writeMdDescription(&b, info)
+	r.writeMdUsage(&b, chainNames, args, flags, globalFlags, allSubs)
+	r.writeMdCommands(&b, visible)
+	r.writeMdFlags(&b, "## Flags", flags)
+	r.writeMdArguments(&b, args)
+	r.writeMdFlags(&b, "## Global Flags", globalFlags)
+	r.writeMdExamples(&b, info)
+	r.writeMdSeeAlso(&b, chainNames, visible)
 
-	// Description
+	return b.String()
+}
+
+func (r *markdownRenderer) writeMdTitle(b *strings.Builder, chainNames string) {
+	fmt.Fprintf(b, "# %s\n\n", chainNames)
+}
+
+func (r *markdownRenderer) writeMdDescription(b *strings.Builder, info CommandInfo) {
 	if info.LongDescription != "" {
 		b.WriteString(info.LongDescription)
 		b.WriteString("\n\n")
@@ -55,115 +70,107 @@ func (r *markdownRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, 
 		b.WriteString(info.Description)
 		b.WriteString("\n\n")
 	}
+}
 
-	// Usage
+func (r *markdownRenderer) writeMdUsage(b *strings.Builder, chainNames string, args []cli.ArgDef, flags, globalFlags []cli.FlagDef, allSubs []cli.Commander) {
 	b.WriteString("## Usage\n\n")
 	argUsage := BuildArgUsage(args)
 	hasFlags := HasVisibleFlags(flags) || HasVisibleFlags(globalFlags)
 	if len(allSubs) > 0 {
-		fmt.Fprintf(&b, "```\n%s [command]\n```\n\n", chainNames)
+		fmt.Fprintf(b, "```\n%s [command]\n```\n\n", chainNames)
 	}
 	if hasFlags {
-		fmt.Fprintf(&b, "```\n%s [flags] %s\n```\n\n", chainNames, argUsage)
+		fmt.Fprintf(b, "```\n%s [flags] %s\n```\n\n", chainNames, argUsage)
 	} else if len(allSubs) == 0 {
-		fmt.Fprintf(&b, "```\n%s %s\n```\n\n", chainNames, argUsage)
+		fmt.Fprintf(b, "```\n%s %s\n```\n\n", chainNames, argUsage)
 	}
+}
 
-	// Commands
-	visible := VisibleSubcommands(allSubs)
-	if len(visible) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visible, func(a, b cli.Commander) int {
-				return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
-			})
-		}
-		b.WriteString("## Commands\n\n")
-		b.WriteString("| Command | Description |\n")
-		b.WriteString("|---------|-------------|\n")
-		for _, s := range visible {
-			sInfo := ResolveInfo(s)
-			fmt.Fprintf(&b, "| `%s` | %s |\n", sInfo.Name, escapeMarkdown(sInfo.Description))
-		}
-		b.WriteString("\n")
+func (r *markdownRenderer) writeMdCommands(b *strings.Builder, visible []cli.Commander) {
+	if len(visible) == 0 {
+		return
 	}
+	if r.opts.Sorted {
+		slices.SortFunc(visible, func(a, b cli.Commander) int {
+			return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
+		})
+	}
+	b.WriteString("## Commands\n\n")
+	b.WriteString("| Command | Description |\n")
+	b.WriteString("|---------|-------------|\n")
+	for _, s := range visible {
+		sInfo := ResolveInfo(s)
+		fmt.Fprintf(b, "| `%s` | %s |\n", sInfo.Name, escapeMarkdown(sInfo.Description))
+	}
+	b.WriteString("\n")
+}
 
-	// Flags
+func (r *markdownRenderer) writeMdFlags(b *strings.Builder, header string, flags []cli.FlagDef) {
 	visibleFlags := VisibleFlags(flags)
-	if len(visibleFlags) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visibleFlags, func(a, b cli.FlagDef) int {
-				return strings.Compare(a.Name, b.Name)
-			})
-		}
-		b.WriteString("## Flags\n\n")
-		b.WriteString("| Flag | Type | Default | Description |\n")
-		b.WriteString("|------|------|---------|-------------|\n")
-		for i := range visibleFlags {
-			r.writeFlagRow(&b, &visibleFlags[i])
-		}
-		b.WriteString("\n")
+	if len(visibleFlags) == 0 {
+		return
 	}
-
-	// Arguments
-	if len(args) > 0 {
-		b.WriteString("## Arguments\n\n")
-		b.WriteString("| Argument | Type | Required | Description |\n")
-		b.WriteString("|----------|------|----------|-------------|\n")
-		for i := range args {
-			a := &args[i]
-			required := "No"
-			if a.Required {
-				required = "Yes"
-			}
-			help := InterpolateHelp(a.Help, a.Default, a.Mask, a.Enum, a.Env)
-			fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", a.Name, a.TypeName, required, escapeMarkdown(help))
-		}
-		b.WriteString("\n")
+	if r.opts.Sorted {
+		slices.SortFunc(visibleFlags, func(a, b cli.FlagDef) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 	}
-
-	// Global Flags
-	visibleGlobal := VisibleFlags(globalFlags)
-	if len(visibleGlobal) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visibleGlobal, func(a, b cli.FlagDef) int {
-				return strings.Compare(a.Name, b.Name)
-			})
-		}
-		b.WriteString("## Global Flags\n\n")
-		b.WriteString("| Flag | Type | Default | Description |\n")
-		b.WriteString("|------|------|---------|-------------|\n")
-		for i := range visibleGlobal {
-			r.writeFlagRow(&b, &visibleGlobal[i])
-		}
-		b.WriteString("\n")
+	b.WriteString(header)
+	b.WriteString("\n\n")
+	b.WriteString("| Flag | Type | Default | Description |\n")
+	b.WriteString("|------|------|---------|-------------|\n")
+	for i := range visibleFlags {
+		r.writeFlagRow(b, &visibleFlags[i])
 	}
+	b.WriteString("\n")
+}
 
-	// Examples
-	if len(info.Examples) > 0 {
-		b.WriteString("## Examples\n\n")
-		for _, ex := range info.Examples {
-			if ex.Description != "" {
-				b.WriteString(ex.Description)
-				b.WriteString("\n\n")
-			}
-			fmt.Fprintf(&b, "```bash\n%s\n```\n\n", ex.Command)
-		}
+func (r *markdownRenderer) writeMdArguments(b *strings.Builder, args []cli.ArgDef) {
+	if len(args) == 0 {
+		return
 	}
-
-	// See Also
-	if len(visible) > 0 {
-		b.WriteString("## See Also\n\n")
-		for _, s := range visible {
-			sInfo := ResolveInfo(s)
-			fmt.Fprintf(&b, "- `%s %s`", chainNames, sInfo.Name)
-			if sInfo.Description != "" {
-				fmt.Fprintf(&b, " - %s", sInfo.Description)
-			}
-			b.WriteByte('\n')
+	b.WriteString("## Arguments\n\n")
+	b.WriteString("| Argument | Type | Required | Description |\n")
+	b.WriteString("|----------|------|----------|-------------|\n")
+	for i := range args {
+		a := &args[i]
+		required := "No"
+		if a.Required {
+			required = "Yes"
 		}
+		help := InterpolateHelp(a.Help, a.Default, a.Mask, a.Enum, a.Env)
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", a.Name, a.TypeName, required, escapeMarkdown(help))
 	}
+	b.WriteString("\n")
+}
 
-	return b.String()
+func (r *markdownRenderer) writeMdExamples(b *strings.Builder, info CommandInfo) {
+	if len(info.Examples) == 0 {
+		return
+	}
+	b.WriteString("## Examples\n\n")
+	for _, ex := range info.Examples {
+		if ex.Description != "" {
+			b.WriteString(ex.Description)
+			b.WriteString("\n\n")
+		}
+		fmt.Fprintf(b, "```bash\n%s\n```\n\n", ex.Command)
+	}
+}
+
+func (r *markdownRenderer) writeMdSeeAlso(b *strings.Builder, chainNames string, visible []cli.Commander) {
+	if len(visible) == 0 {
+		return
+	}
+	b.WriteString("## See Also\n\n")
+	for _, s := range visible {
+		sInfo := ResolveInfo(s)
+		fmt.Fprintf(b, "- `%s %s`", chainNames, sInfo.Name)
+		if sInfo.Description != "" {
+			fmt.Fprintf(b, " - %s", sInfo.Description)
+		}
+		b.WriteByte('\n')
+	}
 }
 
 func (r *markdownRenderer) writeFlagRow(b *strings.Builder, f *cli.FlagDef) {

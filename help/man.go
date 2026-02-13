@@ -42,151 +42,163 @@ func (r *manRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flags
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
+	visible := VisibleSubcommands(allSubs)
 
-	// NAME
+	r.writeManName(&b, c, chainNames, info)
+	r.writeManSynopsis(&b, c, chainNames, args, flags, globalFlags, allSubs)
+	r.writeManDescription(&b, c, info, width)
+	r.writeManCommands(&b, c, visible)
+	r.writeManOptions(&b, c, "OPTIONS", flags, width)
+	r.writeManArguments(&b, c, args)
+	r.writeManOptions(&b, c, "GLOBAL OPTIONS", globalFlags, width)
+	r.writeManExamples(&b, c, info)
+	r.writeManSeeAlso(&b, c, chainNames, visible)
+
+	return b.String()
+}
+
+func (r *manRenderer) writeManName(b *strings.Builder, c *Colorizer, chainNames string, info CommandInfo) {
 	b.WriteString(c.Section("NAME"))
 	b.WriteByte('\n')
 	if info.Description != "" {
-		fmt.Fprintf(&b, "    %s - %s\n", chainNames, info.Description)
+		fmt.Fprintf(b, "    %s - %s\n", chainNames, info.Description)
 	} else {
-		fmt.Fprintf(&b, "    %s\n", chainNames)
+		fmt.Fprintf(b, "    %s\n", chainNames)
 	}
 	b.WriteByte('\n')
+}
 
-	// SYNOPSIS
+func (r *manRenderer) writeManSynopsis(b *strings.Builder, c *Colorizer, chainNames string, args []cli.ArgDef, flags, globalFlags []cli.FlagDef, allSubs []cli.Commander) {
 	b.WriteString(c.Section("SYNOPSIS"))
 	b.WriteByte('\n')
 	argUsage := BuildArgUsage(args)
 	hasFlags := HasVisibleFlags(flags) || HasVisibleFlags(globalFlags)
 	if len(allSubs) > 0 {
-		fmt.Fprintf(&b, "    %s [command]\n", chainNames)
+		fmt.Fprintf(b, "    %s [command]\n", chainNames)
 	}
 	if hasFlags {
-		fmt.Fprintf(&b, "    %s [options] %s\n", chainNames, argUsage)
+		fmt.Fprintf(b, "    %s [options] %s\n", chainNames, argUsage)
 	} else {
-		fmt.Fprintf(&b, "    %s %s\n", chainNames, argUsage)
+		fmt.Fprintf(b, "    %s %s\n", chainNames, argUsage)
 	}
 	b.WriteByte('\n')
+}
 
-	// DESCRIPTION
+func (r *manRenderer) writeManDescription(b *strings.Builder, c *Colorizer, info CommandInfo, width int) {
 	desc := info.LongDescription
 	if desc == "" {
 		desc = info.Description
 	}
-	if desc != "" {
-		b.WriteString(c.Section("DESCRIPTION"))
+	if desc == "" {
+		return
+	}
+	b.WriteString(c.Section("DESCRIPTION"))
+	b.WriteByte('\n')
+	for _, line := range strings.Split(desc, "\n") {
+		wrapped := Wrap("    "+line, width)
+		b.WriteString(wrapped)
 		b.WriteByte('\n')
-		for _, line := range strings.Split(desc, "\n") {
-			wrapped := Wrap("    "+line, width)
-			b.WriteString(wrapped)
-			b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+}
+
+func (r *manRenderer) writeManCommands(b *strings.Builder, c *Colorizer, visible []cli.Commander) {
+	if len(visible) == 0 {
+		return
+	}
+	if r.opts.Sorted {
+		slices.SortFunc(visible, func(a, b cli.Commander) int {
+			return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
+		})
+	}
+	b.WriteString(c.Section("COMMANDS"))
+	b.WriteByte('\n')
+	for _, s := range visible {
+		sInfo := ResolveInfo(s)
+		fmt.Fprintf(b, "    %s\n", c.Command(sInfo.Name))
+		if sInfo.Description != "" {
+			fmt.Fprintf(b, "        %s\n", sInfo.Description)
 		}
 		b.WriteByte('\n')
 	}
+}
 
-	// COMMANDS
-	visible := VisibleSubcommands(allSubs)
-	if len(visible) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visible, func(a, b cli.Commander) int {
-				return strings.Compare(ResolveInfo(a).Name, ResolveInfo(b).Name)
-			})
-		}
-		b.WriteString(c.Section("COMMANDS"))
-		b.WriteByte('\n')
-		for _, s := range visible {
-			sInfo := ResolveInfo(s)
-			fmt.Fprintf(&b, "    %s\n", c.Command(sInfo.Name))
-			if sInfo.Description != "" {
-				fmt.Fprintf(&b, "        %s\n", sInfo.Description)
-			}
-			b.WriteByte('\n')
-		}
-	}
-
-	// OPTIONS
+func (r *manRenderer) writeManOptions(b *strings.Builder, c *Colorizer, section string, flags []cli.FlagDef, width int) {
 	visibleFlags := VisibleFlags(flags)
-	if len(visibleFlags) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visibleFlags, func(a, b cli.FlagDef) int {
-				return strings.Compare(a.Name, b.Name)
-			})
-		}
-		b.WriteString(c.Section("OPTIONS"))
-		b.WriteByte('\n')
-		for i := range visibleFlags {
-			r.writeManFlag(&b, &visibleFlags[i], c, width)
-		}
+	if len(visibleFlags) == 0 {
+		return
 	}
-
-	// ARGUMENTS
-	if len(args) > 0 {
-		b.WriteString(c.Section("ARGUMENTS"))
-		b.WriteByte('\n')
-		for i := range args {
-			a := &args[i]
-			fmt.Fprintf(&b, "    %s\n", a.Name)
-			if a.Help != "" {
-				help := InterpolateHelp(a.Help, a.Default, a.Mask, a.Enum, a.Env)
-				fmt.Fprintf(&b, "        %s\n", help)
-			}
-			var meta []string
-			if a.Required {
-				meta = append(meta, "Required")
-			}
-			if a.Default != "" {
-				meta = append(meta, "Default: "+a.Default)
-			}
-			if a.Env != "" {
-				meta = append(meta, "Env: "+a.Env)
-			}
-			if len(meta) > 0 {
-				fmt.Fprintf(&b, "        %s\n", strings.Join(meta, ". "))
-			}
-			b.WriteByte('\n')
-		}
+	if r.opts.Sorted {
+		slices.SortFunc(visibleFlags, func(a, b cli.FlagDef) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 	}
-
-	// GLOBAL OPTIONS
-	visibleGlobal := VisibleFlags(globalFlags)
-	if len(visibleGlobal) > 0 {
-		if r.opts.Sorted {
-			slices.SortFunc(visibleGlobal, func(a, b cli.FlagDef) int {
-				return strings.Compare(a.Name, b.Name)
-			})
-		}
-		b.WriteString(c.Section("GLOBAL OPTIONS"))
-		b.WriteByte('\n')
-		for i := range visibleGlobal {
-			r.writeManFlag(&b, &visibleGlobal[i], c, width)
-		}
+	b.WriteString(c.Section(section))
+	b.WriteByte('\n')
+	for i := range visibleFlags {
+		r.writeManFlag(b, &visibleFlags[i], c, width)
 	}
+}
 
-	// EXAMPLES
-	if len(info.Examples) > 0 {
-		b.WriteString(c.Section("EXAMPLES"))
-		b.WriteByte('\n')
-		for _, ex := range info.Examples {
-			if ex.Description != "" {
-				fmt.Fprintf(&b, "    %s\n", ex.Description)
-			}
-			fmt.Fprintf(&b, "        $ %s\n", ex.Command)
-			b.WriteByte('\n')
-		}
+func (r *manRenderer) writeManArguments(b *strings.Builder, c *Colorizer, args []cli.ArgDef) {
+	if len(args) == 0 {
+		return
 	}
-
-	// SEE ALSO
-	if len(visible) > 0 {
-		b.WriteString(c.Section("SEE ALSO"))
-		b.WriteByte('\n')
-		names := make([]string, len(visible))
-		for i, s := range visible {
-			names[i] = chainNames + " " + ResolveInfo(s).Name
-		}
-		fmt.Fprintf(&b, "    %s\n", strings.Join(names, ", "))
+	b.WriteString(c.Section("ARGUMENTS"))
+	b.WriteByte('\n')
+	for i := range args {
+		r.writeManArg(b, &args[i])
 	}
+}
 
-	return b.String()
+func (r *manRenderer) writeManArg(b *strings.Builder, a *cli.ArgDef) {
+	fmt.Fprintf(b, "    %s\n", a.Name)
+	if a.Help != "" {
+		help := InterpolateHelp(a.Help, a.Default, a.Mask, a.Enum, a.Env)
+		fmt.Fprintf(b, "        %s\n", help)
+	}
+	var meta []string
+	if a.Required {
+		meta = append(meta, "Required")
+	}
+	if a.Default != "" {
+		meta = append(meta, "Default: "+a.Default)
+	}
+	if a.Env != "" {
+		meta = append(meta, "Env: "+a.Env)
+	}
+	if len(meta) > 0 {
+		fmt.Fprintf(b, "        %s\n", strings.Join(meta, ". "))
+	}
+	b.WriteByte('\n')
+}
+
+func (r *manRenderer) writeManExamples(b *strings.Builder, c *Colorizer, info CommandInfo) {
+	if len(info.Examples) == 0 {
+		return
+	}
+	b.WriteString(c.Section("EXAMPLES"))
+	b.WriteByte('\n')
+	for _, ex := range info.Examples {
+		if ex.Description != "" {
+			fmt.Fprintf(b, "    %s\n", ex.Description)
+		}
+		fmt.Fprintf(b, "        $ %s\n", ex.Command)
+		b.WriteByte('\n')
+	}
+}
+
+func (r *manRenderer) writeManSeeAlso(b *strings.Builder, c *Colorizer, chainNames string, visible []cli.Commander) {
+	if len(visible) == 0 {
+		return
+	}
+	b.WriteString(c.Section("SEE ALSO"))
+	b.WriteByte('\n')
+	names := make([]string, len(visible))
+	for i, s := range visible {
+		names[i] = chainNames + " " + ResolveInfo(s).Name
+	}
+	fmt.Fprintf(b, "    %s\n", strings.Join(names, ", "))
 }
 
 func (r *manRenderer) writeManFlag(b *strings.Builder, f *cli.FlagDef, c *Colorizer, width int) {

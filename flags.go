@@ -47,16 +47,9 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 	for i := range t.NumField() {
 		f := t.Field(i)
 
-		// Named struct with prefix tag: recurse.
-		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
-			if pfx := f.Tag.Get("prefix"); pfx != "" {
-				scanFlagsRecurse(f.Type, defs, prefix+pfx)
-				continue
-			}
-			// Fall through: may be a custom type with flag tag (e.g. FlagUnmarshaler).
+		if handleScanPrefixedStruct(f, defs, prefix) {
+			continue
 		}
-
-		// Anonymous embedded struct: promote fields.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
 			scanFlagsRecurse(f.Type, defs, prefix)
 			continue
@@ -70,39 +63,47 @@ func scanFlagsRecurse(t reflect.Type, defs *[]FlagDef, prefix string) {
 			name = camelToKebab(f.Name)
 		}
 
-		fullName := prefix + name
+		*defs = append(*defs, buildFlagDef(f, prefix, name))
+	}
+}
 
-		var aliases []string
-		if raw := f.Tag.Get("alt"); raw != "" {
-			aliases = strings.Split(raw, ",")
-			for j := range aliases {
-				aliases[j] = prefix + aliases[j]
-			}
-		}
+func handleScanPrefixedStruct(f reflect.StructField, defs *[]FlagDef, prefix string) bool {
+	if f.Type.Kind() != reflect.Struct || f.Anonymous {
+		return false
+	}
+	pfx := f.Tag.Get("prefix")
+	if pfx == "" {
+		return false
+	}
+	scanFlagsRecurse(f.Type, defs, prefix+pfx)
+	return true
+}
 
-		isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
-			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
+func buildFlagDef(f reflect.StructField, prefix, name string) FlagDef {
+	fullName := prefix + name
+	aliases := extractFieldAliases(f, prefix)
+	isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+		f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
 
-		*defs = append(*defs, FlagDef{
-			Name:        fullName,
-			Short:       f.Tag.Get("short"),
-			Alt:         aliases,
-			Help:        f.Tag.Get("help"),
-			Default:     f.Tag.Get("default"),
-			Mask:        f.Tag.Get("mask"),
-			Env:         f.Tag.Get("env"),
-			Enum:        f.Tag.Get("enum"),
-			Sep:         f.Tag.Get("sep"),
-			Category:    f.Tag.Get("category"),
-			Deprecated:  f.Tag.Get("deprecated"),
-			Placeholder: f.Tag.Get("placeholder"),
-			Required:    tagBool(f.Tag, "required"),
-			Hidden:      tagBool(f.Tag, "hidden"),
-			TypeName:    flagTypeName(f.Type),
-			IsBool:      f.Type.Kind() == reflect.Bool,
-			IsCounter:   isCounter,
-			Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
-		})
+	return FlagDef{
+		Name:        fullName,
+		Short:       f.Tag.Get("short"),
+		Alt:         aliases,
+		Help:        f.Tag.Get("help"),
+		Default:     f.Tag.Get("default"),
+		Mask:        f.Tag.Get("mask"),
+		Env:         f.Tag.Get("env"),
+		Enum:        f.Tag.Get("enum"),
+		Sep:         f.Tag.Get("sep"),
+		Category:    f.Tag.Get("category"),
+		Deprecated:  f.Tag.Get("deprecated"),
+		Placeholder: f.Tag.Get("placeholder"),
+		Required:    tagBool(f.Tag, "required"),
+		Hidden:      tagBool(f.Tag, "hidden"),
+		TypeName:    flagTypeName(f.Type),
+		IsBool:      f.Type.Kind() == reflect.Bool,
+		IsCounter:   isCounter,
+		Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
 	}
 }
 
@@ -298,100 +299,125 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 		f := t.Field(i)
 		currentPath := append(append([]int{}, indexPath...), i)
 
-		// Named struct with prefix tag: recurse with prefix.
-		if f.Type.Kind() == reflect.Struct && !f.Anonymous {
-			if pfx := f.Tag.Get("prefix"); pfx != "" {
-				part := strings.TrimRight(pfx, "-._/")
-				buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx, append(parts, part))
-				continue
-			}
-			// Fall through: may be a custom type with flag tag (e.g. FlagUnmarshaler).
+		if handlePrefixedStruct(f, fields, currentPath, prefix, parts) {
+			continue
 		}
-
-		// Anonymous embedded struct (non-pointer): promote fields.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
 			buildFieldMapRecurse(f.Type, fields, currentPath, prefix, parts)
 			continue
 		}
 
-		name, hasFlag := f.Tag.Lookup("flag")
-
-		// Standalone env: has env tag but no flag or arg tag.
-		envTag := f.Tag.Get("env")
-		_, hasArg := f.Tag.Lookup("arg")
-		envOnly := !hasFlag && !hasArg && envTag != ""
-
+		name, hasFlag, envOnly := resolveFieldSource(f)
 		if !hasFlag && !envOnly {
 			continue
 		}
 
-		if hasFlag && name == "" {
-			name = camelToKebab(f.Name)
-		} else if envOnly {
-			name = camelToKebab(f.Name)
-		}
-
 		fullName := prefix + name
-		fieldParts := append(append([]string{}, parts...), name)
+		aliases := extractFieldAliases(f, prefix)
 
-		var aliases []string
-		if raw := f.Tag.Get("alt"); raw != "" {
-			aliases = strings.Split(raw, ",")
-			for j := range aliases {
-				aliases[j] = prefix + aliases[j]
-			}
-		}
-
-		// Depth-based shadowing: shallower fields win (Go promotion semantics).
-		primaryKey := "--" + fullName
-		if envOnly {
-			primaryKey = ":" + fullName
-		}
-		if existing, ok := fields[primaryKey]; ok && len(existing.index) <= len(currentPath) {
+		if shouldSkipDueToShadowing(fields, fullName, envOnly, currentPath) {
 			continue
 		}
 
-		isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
-			f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
+		fi := buildFieldInfo(f, currentPath, parts, name, fullName, aliases, envOnly)
+		registerFieldInfo(fields, fi, fullName, envOnly, aliases)
+	}
+}
 
-		fi := &fieldInfo{
-			index:   currentPath,
-			parts:   fieldParts,
-			envOnly: envOnly,
-			def: FlagDef{
-				Name:        fullName,
-				Short:       f.Tag.Get("short"),
-				Alt:         aliases,
-				Default:     f.Tag.Get("default"),
-				Mask:        f.Tag.Get("mask"),
-				Env:         envTag,
-				Enum:        f.Tag.Get("enum"),
-				Sep:         f.Tag.Get("sep"),
-				Category:    f.Tag.Get("category"),
-				Deprecated:  f.Tag.Get("deprecated"),
-				Placeholder: f.Tag.Get("placeholder"),
-				Required:    tagBool(f.Tag, "required"),
-				Hidden:      tagBool(f.Tag, "hidden"),
-				IsBool:      f.Type.Kind() == reflect.Bool,
-				IsCounter:   isCounter,
-				Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
-			},
-		}
+func handlePrefixedStruct(f reflect.StructField, fields map[string]*fieldInfo, currentPath []int, prefix string, parts []string) bool {
+	if f.Type.Kind() != reflect.Struct || f.Anonymous {
+		return false
+	}
+	pfx := f.Tag.Get("prefix")
+	if pfx == "" {
+		return false
+	}
+	part := strings.TrimRight(pfx, "-._/")
+	buildFieldMapRecurse(f.Type, fields, currentPath, prefix+pfx, append(parts, part))
+	return true
+}
 
-		if envOnly {
-			fields[primaryKey] = fi
-		} else {
-			fields["--"+fullName] = fi
-			if fi.def.Short != "" {
-				fields["-"+fi.def.Short] = fi
-			}
-			if fi.def.Negate {
-				fields["--no-"+fullName] = fi
-			}
-			for _, alias := range aliases {
-				fields["--"+alias] = fi
-			}
-		}
+func resolveFieldSource(f reflect.StructField) (string, bool, bool) {
+	name, hasFlag := f.Tag.Lookup("flag")
+	envTag := f.Tag.Get("env")
+	_, hasArg := f.Tag.Lookup("arg")
+	envOnly := !hasFlag && !hasArg && envTag != ""
+
+	if hasFlag && name == "" {
+		name = camelToKebab(f.Name)
+	} else if envOnly {
+		name = camelToKebab(f.Name)
+	}
+	return name, hasFlag, envOnly
+}
+
+func extractFieldAliases(f reflect.StructField, prefix string) []string {
+	raw := f.Tag.Get("alt")
+	if raw == "" {
+		return nil
+	}
+	aliases := strings.Split(raw, ",")
+	for j := range aliases {
+		aliases[j] = prefix + aliases[j]
+	}
+	return aliases
+}
+
+func shouldSkipDueToShadowing(fields map[string]*fieldInfo, fullName string, envOnly bool, currentPath []int) bool {
+	primaryKey := "--" + fullName
+	if envOnly {
+		primaryKey = ":" + fullName
+	}
+	if existing, ok := fields[primaryKey]; ok && len(existing.index) <= len(currentPath) {
+		return true
+	}
+	return false
+}
+
+func buildFieldInfo(f reflect.StructField, currentPath []int, parts []string, name, fullName string, aliases []string, envOnly bool) *fieldInfo {
+	fieldParts := append(append([]string{}, parts...), name)
+	isCounter := tagBool(f.Tag, "counter") && (f.Type.Kind() == reflect.Int || f.Type.Kind() == reflect.Int64 ||
+		f.Type.Kind() == reflect.Uint || f.Type.Kind() == reflect.Uint64)
+
+	return &fieldInfo{
+		index:   currentPath,
+		parts:   fieldParts,
+		envOnly: envOnly,
+		def: FlagDef{
+			Name:        fullName,
+			Short:       f.Tag.Get("short"),
+			Alt:         aliases,
+			Default:     f.Tag.Get("default"),
+			Mask:        f.Tag.Get("mask"),
+			Env:         f.Tag.Get("env"),
+			Enum:        f.Tag.Get("enum"),
+			Sep:         f.Tag.Get("sep"),
+			Category:    f.Tag.Get("category"),
+			Deprecated:  f.Tag.Get("deprecated"),
+			Placeholder: f.Tag.Get("placeholder"),
+			Required:    tagBool(f.Tag, "required"),
+			Hidden:      tagBool(f.Tag, "hidden"),
+			IsBool:      f.Type.Kind() == reflect.Bool,
+			IsCounter:   isCounter,
+			Negate:      tagBool(f.Tag, "negate") && f.Type.Kind() == reflect.Bool,
+		},
+	}
+}
+
+func registerFieldInfo(fields map[string]*fieldInfo, fi *fieldInfo, fullName string, envOnly bool, aliases []string) {
+	if envOnly {
+		fields[":"+fullName] = fi
+		return
+	}
+	fields["--"+fullName] = fi
+	if fi.def.Short != "" {
+		fields["-"+fi.def.Short] = fi
+	}
+	if fi.def.Negate {
+		fields["--no-"+fullName] = fi
+	}
+	for _, alias := range aliases {
+		fields["--"+alias] = fi
 	}
 }
 

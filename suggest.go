@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"math"
 	"strings"
 )
 
@@ -18,20 +17,28 @@ func jaroWinkler(s1, s2 string) float64 {
 		return 0.0
 	}
 
-	matchDist := int(math.Max(float64(len(s1)), float64(len(s2))))/2 - 1
-	if matchDist < 0 {
-		matchDist = 0
-	}
-
+	matchDist := max(0, max(len(s1), len(s2))/2-1)
 	s1Matches := make([]bool, len(s1))
 	s2Matches := make([]bool, len(s2))
 
-	var matches, transpositions float64
+	matches := countMatches(s1, s2, s1Matches, s2Matches, matchDist)
+	if matches == 0 {
+		return 0.0
+	}
 
+	transpositions := countTranspositions(s1, s2, s1Matches, s2Matches)
+	jaro := (matches/float64(len(s1)) + matches/float64(len(s2)) +
+		(matches-transpositions/2)/matches) / 3
+
+	prefixLen := commonPrefixLength(s1, s2, 4)
+	return jaro + float64(prefixLen)*0.1*(1-jaro)
+}
+
+func countMatches(s1, s2 string, s1Matches, s2Matches []bool, matchDist int) float64 {
+	var matches float64
 	for i := range len(s1) {
 		start := max(0, i-matchDist)
 		end := min(len(s2), i+matchDist+1)
-
 		for j := start; j < end; j++ {
 			if s2Matches[j] || s1[i] != s2[j] {
 				continue
@@ -42,11 +49,11 @@ func jaroWinkler(s1, s2 string) float64 {
 			break
 		}
 	}
+	return matches
+}
 
-	if matches == 0 {
-		return 0.0
-	}
-
+func countTranspositions(s1, s2 string, s1Matches, s2Matches []bool) float64 {
+	var transpositions float64
 	k := 0
 	for i := range len(s1) {
 		if !s1Matches[i] {
@@ -60,20 +67,17 @@ func jaroWinkler(s1, s2 string) float64 {
 		}
 		k++
 	}
+	return transpositions
+}
 
-	jaro := (matches/float64(len(s1)) + matches/float64(len(s2)) +
-		(matches-transpositions/2)/matches) / 3
-
-	// Winkler modification: boost for common prefix (up to 4 chars)
-	prefixLen := 0
-	for i := range min(len(s1), len(s2), 4) {
+func commonPrefixLength(s1, s2 string, maxLen int) int {
+	n := min(len(s1), len(s2), maxLen)
+	for i := range n {
 		if s1[i] != s2[i] {
-			break
+			return i
 		}
-		prefixLen++
 	}
-
-	return jaro + float64(prefixLen)*0.1*(1-jaro)
+	return n
 }
 
 // suggestSubcommand finds the closest matching subcommand name.
