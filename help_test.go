@@ -59,9 +59,9 @@ func (c *longDescCmd) LongDescription() string {
 
 type longDescParent struct{}
 
-func (p *longDescParent) Run(_ context.Context) error { return nil }
-func (p *longDescParent) Name() string                { return "myapp" }
-func (p *longDescParent) Subcommands() []cli.Commander   { return []cli.Commander{&longDescCmd{}} }
+func (p *longDescParent) Run(_ context.Context) error  { return nil }
+func (p *longDescParent) Name() string                 { return "myapp" }
+func (p *longDescParent) Subcommands() []cli.Commander { return []cli.Commander{&longDescCmd{}} }
 
 func TestLongDescription_ShownInHelp(t *testing.T) {
 	t.Parallel()
@@ -94,8 +94,8 @@ func TestLongDescription_NotInSubcommandList(t *testing.T) {
 
 type sortedHelpParent struct{}
 
-func (p *sortedHelpParent) Run(_ context.Context) error   { return nil }
-func (p *sortedHelpParent) Name() string                   { return "myapp" }
+func (p *sortedHelpParent) Run(_ context.Context) error { return nil }
+func (p *sortedHelpParent) Name() string                { return "myapp" }
 func (p *sortedHelpParent) Subcommands() []cli.Commander {
 	return []cli.Commander{&sortedSubZ{}, &sortedSubA{}, &sortedSubM{}}
 }
@@ -213,9 +213,9 @@ type caseParent struct {
 	child *caseChild
 }
 
-func (p *caseParent) Run(_ context.Context) error { return nil }
-func (p *caseParent) Name() string                { return "myapp" }
-func (p *caseParent) Subcommands() []cli.Commander   { return []cli.Commander{p.child} }
+func (p *caseParent) Run(_ context.Context) error  { return nil }
+func (p *caseParent) Name() string                 { return "myapp" }
+func (p *caseParent) Subcommands() []cli.Commander { return []cli.Commander{p.child} }
 
 type caseChild struct {
 	ran bool

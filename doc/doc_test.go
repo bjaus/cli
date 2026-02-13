@@ -17,10 +17,10 @@ type rootCmd struct {
 	hidden *hiddenCmd
 }
 
-func (r *rootCmd) Run(_ context.Context) error { return nil }
-func (r *rootCmd) Name() string                { return "myapp" }
-func (r *rootCmd) Description() string         { return "My test application" }
-func (r *rootCmd) Subcommands() []cli.Commander   { return []cli.Commander{r.serve, r.hidden} }
+func (r *rootCmd) Run(_ context.Context) error  { return nil }
+func (r *rootCmd) Name() string                 { return "myapp" }
+func (r *rootCmd) Description() string          { return "My test application" }
+func (r *rootCmd) Subcommands() []cli.Commander { return []cli.Commander{r.serve, r.hidden} }
 
 type serveCmd struct {
 	Port   int    `flag:"port" short:"p" default:"8080" help:"Port to listen on"`
@@ -149,11 +149,13 @@ type discovererRoot struct {
 	serve *serveCmd
 }
 
-func (d *discovererRoot) Run(_ context.Context) error     { return nil }
-func (d *discovererRoot) Name() string                    { return "myapp" }
-func (d *discovererRoot) Description() string             { return "App with plugins" }
-func (d *discovererRoot) Subcommands() []cli.Commander       { return []cli.Commander{d.serve} }
-func (d *discovererRoot) Discover() ([]cli.Commander, error) { return []cli.Commander{&pluginCmd{}}, nil }
+func (d *discovererRoot) Run(_ context.Context) error  { return nil }
+func (d *discovererRoot) Name() string                 { return "myapp" }
+func (d *discovererRoot) Description() string          { return "App with plugins" }
+func (d *discovererRoot) Subcommands() []cli.Commander { return []cli.Commander{d.serve} }
+func (d *discovererRoot) Discover() ([]cli.Commander, error) {
+	return []cli.Commander{&pluginCmd{}}, nil
+}
 
 func newDiscovererRoot() *discovererRoot {
 	return &discovererRoot{serve: &serveCmd{}}

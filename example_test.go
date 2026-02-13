@@ -144,9 +144,9 @@ type SetupApp struct {
 	child *WorkerCmd
 }
 
-func (s *SetupApp) Run(_ context.Context) error { return nil }
-func (s *SetupApp) Name() string                { return "app" }
-func (s *SetupApp) Subcommands() []cli.Commander   { return []cli.Commander{s.child} }
+func (s *SetupApp) Run(_ context.Context) error  { return nil }
+func (s *SetupApp) Name() string                 { return "app" }
+func (s *SetupApp) Subcommands() []cli.Commander { return []cli.Commander{s.child} }
 
 func (s *SetupApp) Before(ctx context.Context) (context.Context, error) {
 	fmt.Fprintln(os.Stdout, "setup: before") //nolint:errcheck // example output
@@ -436,9 +436,9 @@ func (s *StatusCmd) Name() string { return "status" }
 
 type PrefixApp struct{}
 
-func (a *PrefixApp) Run(_ context.Context) error { return nil }
-func (a *PrefixApp) Name() string                { return "app" }
-func (a *PrefixApp) Subcommands() []cli.Commander   { return []cli.Commander{&StatusCmd{}} }
+func (a *PrefixApp) Run(_ context.Context) error  { return nil }
+func (a *PrefixApp) Name() string                 { return "app" }
+func (a *PrefixApp) Subcommands() []cli.Commander { return []cli.Commander{&StatusCmd{}} }
 
 func ExampleExecute_prefixMatching() {
 	app := &PrefixApp{}
@@ -462,10 +462,10 @@ func (s *ServeCmd) Name() string { return "serve" }
 
 type DefaultApp struct{}
 
-func (a *DefaultApp) Run(_ context.Context) error { return nil }
-func (a *DefaultApp) Name() string                { return "app" }
-func (a *DefaultApp) Subcommands() []cli.Commander   { return []cli.Commander{&ServeCmd{}} }
-func (a *DefaultApp) Fallback() cli.Commander        { return &ServeCmd{} }
+func (a *DefaultApp) Run(_ context.Context) error  { return nil }
+func (a *DefaultApp) Name() string                 { return "app" }
+func (a *DefaultApp) Subcommands() []cli.Commander { return []cli.Commander{&ServeCmd{}} }
+func (a *DefaultApp) Fallback() cli.Commander      { return &ServeCmd{} }
 
 func ExampleExecute_defaultCommand() {
 	app := &DefaultApp{}
@@ -480,9 +480,9 @@ type InheritApp struct {
 	Env string `flag:"env" help:"Target environment"`
 }
 
-func (a *InheritApp) Run(_ context.Context) error { return nil }
-func (a *InheritApp) Name() string                { return "app" }
-func (a *InheritApp) Subcommands() []cli.Commander   { return []cli.Commander{&InheritServe{}} }
+func (a *InheritApp) Run(_ context.Context) error  { return nil }
+func (a *InheritApp) Name() string                 { return "app" }
+func (a *InheritApp) Subcommands() []cli.Commander { return []cli.Commander{&InheritServe{}} }
 
 type InheritServe struct {
 	Env  string `flag:"env" help:"Target environment"`
@@ -511,7 +511,9 @@ type HiddenInheritApp struct {
 
 func (a *HiddenInheritApp) Run(_ context.Context) error { return nil }
 func (a *HiddenInheritApp) Name() string                { return "app" }
-func (a *HiddenInheritApp) Subcommands() []cli.Commander   { return []cli.Commander{&HiddenInheritServe{}} }
+func (a *HiddenInheritApp) Subcommands() []cli.Commander {
+	return []cli.Commander{&HiddenInheritServe{}}
+}
 
 type HiddenInheritServe struct {
 	Env  string `flag:"env" hidden:"true"`
