@@ -145,17 +145,21 @@ func stripProgramName(args []string, cmdName string) []string {
 
 	first := args[0]
 
-	// Check if first arg looks like a path (contains / or \).
-	if strings.ContainsAny(first, `/\`) {
-		base := filepath.Base(first)
-		// Strip extension for Windows .exe comparison.
-		base = strings.TrimSuffix(base, filepath.Ext(base))
-		if strings.EqualFold(base, cmdName) {
+	// No path separators means it's likely a subcommand or bare arg.
+	if !strings.ContainsAny(first, `/\`) {
+		return args
+	}
+
+	base := filepath.Base(first)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+
+	if strings.EqualFold(base, cmdName) {
+		// Absolute paths that match: always strip (no I/O needed).
+		if filepath.IsAbs(first) {
 			return args[1:]
 		}
-		// Looks like a path but doesn't match — probably still the binary.
-		// Be conservative: if it starts with common path prefixes, strip it.
-		if strings.HasPrefix(first, "/") || strings.HasPrefix(first, "./") || strings.HasPrefix(first, "../") {
+		// Relative paths that match: only strip if executable.
+		if isExecutable(first) {
 			return args[1:]
 		}
 	}

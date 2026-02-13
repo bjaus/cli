@@ -6475,20 +6475,23 @@ func TestStripProgramName_EmptyArgs(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestStripProgramName_RelativeDotDot(t *testing.T) {
+func TestStripProgramName_RelativeNotExecutable(t *testing.T) {
 	t.Parallel()
+	// Relative path matching cmdName but file doesn't exist — don't strip.
 	result := stripProgramName([]string{"../bin/myapp", "serve"}, "myapp")
-	assert.Equal(t, []string{"serve"}, result)
+	assert.Equal(t, []string{"../bin/myapp", "serve"}, result)
 }
 
 func TestStripProgramName_BackslashPath(t *testing.T) {
 	t.Parallel()
 	result := stripProgramName([]string{`C:\bin\myapp.exe`, "serve"}, "myapp")
 	if runtime.GOOS == "windows" {
+		// On Windows, the backslash is recognized as a path separator and
+		// filepath.IsAbs returns true for C:\..., so it's stripped.
 		assert.Equal(t, []string{"serve"}, result)
 	} else {
-		// On non-Windows, filepath.Base doesn't split on backslash and
-		// the path doesn't start with /, ./, or ../, so it's not stripped.
+		// On non-Windows, the string contains a backslash but filepath.IsAbs
+		// returns false and no executable exists, so it's not stripped.
 		assert.Equal(t, []string{`C:\bin\myapp.exe`, "serve"}, result)
 	}
 }
@@ -6501,7 +6504,22 @@ func TestStripProgramName_NonPath(t *testing.T) {
 
 func TestStripProgramName_AbsoluteNonMatch(t *testing.T) {
 	t.Parallel()
+	// Absolute path that doesn't match cmdName — don't strip.
 	result := stripProgramName([]string{"/usr/bin/other", "serve"}, "myapp")
+	assert.Equal(t, []string{"/usr/bin/other", "serve"}, result)
+}
+
+func TestStripProgramName_AbsoluteMatch(t *testing.T) {
+	t.Parallel()
+	// Absolute path that matches cmdName — always strip.
+	result := stripProgramName([]string{"/usr/local/bin/myapp", "serve"}, "myapp")
+	assert.Equal(t, []string{"serve"}, result)
+}
+
+func TestStripProgramName_AbsoluteMatchWithExtension(t *testing.T) {
+	t.Parallel()
+	// Absolute path with extension that matches cmdName — strip.
+	result := stripProgramName([]string{"/usr/local/bin/myapp.exe", "serve"}, "myapp")
 	assert.Equal(t, []string{"serve"}, result)
 }
 
