@@ -3,7 +3,7 @@ module github.com/bjaus/cli
 go 1.25.7
 
 require (
-	github.com/bjaus/bind v0.0.0
+	github.com/bjaus/bind v0.0.0-20260212183112-af63e7e71e2a
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.40.0
 )
@@ -14,5 +14,3 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/bjaus/bind => ../bind
