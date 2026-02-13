@@ -134,6 +134,13 @@ type Categorizer interface {
 }
 
 // Fallbacker provides a fallback subcommand to run when no subcommand name matches.
+// When the user provides an unknown command name, Fallback() is invoked instead of
+// returning [ErrUnknownCommand]. All arguments (including the unknown name) become
+// positional args for the fallback command.
+//
+// Note: This can mask user typos. If the user types "myapp servce" (typo for "serve")
+// and the app implements Fallbacker, the typo flows to the fallback instead of erroring.
+// For strict subcommand validation, use [SubcommandRequired] instead.
 type Fallbacker interface {
 	Fallback() Commander
 }
