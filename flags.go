@@ -1194,6 +1194,10 @@ func validateFlagOnlyTags(f reflect.StructField, hasFlag bool) error {
 			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
 		}
 	}
+	// Empty short tag is a mistake.
+	if short, ok := f.Tag.Lookup("short"); ok && short == "" {
+		return fmt.Errorf("%w: field %s: short tag cannot be empty", ErrInvalidTag, f.Name)
+	}
 	return nil
 }
 

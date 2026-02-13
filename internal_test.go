@@ -5487,6 +5487,15 @@ func TestValidateStructTags(t *testing.T) {
 			},
 			wantErr: "short requires flag",
 		},
+		"empty short tag": {
+			makeType: func() reflect.Type {
+				type cmd struct {
+					Port int `flag:"port" short:""`
+				}
+				return reflect.TypeOf(cmd{})
+			},
+			wantErr: "short tag cannot be empty",
+		},
 		"counter without flag": {
 			makeType: func() reflect.Type {
 				type cmd struct {
