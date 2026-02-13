@@ -78,16 +78,20 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 		}
 
 		// For branching commands (has both arg fields and subcommands),
-		// consume positional args before looking for subcommands.
+		// consume required positional args before looking for subcommands.
+		// Optional args are captured separately to avoid consuming subcommand names.
 		if isBranchingCommand(current) {
-			cmdFlags, positional, rest := scanBranchingLevel(remaining, fi, current)
+			cmdFlags, requiredArgs, rest := scanBranchingLevel(remaining, fi, current)
 			chainArgs[idx] = cmdFlags
-			branchArgs[idx] = positional
 			remaining = rest
 
-			// Now look for subcommand in remaining args.
+			// Look for subcommand in remaining args. Any non-flag args before
+			// the subcommand are potential optional args for the branching command.
 			sub := findSubcommandInArgs(remaining, subs, opts.prefixMatching, opts.caseInsensitive)
 			if sub == nil {
+				// No subcommand found. All remaining positional args belong to
+				// this command (required args already captured, rest are optional).
+				branchArgs[idx] = append(requiredArgs, filterNonFlags(rest)...)
 				// Check for Fallbacker interface.
 				if d, ok := current.(Fallbacker); ok {
 					chain = append(chain, d.Fallback())
@@ -98,6 +102,9 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 				}
 				break
 			}
+			// Subcommand found. Combine required args with any args before the
+			// subcommand match (these are optional args for the branching command).
+			branchArgs[idx] = append(requiredArgs, sub.before...)
 			chain = append(chain, sub.sub)
 			chainArgs = append(chainArgs, nil)
 			branchArgs = append(branchArgs, nil)
@@ -154,7 +161,8 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 
 type subMatch struct {
 	sub       Commander
-	remaining []string
+	before    []string // non-flag args before the subcommand (for optional args)
+	remaining []string // args after the subcommand
 }
 
 // scanLevel scans args at the current command level, consuming known flags
@@ -341,8 +349,9 @@ func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) ([]string, [
 	return flags, positional, rest
 }
 
-// countBranchArgs returns the number of positional args a command expects
-// (based on arg-tagged fields, not including cli.Args).
+// countBranchArgs returns the number of required positional args a command
+// expects. Only required args are consumed during routing; optional args are
+// handled after subcommand matching to avoid consuming subcommand names.
 func countBranchArgs(cmd Commander) int {
 	defs, _ := ScanArgs(cmd) // errors caught during populateLeafArgs
 	count := 0
@@ -350,22 +359,40 @@ func countBranchArgs(cmd Commander) int {
 		if defs[i].IsSlice {
 			continue // slice args consume remaining, not counted
 		}
+		if !defs[i].Required {
+			continue // optional args handled after subcommand matching
+		}
 		count++
 	}
 	return count
 }
 
 // findSubcommandInArgs finds the first subcommand match in args.
+// Returns the matched subcommand, any non-flag args that appeared before it
+// (potential optional args for the parent), and remaining args after it.
 func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInsensitive bool) *subMatch {
+	var before []string
 	for i, arg := range args {
 		if strings.HasPrefix(arg, "-") {
 			continue
 		}
 		if sub := findSubcommand(subs, arg, prefixMatch, caseInsensitive); sub != nil {
-			return &subMatch{sub: sub, remaining: args[i+1:]}
+			return &subMatch{sub: sub, before: before, remaining: args[i+1:]}
 		}
+		before = append(before, arg)
 	}
 	return nil
+}
+
+// filterNonFlags returns only the non-flag args from the input slice.
+func filterNonFlags(args []string) []string {
+	var result []string
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			result = append(result, arg)
+		}
+	}
+	return result
 }
 
 // expandShortOptions expands combined short flags like -abc into -a -b -c.

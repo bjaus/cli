@@ -2255,3 +2255,67 @@ func TestExecute_ErrShowUsage_RendersBriefUsage(t *testing.T) {
 	require.ErrorAs(t, err, &ec)
 	assert.Equal(t, 1, ec.ExitCode())
 }
+
+// --- Branching command optional arg tests ---
+
+// branchOptionalParent has an optional arg field AND subcommands.
+// This tests that subcommand names aren't consumed as optional args.
+type branchOptionalParent struct {
+	ID    string `arg:"id" required:"false"` // explicitly optional
+	Child *branchOptionalChild
+}
+
+func (p *branchOptionalParent) Run(_ context.Context) error { return nil }
+func (p *branchOptionalParent) Name() string                { return "user" }
+
+// Note: Subcommands() is not implemented. The Child field is auto-discovered
+// as a subcommand because it's an exported field that implements Commander.
+
+type branchOptionalChild struct {
+	ran bool
+}
+
+func (c *branchOptionalChild) Run(_ context.Context) error {
+	c.ran = true
+	return nil
+}
+func (c *branchOptionalChild) Name() string { return "delete" }
+
+func TestExecute_BranchingCommand_OptionalArgNotConsumeSubcommand(t *testing.T) {
+	t.Parallel()
+
+	// "delete" should be recognized as subcommand, not consumed as optional "id" arg.
+	child := &branchOptionalChild{}
+	parent := &branchOptionalParent{Child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"delete"})
+	require.NoError(t, err)
+	assert.True(t, child.ran, "subcommand should have been executed")
+	assert.Equal(t, "", parent.ID, "optional arg should not have consumed subcommand name")
+}
+
+func TestExecute_BranchingCommand_OptionalArgPopulated(t *testing.T) {
+	t.Parallel()
+
+	// "123" doesn't match any subcommand, so it should populate the optional arg.
+	child := &branchOptionalChild{}
+	parent := &branchOptionalParent{Child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"123"})
+	require.NoError(t, err)
+	assert.False(t, child.ran, "subcommand should not have been executed")
+	assert.Equal(t, "123", parent.ID, "optional arg should be populated")
+}
+
+func TestExecute_BranchingCommand_OptionalArgBeforeSubcommand(t *testing.T) {
+	t.Parallel()
+
+	// "123" should populate optional arg, "delete" should route to subcommand.
+	child := &branchOptionalChild{}
+	parent := &branchOptionalParent{Child: child}
+
+	err := cli.Execute(context.Background(), parent, []string{"123", "delete"})
+	require.NoError(t, err)
+	assert.True(t, child.ran, "subcommand should have been executed")
+	assert.Equal(t, "123", parent.ID, "optional arg should be populated from arg before subcommand")
+}
