@@ -166,10 +166,20 @@ var (
 //
 // These signals control help and usage display with appropriate exit codes.
 // Return these from [Commander.Run] or lifecycle hooks to trigger display.
+//
+// Design note: ShowHelp and ShowUsage implement [error] despite being success
+// signals (exit code 0). This is intentional — they're control flow signals
+// returned through the error channel because [Commander.Run] returns error.
+// The naming convention distinguishes them: ShowHelp (success) vs ErrShowHelp
+// (failure). This pattern is common in CLI frameworks where the error return
+// serves as both an error channel and a signal channel.
 
 var (
 	// ShowHelp triggers full help display and exits with code 0.
 	// Use when the user explicitly requests help (e.g., "myapp help subcmd").
+	//
+	// Note: Implements error for control flow, not because it's an error.
+	// The process exits successfully (code 0).
 	ShowHelp = &helpSignal{code: 0, full: true} //nolint:errname // success signal, not error
 
 	// ErrShowHelp triggers full help display and exits with code 1.
@@ -178,6 +188,9 @@ var (
 
 	// ShowUsage triggers brief usage display and exits with code 0.
 	// Use when the user explicitly requests usage information.
+	//
+	// Note: Implements error for control flow, not because it's an error.
+	// The process exits successfully (code 0).
 	ShowUsage = &helpSignal{code: 0, full: false} //nolint:errname // success signal, not error
 
 	// ErrShowUsage triggers brief usage display and exits with code 1.
