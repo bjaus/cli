@@ -108,6 +108,8 @@ $ cmd --env FOO=bar --env BAZ=qux
 | `env` | string | Environment variable name(s), comma-separated |
 | `required` | presence | Flag must be provided (mutually exclusive with `default`) |
 
+Flags are **optional by default**. Use `required:""` to make a flag mandatory. This differs from positional arguments, which are required by default—reflecting the standard CLI convention where flags modify behavior while positional args identify operands.
+
 ### Validation Tags
 
 | Tag | Type | Description |

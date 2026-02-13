@@ -87,6 +87,9 @@
 //
 // Priority: explicit flag > env var > config > default > zero value.
 //
+// Flags are optional by default. Use `required:""` to make a flag mandatory.
+// This contrasts with positional arguments, which are required by default.
+//
 // Use [WithEnvVarPrefix] to scope all env var lookups under a common prefix.
 // For example, WithEnvVarPrefix("APP_") causes `env:"PORT"` to look up APP_PORT.
 //
