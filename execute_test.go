@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/bjaus/cli"
@@ -2350,4 +2351,45 @@ func TestExecute_PrefixMatching_AmbiguousReportsError(t *testing.T) {
 	assert.ErrorIs(t, err, cli.ErrAmbiguousCommand)
 	assert.Contains(t, err.Error(), "serve")
 	assert.Contains(t, err.Error(), "status")
+}
+
+// --- WithTerminalCheck ---
+
+type termCheckCmd struct {
+	Name string `flag:"name" required:"true" help:"Your name"`
+}
+
+func (c *termCheckCmd) Run(_ context.Context) error { return nil }
+
+func TestWithTerminalCheck_ForceTerminal(t *testing.T) {
+	t.Parallel()
+
+	cmd := &termCheckCmd{}
+	input := strings.NewReader("Alice\n")
+
+	// Force terminal detection to return true, allowing interactive prompts.
+	err := cli.Execute(context.Background(), cmd, nil,
+		cli.WithInteractive(true),
+		cli.WithStdin(input),
+		cli.WithTerminalCheck(func() bool { return true }),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", cmd.Name)
+}
+
+func TestWithTerminalCheck_DisableTerminal(t *testing.T) {
+	t.Parallel()
+
+	cmd := &termCheckCmd{}
+	input := strings.NewReader("Alice\n")
+
+	// Force terminal detection to return false, disabling interactive prompts.
+	err := cli.Execute(context.Background(), cmd, nil,
+		cli.WithInteractive(true),
+		cli.WithStdin(input),
+		cli.WithTerminalCheck(func() bool { return false }),
+	)
+	// Without terminal detection, required flag fails since no prompting occurs.
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrRequiredFlag)
 }

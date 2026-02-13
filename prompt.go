@@ -9,7 +9,11 @@ import (
 	"strings"
 )
 
-// defaultIsTerminal checks whether os.Stdin is a terminal (character device).
+// defaultIsTerminal checks whether os.Stdin is a terminal (character device)
+// using [os.ModeCharDevice]. This is a simple heuristic that works for most
+// cases but may not correctly identify some PTY/expect scenarios.
+//
+// Override with [WithTerminalCheck] if you need custom detection logic.
 func defaultIsTerminal() bool {
 	info, err := os.Stdin.Stat()
 	if err != nil {

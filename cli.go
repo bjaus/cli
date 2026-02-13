@@ -150,8 +150,32 @@ func WithSignalHandling(enabled bool) Option {
 // WithInteractive enables interactive prompting for missing required flags
 // when stdin is a terminal. Commands can implement [Prompter] to customize
 // the prompting behavior.
+//
+// Terminal detection uses [os.ModeCharDevice] by default, which checks if stdin
+// is a character device (TTY). This detection can be overridden using
+// [WithTerminalCheck] for cases like expect/PTY testing where stdin appears
+// as a terminal but you want to disable prompts, or vice versa.
 func WithInteractive(enabled bool) Option {
 	return func(o *options) { o.interactive = enabled }
+}
+
+// WithTerminalCheck overrides the default terminal detection function used
+// by interactive prompting. The default checks if stdin is a character device
+// using [os.ModeCharDevice].
+//
+// Use this when you need to:
+//   - Force prompts in non-terminal environments (return true always)
+//   - Disable prompts even when stdin is a terminal (return false always)
+//   - Use custom detection logic for PTY/expect scenarios
+//
+// Example forcing prompts:
+//
+//	cli.Execute(ctx, cmd, args,
+//	    cli.WithInteractive(true),
+//	    cli.WithTerminalCheck(func() bool { return true }),
+//	)
+func WithTerminalCheck(check func() bool) Option {
+	return func(o *options) { o.isTerminal = check }
 }
 
 // WithStdin sets the reader used for standard input (e.g., interactive prompts).
