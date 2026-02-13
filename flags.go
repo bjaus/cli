@@ -757,12 +757,16 @@ func validateFlagGroups(cmd Commander, provided map[string]bool) error {
 				return fmt.Errorf("%w: %s", ErrRequiredTogether, strings.Join(all, ", "))
 			}
 		case GroupOneRequired:
-			if len(set) != 1 {
+			if len(set) == 0 {
 				all := make([]string, len(group.Flags))
 				for i, f := range group.Flags {
 					all[i] = "--" + f
 				}
-				return fmt.Errorf("%w: %s", ErrOneRequired, strings.Join(all, ", "))
+				return fmt.Errorf("%w (none provided): %s", ErrOneRequired, strings.Join(all, ", "))
+			}
+			if len(set) > 1 {
+				// set already contains --prefixed names
+				return fmt.Errorf("%w (multiple provided: %s)", ErrOneRequired, strings.Join(set, ", "))
 			}
 		}
 	}

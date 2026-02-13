@@ -3841,6 +3841,8 @@ func TestValidateFlagGroups_OneRequired_None(t *testing.T) {
 	err := validateFlagGroups(cmd, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOneRequired)
+	assert.Contains(t, err.Error(), "none provided")
+	assert.Contains(t, err.Error(), "--file")
 }
 
 func TestValidateFlagGroups_OneRequired_TooMany(t *testing.T) {
@@ -3849,6 +3851,9 @@ func TestValidateFlagGroups_OneRequired_TooMany(t *testing.T) {
 	err := validateFlagGroups(cmd, map[string]bool{"file": true, "stdin": true})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrOneRequired)
+	assert.Contains(t, err.Error(), "multiple provided")
+	assert.Contains(t, err.Error(), "--file")
+	assert.Contains(t, err.Error(), "--stdin")
 }
 
 func TestValidateFlagGroups_NoInterface(t *testing.T) {
