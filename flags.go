@@ -330,6 +330,20 @@ func buildFieldMapRecurse(t reflect.Type, fields map[string]*fieldInfo, indexPat
 			continue
 		}
 
+		// Check short name conflicts.
+		if short := f.Tag.Get("short"); short != "" {
+			if existing, ok := fields["-"+short]; ok && len(existing.index) == len(currentPath) {
+				return fmt.Errorf("%w: -%s (used by --%s and --%s)", ErrDuplicateFlag, short, existing.def.Name, fullName)
+			}
+		}
+
+		// Check alt name conflicts.
+		for _, alias := range aliases {
+			if existing, ok := fields["--"+alias]; ok && len(existing.index) == len(currentPath) {
+				return fmt.Errorf("%w: --%s (used by --%s and --%s)", ErrDuplicateFlag, alias, existing.def.Name, fullName)
+			}
+		}
+
 		fi := buildFieldInfo(f, currentPath, parts, name, fullName, aliases, envOnly)
 		registerFieldInfo(fields, fi, fullName, envOnly, aliases)
 	}

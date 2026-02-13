@@ -4040,8 +4040,49 @@ type duplicateShortFlagCmd struct {
 
 func (c *duplicateShortFlagCmd) Run(_ context.Context) error { return nil }
 
-// Note: duplicate short flags are handled differently - the second one
-// overwrites the first in the field map. This could be enhanced later.
+func TestDuplicateShortFlag_Error(t *testing.T) {
+	t.Parallel()
+
+	cmd := &duplicateShortFlagCmd{}
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDuplicateFlag)
+	assert.Contains(t, err.Error(), "-n")
+}
+
+type duplicateAltFlagCmd struct {
+	Foo string `flag:"foo" alt:"common"`
+	Bar string `flag:"bar" alt:"common"` // duplicate alt
+}
+
+func (c *duplicateAltFlagCmd) Run(_ context.Context) error { return nil }
+
+func TestDuplicateAltFlag_Error(t *testing.T) {
+	t.Parallel()
+
+	cmd := &duplicateAltFlagCmd{}
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDuplicateFlag)
+	assert.Contains(t, err.Error(), "common")
+}
+
+type altConflictsWithPrimaryCmd struct {
+	Foo string `flag:"verbose"`
+	Bar string `flag:"bar" alt:"verbose"` // alt conflicts with primary name
+}
+
+func (c *altConflictsWithPrimaryCmd) Run(_ context.Context) error { return nil }
+
+func TestAltConflictsWithPrimary_Error(t *testing.T) {
+	t.Parallel()
+
+	cmd := &altConflictsWithPrimaryCmd{}
+	_, _, err := defaultParseFlags(cmd, nil, defaults())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrDuplicateFlag)
+	assert.Contains(t, err.Error(), "verbose")
+}
 
 // --- Branching commands ---
 
