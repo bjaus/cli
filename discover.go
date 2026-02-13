@@ -130,12 +130,25 @@ func WithInfoTimeout(d time.Duration) DiscoverOption {
 	}
 }
 
-// WithWarnFunc sets a callback for non-fatal warnings during discovery.
-// Warnings include unreadable directories and plugin metadata timeouts.
-// If not set, warnings are silently ignored and discovery continues.
-// This is useful for logging partial failures without aborting discovery.
+// WithWarnFunc sets a callback for non-fatal errors during discovery.
+// When set, discovery continues past errors (unreadable directories, plugin
+// metadata timeouts) by calling the callback instead of failing. Without this
+// option, the first error causes [Discover] to return immediately.
 //
-// Example:
+// To collect all errors while still completing discovery:
+//
+//	var errs []error
+//	plugins, _ := cli.Discover(
+//	    cli.WithDirs(cli.DefaultDirs("myapp")...),
+//	    cli.WithWarnFunc(func(err error) {
+//	        errs = append(errs, err)
+//	    }),
+//	)
+//	if len(errs) > 0 {
+//	    // Handle accumulated errors
+//	}
+//
+// For simple logging:
 //
 //	cli.Discover(
 //	    cli.WithDirs(cli.DefaultDirs("myapp")...),
