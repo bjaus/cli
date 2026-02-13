@@ -1,8 +1,10 @@
-// Package cli is a composable CLI framework built on small interfaces.
+// Package cli provides a composable CLI framework built on small interfaces.
 //
-// Commands are Go types that implement [Commander]. The framework discovers
-// capabilities through type assertions on optional interfaces — there is
-// no base struct to embed and no configuration DSL.
+// Small interfaces. Big CLIs.
+//
+// Commands are structs. Capabilities are interfaces. The framework discovers
+// what your command can do through type assertions on 30+ optional interfaces —
+// no base struct to embed, no configuration DSL.
 //
 // # Core Interface
 //
@@ -478,6 +480,24 @@
 // Active help messages are displayed by the shell as guidance during completion.
 // If Complete returns an empty result (or [NoCompletions]), the framework falls
 // back to static completion of subcommands and flags.
+//
+// For dynamic flag value completion, implement [FlagCompleter]:
+//
+//	func (c *DeployCmd) CompleteFlag(ctx context.Context, flag, value string) cli.CompletionResult {
+//	    if flag == "region" {
+//	        return cli.CompletionsWithDesc(
+//	            cli.Completion{Value: "us-east-1", Description: "N. Virginia"},
+//	            cli.Completion{Value: "us-west-2", Description: "Oregon"},
+//	        )
+//	    }
+//	    return cli.NoCompletions()
+//	}
+//
+// Use [FlagNameFor] to safely reference flags without hardcoding names:
+//
+//	if flag == cli.FlagNameFor(c, &c.Region) {
+//	    return cli.Completions("us-east-1", "us-west-2")
+//	}
 //
 // # Error Handling
 //
