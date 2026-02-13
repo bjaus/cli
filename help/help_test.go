@@ -1318,3 +1318,231 @@ func TestDetectColorDumbTerm(t *testing.T) {
 		t.Error("color should be disabled when TERM=dumb")
 	}
 }
+
+// namedCatCmd has a category and unique name.
+type namedCatCmd struct {
+	name string
+	cat  string
+}
+
+func (c *namedCatCmd) Name() string              { return c.name }
+func (c *namedCatCmd) Description() string       { return c.name + " command" }
+func (c *namedCatCmd) Run(context.Context) error { return nil }
+func (c *namedCatCmd) Category() string          { return c.cat }
+
+// cmdWithCategorizedSubs has categorized subcommands.
+type cmdWithCategorizedSubs struct{}
+
+func (c *cmdWithCategorizedSubs) Name() string              { return "app" }
+func (c *cmdWithCategorizedSubs) Description() string       { return "App with categorized commands" }
+func (c *cmdWithCategorizedSubs) Run(context.Context) error { return nil }
+func (c *cmdWithCategorizedSubs) Subcommands() []cli.Commander {
+	return []cli.Commander{
+		&namedCatCmd{name: "connect", cat: "Network"},
+		&namedCatCmd{name: "trace", cat: "Debug"},
+		&statusCmd{},
+	}
+}
+
+func TestDefaultRendererCategorizedSubcommands(t *testing.T) {
+	root := &cmdWithCategorizedSubs{}
+	chain := []cli.Commander{root}
+	flags := cli.ScanFlags(root)
+	args := cli.ScanArgs(root)
+
+	renderer := help.Default()
+	output := renderer.RenderHelp(root, chain, flags, args, nil)
+
+	// Should have Commands section for uncategorized.
+	if !strings.Contains(output, "Commands:") {
+		t.Error("output missing Commands section")
+	}
+	// Should have category sections.
+	if !strings.Contains(output, "Network:") {
+		t.Error("output missing Network category")
+	}
+	if !strings.Contains(output, "Debug:") {
+		t.Error("output missing Debug category")
+	}
+}
+
+func TestDefaultRendererSortedCategories(t *testing.T) {
+	root := &cmdWithCategorizedSubs{}
+	chain := []cli.Commander{root}
+	flags := cli.ScanFlags(root)
+	args := cli.ScanArgs(root)
+
+	renderer := help.Default(help.WithSorted())
+	output := renderer.RenderHelp(root, chain, flags, args, nil)
+
+	// Should have all sections.
+	if !strings.Contains(output, "Commands:") {
+		t.Error("output missing Commands section")
+	}
+
+	// With sorting, Debug should appear before Network (alphabetically).
+	debugIdx := strings.Index(output, "Debug:")
+	networkIdx := strings.Index(output, "Network:")
+
+	if debugIdx < 0 || networkIdx < 0 {
+		t.Error("output missing category headers")
+	} else if debugIdx > networkIdx {
+		t.Error("categories should be sorted alphabetically (Debug before Network)")
+	}
+}
+
+// cmdWithRequiredFlags has a required flag.
+type cmdWithRequiredFlags struct {
+	Username string `flag:"username" required:"true" help:"Required username"`
+	Port     int    `flag:"port" default:"8080" help:"Port number"`
+}
+
+func (c *cmdWithRequiredFlags) Name() string              { return "reqcmd" }
+func (c *cmdWithRequiredFlags) Description() string       { return "Command with required flag" }
+func (c *cmdWithRequiredFlags) Run(context.Context) error { return nil }
+
+func TestDefaultRendererRequiredFlags(t *testing.T) {
+	cmd := &cmdWithRequiredFlags{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Default()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Required flags should have asterisk indicator.
+	if !strings.Contains(output, "*") {
+		t.Error("output missing required indicator (*)")
+	}
+	if !strings.Contains(output, "--username") {
+		t.Error("output missing --username flag")
+	}
+}
+
+// cmdWithArgAttributes has arguments with various attributes.
+type cmdWithArgAttributes struct {
+	Mode   string `arg:"mode" enum:"fast,slow,auto" help:"Operation mode"`
+	Secret string `arg:"secret" mask:"****" default:"hidden" help:"Secret value"`
+	Config string `arg:"config" env:"CONFIG,APP_CONFIG" help:"Config path"`
+}
+
+func (c *cmdWithArgAttributes) Name() string              { return "argcmd" }
+func (c *cmdWithArgAttributes) Description() string       { return "Command with args" }
+func (c *cmdWithArgAttributes) Run(context.Context) error { return nil }
+
+func TestDefaultRendererArgDefs(t *testing.T) {
+	cmd := &cmdWithArgAttributes{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Default()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Check for enum display.
+	if !strings.Contains(output, "fast|slow|auto") {
+		t.Error("output missing enum values")
+	}
+	// Check for masked default.
+	if !strings.Contains(output, "****") {
+		t.Error("output missing masked default")
+	}
+	// Check for multiple env vars.
+	if !strings.Contains(output, "CONFIG") {
+		t.Error("output missing env var")
+	}
+}
+
+func TestDefaultRendererCategorizedFlags(t *testing.T) {
+	cmd := &cmdWithCategorizedFlags{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Default()
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Should have category headers.
+	if !strings.Contains(output, "Network:") {
+		t.Error("output missing Network category")
+	}
+	if !strings.Contains(output, "Debug:") {
+		t.Error("output missing Debug category")
+	}
+	// Should have Flags section for uncategorized.
+	if !strings.Contains(output, "Flags:") {
+		t.Error("output missing Flags section")
+	}
+}
+
+func TestDefaultRendererSortedCategorizedFlags(t *testing.T) {
+	cmd := &cmdWithCategorizedFlags{}
+	chain := []cli.Commander{cmd}
+	flags := cli.ScanFlags(cmd)
+	args := cli.ScanArgs(cmd)
+
+	renderer := help.Default(help.WithSorted())
+	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
+
+	// Should have sorted categories.
+	debugIdx := strings.Index(output, "Debug:")
+	networkIdx := strings.Index(output, "Network:")
+
+	// Debug should come before Network alphabetically.
+	if debugIdx > networkIdx {
+		t.Error("categories should be sorted alphabetically")
+	}
+}
+
+func TestFlagRightWithMultipleEnvVars(t *testing.T) {
+	flag := cli.FlagDef{
+		Name: "config",
+		Help: "Config path",
+		Env:  "CONFIG,APP_CONFIG",
+	}
+
+	right := help.FlagRight(&flag)
+
+	if !strings.Contains(right, "CONFIG") {
+		t.Error("output missing first env var")
+	}
+	if !strings.Contains(right, "APP_CONFIG") {
+		t.Error("output missing second env var")
+	}
+}
+
+func TestFlagRightWithMask(t *testing.T) {
+	flag := cli.FlagDef{
+		Name:    "secret",
+		Help:    "Secret value",
+		Default: "hidden",
+		Mask:    "****",
+	}
+
+	right := help.FlagRight(&flag)
+
+	if !strings.Contains(right, "****") {
+		t.Error("output missing masked default")
+	}
+	// Should not show actual default.
+	if strings.Contains(right, "hidden") {
+		t.Error("output should not show actual default when masked")
+	}
+}
+
+func TestFlagRightDeprecated(t *testing.T) {
+	flag := cli.FlagDef{
+		Name:       "old",
+		Help:       "Old flag",
+		Deprecated: "use --new instead",
+	}
+
+	right := help.FlagRight(&flag)
+
+	if !strings.Contains(right, "DEPRECATED") {
+		t.Error("output missing DEPRECATED marker")
+	}
+	if !strings.Contains(right, "use --new instead") {
+		t.Error("output missing deprecation message")
+	}
+}
