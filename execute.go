@@ -308,15 +308,16 @@ func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive 
 // scanBranchingLevel scans args for a branching command, returning flags,
 // positional args for the branch, and remaining args. This consumes positional
 // args before we look for subcommands.
-func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) (flags, positional, rest []string) {
+func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) ([]string, []string, []string) {
 	numBranchArgs := countBranchArgs(cmd)
 
+	var flags, positional, rest []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 
 		if arg == "--" {
 			rest = append(rest, args[i+1:]...)
-			return
+			return flags, positional, rest
 		}
 
 		// Try to consume known flag.
@@ -335,7 +336,7 @@ func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) (flags, posi
 			rest = append(rest, arg)
 		}
 	}
-	return
+	return flags, positional, rest
 }
 
 // countBranchArgs returns the number of positional args a command expects
@@ -343,8 +344,8 @@ func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) (flags, posi
 func countBranchArgs(cmd Commander) int {
 	defs := ScanArgs(cmd)
 	count := 0
-	for _, d := range defs {
-		if d.IsSlice {
+	for i := range defs {
+		if defs[i].IsSlice {
 			continue // slice args consume remaining, not counted
 		}
 		count++
@@ -438,13 +439,9 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	}
 
 	// Initializer hooks (parent-first) — runs before any parsing.
-	for _, cmd := range chain {
-		if init, ok := cmd.(Initializer); ok {
-			ctx, err = init.Init(ctx)
-			if err != nil {
-				return err
-			}
-		}
+	ctx, err = runInitializerHooks(ctx, chain)
+	if err != nil {
+		return err
 	}
 
 	// Check if leaf disables flag parsing (passthrough mode).
@@ -483,26 +480,13 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	}
 
 	// Defaulter hooks — compute defaults after parsing, before validation.
-	for _, cmd := range chain {
-		if d, ok := cmd.(Defaulter); ok {
-			if err := d.Default(); err != nil {
-				return err
-			}
-		}
+	if err := runDefaulterHooks(chain); err != nil {
+		return err
 	}
 
-	// Validate positional args using the original args.
-	if av, ok := leaf.(ArgsValidator); ok {
-		if err := av.ValidateArgs(originalPositional); err != nil {
-			return err
-		}
-	}
-
-	// Validate leaf.
-	if v, ok := leaf.(Validator); ok {
-		if err := v.Validate(); err != nil {
-			return err
-		}
+	// Validate positional args and leaf command.
+	if err := runValidation(leaf, originalPositional); err != nil {
+		return err
 	}
 
 	// Store parsed flag values in context for Get/Lookup access.
@@ -510,8 +494,9 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 
 	// Inject bound dependencies into command structs.
 	// Auto-bind positional args so commands can declare an Args field.
-	bindOpts := append(opts.bindOpts, bind.Value(Args(resolved.positional)))
-	ctx = bind.With(ctx, bindOpts...)
+	allBindOpts := append([]bind.Option{}, opts.bindOpts...)
+	allBindOpts = append(allBindOpts, bind.Value(Args(resolved.positional)))
+	ctx = bind.With(ctx, allBindOpts...)
 	for _, cmd := range chain {
 		if err := bind.Inject(ctx, cmd); err != nil {
 			return err
@@ -525,19 +510,9 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	ctx = context.WithValue(ctx, leafKey{}, leaf)
 
 	// Before hooks (parent-first).
-	var afterHooks []Commander
-	for _, cmd := range chain {
-		if b, ok := cmd.(Beforer); ok {
-			var err error
-			ctx, err = b.Before(ctx)
-			if err != nil {
-				_ = runAfterHooks(ctx, afterHooks) //nolint:errcheck // best-effort cleanup
-				return err
-			}
-		}
-		if _, ok := cmd.(Afterer); ok {
-			afterHooks = append(afterHooks, cmd)
-		}
+	ctx, afterHooks, err := runBeforeHooks(ctx, chain)
+	if err != nil {
+		return err
 	}
 
 	// Build and wrap run function.
@@ -551,15 +526,74 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 	// After hooks (child-first, always runs).
 	afterErr := runAfterHooks(ctx, afterHooks)
 
+	return handleRunResult(runErr, afterErr, leaf, chain, opts)
+}
+
+func runInitializerHooks(ctx context.Context, chain []Commander) (context.Context, error) {
+	for _, cmd := range chain {
+		if init, ok := cmd.(Initializer); ok {
+			var err error
+			ctx, err = init.Init(ctx)
+			if err != nil {
+				return ctx, err
+			}
+		}
+	}
+	return ctx, nil
+}
+
+func runDefaulterHooks(chain []Commander) error {
+	for _, cmd := range chain {
+		if d, ok := cmd.(Defaulter); ok {
+			if err := d.Default(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func runValidation(leaf Commander, positional []string) error {
+	if av, ok := leaf.(ArgsValidator); ok {
+		if err := av.ValidateArgs(positional); err != nil {
+			return err
+		}
+	}
+	if v, ok := leaf.(Validator); ok {
+		if err := v.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runBeforeHooks(ctx context.Context, chain []Commander) (context.Context, []Commander, error) {
+	var afterHooks []Commander
+	for _, cmd := range chain {
+		if b, ok := cmd.(Beforer); ok {
+			var err error
+			ctx, err = b.Before(ctx)
+			if err != nil {
+				_ = runAfterHooks(ctx, afterHooks) //nolint:errcheck // best-effort cleanup
+				return ctx, nil, err
+			}
+		}
+		if _, ok := cmd.(Afterer); ok {
+			afterHooks = append(afterHooks, cmd)
+		}
+	}
+	return ctx, afterHooks, nil
+}
+
+func handleRunResult(runErr, afterErr error, leaf Commander, chain []Commander, opts *options) error {
 	if runErr != nil {
-		// Check for help/usage signals and render appropriate output.
 		if hs := getHelpSignal(runErr); hs != nil {
 			if hs.full {
-				_ = renderHelp(leaf, chain, opts)
+				_ = renderHelp(leaf, chain, opts) //nolint:errcheck // help render errors are non-fatal
 			} else {
-				_ = renderUsage(leaf, chain, opts)
+				_ = renderUsage(leaf, chain, opts) //nolint:errcheck // usage render errors are non-fatal
 			}
-			return runErr // propagate signal for exit code handling
+			return runErr
 		}
 		return runErr
 	}
@@ -697,7 +731,7 @@ func renderUsage(cmd Commander, chain []Commander, opts *options) error {
 
 // buildCommandPath returns the full command path (e.g., "myapp cluster list").
 func buildCommandPath(chain []Commander) string {
-	var parts []string
+	parts := make([]string, 0, len(chain))
 	for _, cmd := range chain {
 		parts = append(parts, resolveInfo(cmd).name)
 	}
@@ -725,18 +759,19 @@ func buildUsageLine(cmd Commander, path string) string {
 
 	// Add positional args.
 	args := ScanArgs(cmd)
-	for _, arg := range args {
-		if arg.Required {
+	for i := range args {
+		switch {
+		case args[i].Required:
 			usage.WriteString(" <")
-			usage.WriteString(arg.Name)
+			usage.WriteString(args[i].Name)
 			usage.WriteString(">")
-		} else if arg.IsSlice {
+		case args[i].IsSlice:
 			usage.WriteString(" [")
-			usage.WriteString(arg.Name)
+			usage.WriteString(args[i].Name)
 			usage.WriteString("...]")
-		} else {
+		default:
 			usage.WriteString(" [")
-			usage.WriteString(arg.Name)
+			usage.WriteString(args[i].Name)
 			usage.WriteString("]")
 		}
 	}

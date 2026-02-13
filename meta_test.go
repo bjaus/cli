@@ -1,10 +1,14 @@
-package cli
+package cli_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/bjaus/cli"
+)
 
 func TestMeta(t *testing.T) {
 	t.Run("zero value", func(t *testing.T) {
-		m := Meta{}
+		m := cli.Meta{}
 		if m.Name() != "" {
 			t.Errorf("Name() = %q, want empty string", m.Name())
 		}
@@ -14,7 +18,7 @@ func TestMeta(t *testing.T) {
 	})
 
 	t.Run("builder methods", func(t *testing.T) {
-		m := Meta{}.
+		m := cli.Meta{}.
 			WithName("serve").
 			WithDescription("Start the server").
 			WithLongDescription("Start the HTTP server with the given configuration.").
@@ -23,8 +27,8 @@ func TestMeta(t *testing.T) {
 			WithHidden(true).
 			WithDeprecated("use 'run' instead").
 			WithExamples(
-				Example{Description: "Start on port 8080", Command: "app serve --port 8080"},
-				Example{Description: "Start with verbose", Command: "app serve -v"},
+				cli.Example{Description: "Start on port 8080", Command: "app serve --port 8080"},
+				cli.Example{Description: "Start with verbose", Command: "app serve -v"},
 			)
 
 		if m.Name() != "serve" {
@@ -54,7 +58,7 @@ func TestMeta(t *testing.T) {
 	})
 
 	t.Run("builder methods are immutable", func(t *testing.T) {
-		m1 := Meta{}.WithName("serve")
+		m1 := cli.Meta{}.WithName("serve")
 		m2 := m1.WithAliases("s")
 
 		if len(m1.Aliases()) != 0 {
@@ -68,12 +72,12 @@ func TestMeta(t *testing.T) {
 
 func TestMetaEmbed(t *testing.T) {
 	type ServeCmd struct {
-		Meta
+		cli.Meta
 		Port int
 	}
 
 	cmd := &ServeCmd{
-		Meta: Meta{}.
+		Meta: cli.Meta{}.
 			WithName("serve").
 			WithDescription("Start the server").
 			WithAliases("s"),
@@ -81,14 +85,14 @@ func TestMetaEmbed(t *testing.T) {
 	}
 
 	// Verify interface satisfaction via embedding
-	var _ Namer = cmd
-	var _ Descriptor = cmd
-	var _ LongDescriptor = cmd
-	var _ Aliaser = cmd
-	var _ Categorizer = cmd
-	var _ Hider = cmd
-	var _ Deprecator = cmd
-	var _ Exampler = cmd
+	var _ cli.Namer = cmd
+	var _ cli.Descriptor = cmd
+	var _ cli.LongDescriptor = cmd
+	var _ cli.Aliaser = cmd
+	var _ cli.Categorizer = cmd
+	var _ cli.Hider = cmd
+	var _ cli.Deprecator = cmd
+	var _ cli.Exampler = cmd
 
 	if cmd.Name() != "serve" {
 		t.Errorf("Name() = %q, want %q", cmd.Name(), "serve")
@@ -100,7 +104,7 @@ func TestMetaEmbed(t *testing.T) {
 
 func TestMetaEmbed_ZeroValue(t *testing.T) {
 	type ServeCmd struct {
-		Meta
+		cli.Meta
 	}
 
 	cmd := &ServeCmd{} // No Meta initialization

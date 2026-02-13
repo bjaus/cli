@@ -21,7 +21,7 @@
 // # Custom Templates
 //
 // The [Template] renderer allows complete control over help output using Go's
-// text/template syntax. Templates receive a [HelpData] struct with all command
+// text/template syntax. Templates receive a [Data] struct with all command
 // metadata:
 //
 //	tmpl := `{{.Name}} - {{.Description}}
@@ -29,7 +29,7 @@
 //	{{end}}`
 //	renderer, _ := help.Template(tmpl)
 //
-// Use [BuildHelpData] to access the structured help data programmatically.
+// Use [BuildData] to access the structured help data programmatically.
 package help
 
 import (

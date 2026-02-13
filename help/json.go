@@ -20,9 +20,9 @@ func JSON(opts ...Option) cli.HelpRenderer {
 	return &jsonRenderer{opts: applyOptions(opts)}
 }
 
-// HelpData is the structured representation of command help.
+// Data is the structured representation of command help.
 // It is used by both the JSON renderer and the Template renderer.
-type HelpData struct {
+type Data struct {
 	Name            string        `json:"name"`
 	Description     string        `json:"description,omitempty"`
 	LongDescription string        `json:"longDescription,omitempty"`
@@ -85,7 +85,7 @@ type ExampleData struct {
 
 // RenderHelp implements cli.HelpRenderer.
 func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef) string {
-	h := BuildHelpData(cmd, chain, flags, args, globalFlags, r.opts.Sorted)
+	h := BuildData(cmd, chain, flags, args, globalFlags, r.opts.Sorted)
 
 	// Marshal to JSON.
 	data, err := json.MarshalIndent(h, "", "  ")
@@ -95,14 +95,14 @@ func (r *jsonRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flag
 	return string(data) + "\n"
 }
 
-// BuildHelpData constructs a HelpData struct from command metadata.
+// BuildData constructs a Data struct from command metadata.
 // This is useful for custom template rendering or programmatic access.
-func BuildHelpData(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef, sorted bool) HelpData {
+func BuildData(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef, sorted bool) Data {
 	info := ResolveInfo(cmd)
 	chainNames := CommandPath(chain)
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck
 
-	h := HelpData{
+	h := Data{
 		Name:            chainNames,
 		Description:     info.Description,
 		LongDescription: info.LongDescription,

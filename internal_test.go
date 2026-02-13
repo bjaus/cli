@@ -1347,6 +1347,10 @@ func TestExecute_BeforeError(t *testing.T) {
 
 // --- Initializer tests ---
 
+type initKeyType struct{}
+
+var initKey = initKeyType{}
+
 type initializerCmd struct {
 	initCalled bool
 	initCtxVal string
@@ -1356,12 +1360,12 @@ type initializerCmd struct {
 func (c *initializerCmd) Run(_ context.Context) error { return nil }
 func (c *initializerCmd) Init(ctx context.Context) (context.Context, error) {
 	c.initCalled = true
-	return context.WithValue(ctx, "init-key", "init-value"), nil
+	return context.WithValue(ctx, initKey, "init-value"), nil
 }
 
 func (c *initializerCmd) Before(ctx context.Context) (context.Context, error) {
 	// Verify context from Init is available
-	if v, ok := ctx.Value("init-key").(string); ok {
+	if v, ok := ctx.Value(initKey).(string); ok {
 		c.initCtxVal = v
 	}
 	return ctx, nil

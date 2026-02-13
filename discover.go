@@ -360,6 +360,7 @@ func scanEmbeddedCommands(cmd Commander) ([]Commander, error) {
 	}
 
 	t := v.Type()
+	//nolint:prealloc // can't know how many fields implement Commander until we check
 	var subs []Commander
 	names := make(map[string]string) // command name -> field name (for error messages)
 
@@ -408,6 +409,7 @@ func scanEmbeddedCommands(cmd Commander) ([]Commander, error) {
 			}
 			fv = fv.Elem()
 		}
+		//nolint:forcetypeassert,errcheck // type assertion is safe - we verified ptrType.Implements(commanderType) above
 		sub := fv.Addr().Interface().(Commander)
 
 		// Check for name collision.

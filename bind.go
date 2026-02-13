@@ -102,9 +102,9 @@ func (a Args) Tail() Args {
 // Commands declare dependencies as struct fields without tags:
 //
 //	type ServeCmd struct {
-//	    DB     *sql.DB   // injected by type
-//	    Cache  Cache     // injected by interface
-//	    Port   int       `flag:"port"` // NOT injected (has flag tag)
+//	    DB    *sql.DB // injected by type
+//	    C     Cache   // injected by interface
+//	    Port  int     `flag:"port"` // NOT injected (has flag tag)
 //	}
 //
 // Fields with flag:, arg:, or env: tags are not eligible for injection.

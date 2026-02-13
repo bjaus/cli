@@ -158,7 +158,7 @@ var (
 var (
 	// ShowHelp triggers full help display and exits with code 0.
 	// Use when the user explicitly requests help (e.g., "myapp help subcmd").
-	ShowHelp = &helpSignal{code: 0, full: true}
+	ShowHelp = &helpSignal{code: 0, full: true} //nolint:errname // success signal, not error
 
 	// ErrShowHelp triggers full help display and exits with code 1.
 	// Use when showing help due to an error condition (e.g., missing required subcommand).
@@ -166,7 +166,7 @@ var (
 
 	// ShowUsage triggers brief usage display and exits with code 0.
 	// Use when the user explicitly requests usage information.
-	ShowUsage = &helpSignal{code: 0, full: false}
+	ShowUsage = &helpSignal{code: 0, full: false} //nolint:errname // success signal, not error
 
 	// ErrShowUsage triggers brief usage display and exits with code 1.
 	// Use when showing usage due to an error condition.
@@ -175,7 +175,7 @@ var (
 
 // helpSignal is a special error type that signals the framework to display
 // help or usage information and exit with a specific code.
-type helpSignal struct {
+type helpSignal struct { //nolint:errname // signal type, not error
 	code int  // exit code: 0 for success, 1 for error
 	full bool // true for full help, false for brief usage
 }

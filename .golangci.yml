@@ -177,8 +177,9 @@ linters:
       period: false
       capital: false
     gomoddirectives:
-      replace-local: false
-      replace-allow-list: []
+      replace-local: true
+      replace-allow-list:
+        - github.com/bjaus/bind
       retract-allow-no-explanation: false
       exclude-forbidden: false
     gosec:

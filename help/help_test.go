@@ -512,7 +512,7 @@ func TestTemplateWithFunctions(t *testing.T) {
 	}
 }
 
-func TestBuildHelpData(t *testing.T) {
+func TestBuildData(t *testing.T) {
 	root := &testRoot{}
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
@@ -520,7 +520,7 @@ func TestBuildHelpData(t *testing.T) {
 	args := cli.ScanArgs(serve)
 	globalFlags := cli.ScanFlags(root)
 
-	data := help.BuildHelpData(serve, chain, flags, args, globalFlags, false)
+	data := help.BuildData(serve, chain, flags, args, globalFlags, false)
 
 	if data.Name != "myapp serve" {
 		t.Errorf("expected name 'myapp serve', got %q", data.Name)

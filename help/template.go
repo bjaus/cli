@@ -16,7 +16,7 @@ type templateRenderer struct {
 }
 
 // Template returns a help renderer using a Go text/template string.
-// The template receives a HelpData struct as its data context.
+// The template receives a Data struct as its data context.
 //
 // Available template functions:
 //   - join: strings.Join
@@ -54,8 +54,9 @@ func MustTemplate(tmplStr string, opts ...Option) cli.HelpRenderer {
 }
 
 // TemplateFile returns a help renderer using a template file.
-// The template receives a HelpData struct as its data context.
+// The template receives a Data struct as its data context.
 func TemplateFile(path string, opts ...Option) (cli.HelpRenderer, error) {
+	//nolint:gosec // G304: path is provided by the caller, not user input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -74,7 +75,7 @@ func MustTemplateFile(path string, opts ...Option) cli.HelpRenderer {
 
 // RenderHelp implements cli.HelpRenderer.
 func (r *templateRenderer) RenderHelp(cmd cli.Commander, chain []cli.Commander, flags []cli.FlagDef, args []cli.ArgDef, globalFlags []cli.FlagDef) string {
-	data := BuildHelpData(cmd, chain, flags, args, globalFlags, r.opts.Sorted)
+	data := BuildData(cmd, chain, flags, args, globalFlags, r.opts.Sorted)
 
 	var buf bytes.Buffer
 	if err := r.tmpl.Execute(&buf, data); err != nil {
@@ -128,12 +129,13 @@ func wrap(n int, s string) string {
 	var lines []string
 	var line strings.Builder
 	for _, word := range words {
-		if line.Len() == 0 {
+		switch {
+		case line.Len() == 0:
 			line.WriteString(word)
-		} else if line.Len()+1+len(word) <= n {
+		case line.Len()+1+len(word) <= n:
 			line.WriteString(" ")
 			line.WriteString(word)
-		} else {
+		default:
 			lines = append(lines, line.String())
 			line.Reset()
 			line.WriteString(word)
