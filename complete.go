@@ -127,8 +127,8 @@ func FlagNameFor[T any](cmd *T, fieldPtr any) string {
 			if flagName := field.Tag.Get("flag"); flagName != "" {
 				return flagName
 			}
-			// Fall back to lowercase field name if no flag tag.
-			return strings.ToLower(field.Name)
+			// Fall back to kebab-case field name if no flag tag.
+			return camelToKebab(field.Name)
 		}
 	}
 	return ""

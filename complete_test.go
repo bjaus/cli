@@ -515,10 +515,10 @@ func TestRuntimeComplete_DescriptionOutput(t *testing.T) {
 // --- FlagNameFor tests ---
 
 type compFlagNameForCmd struct {
-	Region  string `flag:"region" short:"r" help:"AWS region"`
-	Port    int    `flag:"port" help:"Port number"`
-	Verbose bool   `flag:"verbose"`
-	NoTag   string // No flag tag, should use lowercase field name
+	Region       string `flag:"region" short:"r" help:"AWS region"`
+	Port         int    `flag:"port" help:"Port number"`
+	Verbose      bool   `flag:"verbose"`
+	OutputFormat string // No flag tag, should derive kebab-case name
 }
 
 func (c *compFlagNameForCmd) Run(_ context.Context) error { return nil }
@@ -531,7 +531,7 @@ func TestFlagNameFor(t *testing.T) {
 	assert.Equal(t, "region", cli.FlagNameFor(cmd, &cmd.Region))
 	assert.Equal(t, "port", cli.FlagNameFor(cmd, &cmd.Port))
 	assert.Equal(t, "verbose", cli.FlagNameFor(cmd, &cmd.Verbose))
-	assert.Equal(t, "notag", cli.FlagNameFor(cmd, &cmd.NoTag))
+	assert.Equal(t, "output-format", cli.FlagNameFor(cmd, &cmd.OutputFormat))
 }
 
 func TestFlagNameFor_InvalidInput(t *testing.T) {
