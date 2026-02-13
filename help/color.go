@@ -8,6 +8,15 @@ import (
 	"golang.org/x/term"
 )
 
+var (
+	isTerminalFunc = func(f *os.File) bool {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	getTermSizeFunc = func(fd int) (int, int, error) { //nolint:gocritic // test override
+		return term.GetSize(fd)
+	}
+)
+
 // ANSI color codes.
 const (
 	Reset      = "\033[0m"
@@ -156,7 +165,7 @@ func detectColor() bool {
 
 // isTerminal checks if the file is a terminal.
 func isTerminal(f *os.File) bool {
-	return term.IsTerminal(int(f.Fd()))
+	return isTerminalFunc(f)
 }
 
 // detectWidth determines terminal width from environment or ioctl.
@@ -168,7 +177,7 @@ func detectWidth() int {
 		}
 	}
 	// Try to get terminal size.
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
+	if w, _, err := getTermSizeFunc(int(os.Stdout.Fd())); err == nil && w > 0 {
 		return w
 	}
 	// Default width.
