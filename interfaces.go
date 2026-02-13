@@ -117,7 +117,11 @@ type Exampler interface {
 	Examples() []Example
 }
 
-// Versioner provides a version string, displayed when --version is passed.
+// Versioner provides a version string, displayed when --version or -V is passed.
+// Typically implemented on the root command. The version is shown regardless of
+// which subcommand is invoked (e.g., "myapp serve --version" shows app version).
+// This matches standard CLI behavior where --version always shows the application
+// version, not a subcommand-specific version.
 type Versioner interface {
 	Version() string
 }
