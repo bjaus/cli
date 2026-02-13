@@ -37,7 +37,10 @@ func (h *helpCmd) Run(_ context.Context) error {
 		if err != nil {
 			return fmt.Errorf("%w: %s", ErrUnknownCommand, name)
 		}
-		sub := findSubcommand(subs, name, false, false)
+		sub, err := findSubcommand(subs, name, false, false)
+		if err != nil {
+			return err
+		}
 		if sub == nil {
 			return fmt.Errorf("%w: %s", ErrUnknownCommand, name)
 		}

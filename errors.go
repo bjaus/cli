@@ -33,7 +33,8 @@ import (
 //	                 ├── ErrArgCount
 //	                 └── ErrArgOrder
 //
-//	ErrCommand ──────┴── ErrUnknownCommand
+//	ErrCommand ──────┬── ErrUnknownCommand
+//	                 └── ErrAmbiguousCommand
 //
 //	ErrFlagGroup ────┬── ErrMutuallyExclusive
 //	                 ├── ErrRequiredTogether
@@ -125,6 +126,9 @@ var (
 
 	// ErrUnknownCommand indicates an unrecognized subcommand was provided.
 	ErrUnknownCommand = newSentinel("unknown command", ErrCommand)
+
+	// ErrAmbiguousCommand indicates a prefix matched multiple subcommands.
+	ErrAmbiguousCommand = newSentinel("ambiguous command", ErrCommand)
 )
 
 // --- Flag group errors ---

@@ -212,8 +212,8 @@ func walkCommandTree(root Commander, contextArgs []string) Commander {
 			continue
 		}
 
-		sub := findSubcommand(subs, arg, false, false)
-		if sub == nil {
+		sub, err := findSubcommand(subs, arg, false, false)
+		if err != nil || sub == nil {
 			remaining = remaining[1:]
 			continue
 		}

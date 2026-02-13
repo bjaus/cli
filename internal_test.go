@@ -838,7 +838,8 @@ func TestScanLevel(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			flags, next, found := scanLevel(tt.args, fi, subs, false, false)
+			flags, next, found, err := scanLevel(tt.args, fi, subs, false, false)
+			require.NoError(t, err)
 			assert.Equal(t, tt.wantFlags, flags)
 			assert.Equal(t, tt.wantNext, next)
 			if tt.wantFoundSub != "" {
@@ -2128,11 +2129,12 @@ func TestFindSubcommand_PrefixMatch(t *testing.T) {
 		name    string
 		prefix  bool
 		wantNil bool
+		wantErr bool
 		want    string
 	}{
 		"exact match no prefix":   {name: "serve", prefix: false, want: "serve"},
 		"prefix match unique":     {name: "dep", prefix: true, want: "deploy"},
-		"prefix match ambiguous":  {name: "s", prefix: true, wantNil: true},
+		"prefix match ambiguous":  {name: "s", prefix: true, wantErr: true},
 		"prefix disabled":         {name: "ser", prefix: false, wantNil: true},
 		"prefix match unique ser": {name: "ser", prefix: true, want: "serve"},
 	}
@@ -2141,7 +2143,13 @@ func TestFindSubcommand_PrefixMatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			result := findSubcommand(subs, tt.name, tt.prefix, false)
+			result, err := findSubcommand(subs, tt.name, tt.prefix, false)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, ErrAmbiguousCommand)
+				return
+			}
+			require.NoError(t, err)
 			if tt.wantNil {
 				assert.Nil(t, result)
 			} else {
@@ -2164,9 +2172,11 @@ func TestFindSubcommand_PrefixMatchAliasAmbiguous(t *testing.T) {
 	t.Parallel()
 
 	subs := []Commander{&internalAliasedForPrefix{}}
-	// "de" matches prefix of both "deploy" and alias "dep" — ambiguous in our impl.
-	result := findSubcommand(subs, "de", true, false)
-	assert.Nil(t, result)
+	// "de" matches prefix of both "deploy" and alias "dep" — same command, not ambiguous.
+	result, err := findSubcommand(subs, "de", true, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "deploy", resolveInfo(result).name)
 }
 
 // --- Short option combining ---
@@ -2638,17 +2648,21 @@ func TestFindSubcommand_PrefixMatchAlias(t *testing.T) {
 	subs := []Commander{&internalPrefixAliased{}, &internalNamedCmd{n: "status"}}
 
 	// "d" matches prefix of "deploy" and alias "dp" — but both are the same command.
-	// In our implementation: first match on "deploy" sets match, second on "dp" sees match != nil → ambiguous.
-	result := findSubcommand(subs, "d", true, false)
-	assert.Nil(t, result) // ambiguous between name and alias
+	// Updated behavior: same command matching via name and alias is not ambiguous.
+	result, err := findSubcommand(subs, "d", true, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "deploy", resolveInfo(result).name)
 
 	// "sta" uniquely matches "status"
-	result = findSubcommand(subs, "sta", true, false)
+	result, err = findSubcommand(subs, "sta", true, false)
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "status", resolveInfo(result).name)
 
 	// "dp" exact match via alias
-	result = findSubcommand(subs, "dp", true, false)
+	result, err = findSubcommand(subs, "dp", true, false)
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "deploy", resolveInfo(result).name)
 }
@@ -2665,7 +2679,8 @@ func TestFindSubcommand_PrefixMatchAliasOnly(t *testing.T) {
 
 	subs := []Commander{&internalOnlyAliasPrefix{}}
 	// "d" does NOT prefix-match "xdeploy" but DOES prefix-match alias "dp".
-	result := findSubcommand(subs, "d", true, false)
+	result, err := findSubcommand(subs, "d", true, false)
+	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "xdeploy", resolveInfo(result).name)
 }

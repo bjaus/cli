@@ -2319,3 +2319,35 @@ func TestExecute_BranchingCommand_OptionalArgBeforeSubcommand(t *testing.T) {
 	assert.True(t, child.ran, "subcommand should have been executed")
 	assert.Equal(t, "123", parent.ID, "optional arg should be populated from arg before subcommand")
 }
+
+// --- Ambiguous prefix matching ---
+
+type ambiguousParent struct{}
+
+func (p *ambiguousParent) Run(_ context.Context) error { return nil }
+func (p *ambiguousParent) Name() string                { return "app" }
+func (p *ambiguousParent) Subcommands() []cli.Commander {
+	return []cli.Commander{&ambiguousSub1{}, &ambiguousSub2{}}
+}
+
+type ambiguousSub1 struct{}
+
+func (c *ambiguousSub1) Run(_ context.Context) error { return nil }
+func (c *ambiguousSub1) Name() string                { return "serve" }
+
+type ambiguousSub2 struct{}
+
+func (c *ambiguousSub2) Run(_ context.Context) error { return nil }
+func (c *ambiguousSub2) Name() string                { return "status" }
+
+func TestExecute_PrefixMatching_AmbiguousReportsError(t *testing.T) {
+	t.Parallel()
+
+	parent := &ambiguousParent{}
+	// "s" matches both "serve" and "status" — should report ambiguous, not unknown.
+	err := cli.Execute(context.Background(), parent, []string{"s"}, cli.WithPrefixMatching(true))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrAmbiguousCommand)
+	assert.Contains(t, err.Error(), "serve")
+	assert.Contains(t, err.Error(), "status")
+}

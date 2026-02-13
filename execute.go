@@ -87,7 +87,10 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 
 			// Look for subcommand in remaining args. Any non-flag args before
 			// the subcommand are potential optional args for the branching command.
-			sub := findSubcommandInArgs(remaining, subs, opts.prefixMatching, opts.caseInsensitive)
+			sub, err := findSubcommandInArgs(remaining, subs, opts.prefixMatching, opts.caseInsensitive)
+			if err != nil {
+				return nil, err
+			}
 			if sub == nil {
 				// No subcommand found. All remaining positional args belong to
 				// this command (required args already captured, rest are optional).
@@ -112,7 +115,10 @@ func resolveCommand(root Commander, args []string, opts *options) (*resolvedComm
 			continue
 		}
 
-		cmdFlags, next, found := scanLevel(remaining, fi, subs, opts.prefixMatching, opts.caseInsensitive)
+		cmdFlags, next, found, err := scanLevel(remaining, fi, subs, opts.prefixMatching, opts.caseInsensitive)
+		if err != nil {
+			return nil, err
+		}
 		chainArgs[idx] = cmdFlags
 
 		if found == nil {
@@ -167,8 +173,8 @@ type subMatch struct {
 
 // scanLevel scans args at the current command level, consuming known flags
 // and looking for a subcommand match. Returns consumed flags, unconsumed
-// non-flag args, and a subMatch if a subcommand was found.
-func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseInsensitive bool) ([]string, []string, *subMatch) {
+// non-flag args, a subMatch if a subcommand was found, and any error.
+func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseInsensitive bool) ([]string, []string, *subMatch, error) {
 	var cmdFlags, next []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -177,7 +183,7 @@ func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseI
 			// Preserve "--" in output so it flows to separateLeafArgs,
 			// which will strip it and treat everything after as positional.
 			next = append(next, args[i:]...)
-			return cmdFlags, next, nil
+			return cmdFlags, next, nil, nil
 		}
 
 		if strings.HasPrefix(arg, "-") {
@@ -189,16 +195,19 @@ func scanLevel(args []string, fi flagIndex, subs []Commander, prefixMatch, caseI
 		}
 
 		if !strings.HasPrefix(arg, "-") {
-			sub := findSubcommand(subs, arg, prefixMatch, caseInsensitive)
+			sub, err := findSubcommand(subs, arg, prefixMatch, caseInsensitive)
+			if err != nil {
+				return nil, nil, nil, err
+			}
 			if sub != nil {
-				return cmdFlags, nil, &subMatch{sub: sub, remaining: args[i+1:]}
+				return cmdFlags, nil, &subMatch{sub: sub, remaining: args[i+1:]}, nil
 			}
 		}
 
 		next = append(next, arg)
 	}
 
-	return cmdFlags, next, nil
+	return cmdFlags, next, nil, nil
 }
 
 // tryConsumeFlag checks if args[i] is a known flag and returns how many
@@ -262,7 +271,7 @@ func separateLeafArgs(args []string, fi flagIndex) ([]string, []string) {
 	return flags, positional
 }
 
-func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive bool) Commander {
+func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive bool) (Commander, error) {
 	eq := func(a, b string) bool {
 		if caseInsensitive {
 			return strings.EqualFold(a, b)
@@ -280,39 +289,47 @@ func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive 
 	for _, s := range subs {
 		info := resolveInfo(s)
 		if eq(info.name, name) {
-			return s
+			return s, nil
 		}
 		for _, alias := range info.aliases {
 			if eq(alias, name) {
-				return s
+				return s, nil
 			}
 		}
 	}
 
 	if !prefixMatch {
-		return nil
+		return nil, nil
 	}
 
 	// Unique prefix match.
 	var match Commander
+	var matches []string
 	for _, s := range subs {
 		info := resolveInfo(s)
 		if hasPrefix(info.name, name) {
 			if match != nil {
-				return nil // ambiguous
+				matches = append(matches, info.name)
+			} else {
+				matches = []string{info.name}
 			}
 			match = s
 		}
 		for _, alias := range info.aliases {
 			if hasPrefix(alias, name) {
-				if match != nil {
-					return nil
+				if match != nil && match != s {
+					matches = append(matches, alias)
+				} else if match == nil {
+					matches = []string{alias}
 				}
 				match = s
 			}
 		}
 	}
-	return match
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("%w: %q matches %s", ErrAmbiguousCommand, name, strings.Join(matches, ", "))
+	}
+	return match, nil
 }
 
 // scanBranchingLevel scans args for a branching command, returning flags,
@@ -369,19 +386,23 @@ func countBranchArgs(cmd Commander) int {
 
 // findSubcommandInArgs finds the first subcommand match in args.
 // Returns the matched subcommand, any non-flag args that appeared before it
-// (potential optional args for the parent), and remaining args after it.
-func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInsensitive bool) *subMatch {
+// (potential optional args for the parent), remaining args after it, and any error.
+func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInsensitive bool) (*subMatch, error) {
 	var before []string
 	for i, arg := range args {
 		if strings.HasPrefix(arg, "-") {
 			continue
 		}
-		if sub := findSubcommand(subs, arg, prefixMatch, caseInsensitive); sub != nil {
-			return &subMatch{sub: sub, before: before, remaining: args[i+1:]}
+		sub, err := findSubcommand(subs, arg, prefixMatch, caseInsensitive)
+		if err != nil {
+			return nil, err
+		}
+		if sub != nil {
+			return &subMatch{sub: sub, before: before, remaining: args[i+1:]}, nil
 		}
 		before = append(before, arg)
 	}
-	return nil
+	return nil, nil
 }
 
 // filterNonFlags returns only the non-flag args from the input slice.
