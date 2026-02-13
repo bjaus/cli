@@ -560,3 +560,48 @@ func TestFlagNameFor_InCompleteFlag(t *testing.T) {
 		t.Error("FlagNameFor should match the flag name")
 	}
 }
+
+// --- --flag=value completion tests ---
+
+func TestComputeCompletions_FlagEqualsValue(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// FlagCompleter provides completions for --region=.
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--region="})
+	assert.Equal(t, cli.ShellCompDirectiveNoSpace, result.Directive)
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "--region=us-east-1")
+	assert.Contains(t, values, "--region=us-west-2")
+	assert.Contains(t, values, "--region=eu-west-1")
+}
+
+func TestComputeCompletions_FlagEqualsValuePartial(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// Partial value --region=us-e filters to us-east-1.
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--region=us-e"})
+	assert.Equal(t, cli.ShellCompDirectiveNoSpace, result.Directive)
+	assert.Equal(t, []string{"--region=us-east-1"}, completionValues(result.Completions))
+}
+
+func TestComputeCompletions_FlagEqualsValueEnum(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// Enum completion for --format=.
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--format="})
+	values := completionValues(result.Completions)
+	assert.Contains(t, values, "--format=json")
+	assert.Contains(t, values, "--format=yaml")
+}
+
+func TestComputeCompletions_FlagEqualsValueEnumPartial(t *testing.T) {
+	t.Parallel()
+	cmd := &compFlagCompleterCmd{}
+
+	// Partial enum --format=j filters to json.
+	result := cli.ComputeCompletions(context.Background(), cmd, []string{"--format=j"})
+	assert.Equal(t, []string{"--format=json"}, completionValues(result.Completions))
+}

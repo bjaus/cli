@@ -171,6 +171,11 @@ func computeCompletions(ctx context.Context, root Commander, args []string) Comp
 		return result
 	}
 
+	// Handle --flag=value completion (partial equals form).
+	if result, ok := completeFlagEqualsValue(ctx, target, toComplete); ok {
+		return result
+	}
+
 	// Complete flags if prefix starts with "-".
 	if strings.HasPrefix(toComplete, "-") {
 		return completeFlagNames(target, toComplete)
@@ -255,6 +260,69 @@ func completeFlagNames(target Commander, toComplete string) CompletionResult {
 		directive = ShellCompDirectiveDefault
 	}
 	return CompletionResult{Completions: candidates, Directive: directive}
+}
+
+// completeFlagEqualsValue handles completion for --flag=value form.
+// Returns completions formatted as --flag=value to replace the entire token.
+func completeFlagEqualsValue(ctx context.Context, target Commander, toComplete string) (CompletionResult, bool) {
+	if !strings.HasPrefix(toComplete, "-") {
+		return CompletionResult{}, false
+	}
+	eqIdx := strings.Index(toComplete, "=")
+	if eqIdx < 0 {
+		return CompletionResult{}, false
+	}
+
+	flagPart := toComplete[:eqIdx]    // e.g., "--format"
+	valuePart := toComplete[eqIdx+1:] // e.g., "js"
+
+	flagName := lookupValueFlagName(target, flagPart)
+	if flagName == "" {
+		return CompletionResult{}, false
+	}
+
+	var candidates []Completion
+
+	// Try FlagCompleter interface.
+	if fc, ok := target.(FlagCompleter); ok {
+		result := fc.CompleteFlag(ctx, flagName, valuePart)
+		if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
+			// Prefix completions with --flag= so they replace the whole token.
+			for _, c := range result.Completions {
+				if strings.HasPrefix(c.Value, valuePart) {
+					candidates = append(candidates, Completion{
+						Value:       flagPart + "=" + c.Value,
+						Description: c.Description,
+					})
+				}
+			}
+			if len(candidates) > 0 {
+				return CompletionResult{
+					Completions: candidates,
+					ActiveHelp:  result.ActiveHelp,
+					Directive:   ShellCompDirectiveNoSpace,
+				}, true
+			}
+		}
+	}
+
+	// Try enum completion.
+	if enumVals := lookupFlagEnumByName(target, flagName); enumVals != "" {
+		vals := strings.Split(enumVals, ",")
+		for _, v := range vals {
+			if strings.HasPrefix(v, valuePart) {
+				candidates = append(candidates, Completion{Value: flagPart + "=" + v})
+			}
+		}
+		if len(candidates) > 0 {
+			return CompletionResult{
+				Completions: candidates,
+				Directive:   ShellCompDirectiveNoSpace,
+			}, true
+		}
+	}
+
+	return CompletionResult{}, false
 }
 
 func completeFlagValue(ctx context.Context, target Commander, contextArgs []string, toComplete string) (CompletionResult, bool) {
@@ -392,6 +460,18 @@ func lookupFlagEnum(cmd Commander, arg string) string {
 			continue
 		}
 		if f.Name == name || f.Short == name || slices.Contains(f.Alt, name) {
+			return f.Enum
+		}
+	}
+	return ""
+}
+
+// lookupFlagEnumByName returns the Enum string for a flag by its name (without dashes).
+func lookupFlagEnumByName(cmd Commander, flagName string) string {
+	flags := ScanFlags(cmd)
+	for i := range flags {
+		f := &flags[i]
+		if f.Name == flagName && f.Enum != "" {
 			return f.Enum
 		}
 	}
