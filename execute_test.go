@@ -2393,3 +2393,53 @@ func TestWithTerminalCheck_DisableTerminal(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, cli.ErrRequiredFlag)
 }
+
+// --- SubcommandRequired tests ---
+
+type subReqParent struct {
+	child *subReqChild // unexported to avoid auto-discovery collision
+}
+
+func (s *subReqParent) Run(_ context.Context) error  { return nil }
+func (s *subReqParent) Name() string                 { return "parent" }
+func (s *subReqParent) SubcommandRequired() bool     { return true }
+func (s *subReqParent) Subcommands() []cli.Commander { return []cli.Commander{s.child} }
+
+type subReqChild struct{}
+
+func (s *subReqChild) Run(_ context.Context) error { return nil }
+func (s *subReqChild) Name() string                { return "child" }
+
+func TestExecute_SubcommandRequired_ErrorsWhenNotProvided(t *testing.T) {
+	t.Parallel()
+
+	cmd := &subReqParent{child: &subReqChild{}}
+	err := cli.Execute(context.Background(), cmd, nil)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cli.ErrMissingSubcommand)
+	assert.ErrorIs(t, err, cli.ErrCommand)
+	assert.Contains(t, err.Error(), "parent")
+}
+
+func TestExecute_SubcommandRequired_WorksWhenSubcommandProvided(t *testing.T) {
+	t.Parallel()
+
+	cmd := &subReqParent{child: &subReqChild{}}
+	err := cli.Execute(context.Background(), cmd, []string{"child"})
+
+	require.NoError(t, err)
+}
+
+func TestExecute_SubcommandRequired_HelpStillWorks(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	cmd := &subReqParent{child: &subReqChild{}}
+	err := cli.Execute(context.Background(), cmd, []string{"--help"},
+		cli.WithStdout(&stdout),
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "parent")
+}

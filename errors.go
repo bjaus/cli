@@ -129,6 +129,9 @@ var (
 
 	// ErrAmbiguousCommand indicates a prefix matched multiple subcommands.
 	ErrAmbiguousCommand = newSentinel("ambiguous command", ErrCommand)
+
+	// ErrMissingSubcommand indicates a command that requires a subcommand was invoked directly.
+	ErrMissingSubcommand = newSentinel("missing subcommand", ErrCommand)
 )
 
 // --- Flag group errors ---

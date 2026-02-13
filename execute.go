@@ -479,6 +479,10 @@ func execute(ctx context.Context, root Commander, args []string, opts *options) 
 		return err
 	}
 
+	if err := checkSubcommandRequired(leaf); err != nil {
+		return err
+	}
+
 	ctx, err = runInitializerHooks(ctx, chain)
 	if err != nil {
 		return err
@@ -959,4 +963,18 @@ func suggestFlag(cmd Commander, parseErr error) string {
 		return s.Suggest(parseErr.Error())
 	}
 	return suggestFromError(cmd, parseErr)
+}
+
+// checkSubcommandRequired returns an error if cmd requires a subcommand but
+// none was provided. This is checked after command resolution completes.
+func checkSubcommandRequired(cmd Commander) error {
+	sr, ok := cmd.(SubcommandRequired)
+	if !ok || !sr.SubcommandRequired() {
+		return nil
+	}
+	subs, err := allSubcommands(cmd)
+	if err != nil || len(subs) == 0 {
+		return nil // no subcommands defined, nothing to require
+	}
+	return fmt.Errorf("%w: %s", ErrMissingSubcommand, resolveInfo(cmd).name)
 }

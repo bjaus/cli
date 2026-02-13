@@ -25,6 +25,7 @@ import "context"
 // # Structure
 //
 //   - [Subcommander] — declare child subcommands
+//   - [SubcommandRequired] — require a subcommand (no direct invocation)
 //   - [Fallbacker] — default subcommand when none matches
 //   - [Discoverer] — runtime-discovered commands (plugins)
 //
@@ -135,6 +136,21 @@ type Categorizer interface {
 // Fallbacker provides a fallback subcommand to run when no subcommand name matches.
 type Fallbacker interface {
 	Fallback() Commander
+}
+
+// SubcommandRequired marks a command as requiring a subcommand. When a command
+// implements this interface and SubcommandRequired returns true, invoking the
+// command without a subcommand returns [ErrMissingSubcommand] instead of
+// calling Run. Implement this for commands that serve only as grouping nodes.
+//
+//	type AdminCmd struct{}
+//	func (a *AdminCmd) Run(ctx context.Context) error { panic("unreachable") }
+//	func (a *AdminCmd) SubcommandRequired() bool { return true }
+//	func (a *AdminCmd) Subcommands() []cli.Commander {
+//	    return []cli.Commander{&UserCmd{}, &RoleCmd{}}
+//	}
+type SubcommandRequired interface {
+	SubcommandRequired() bool
 }
 
 // Discoverer provides runtime-discovered commands (plugins). Discovered
