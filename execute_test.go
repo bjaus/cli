@@ -2082,7 +2082,8 @@ func TestScanArgs_External(t *testing.T) {
 	t.Parallel()
 
 	cmd := &argCopyCmd{}
-	defs := cli.ScanArgs(cmd)
+	defs, err := cli.ScanArgs(cmd)
+	require.NoError(t, err)
 	require.Len(t, defs, 2)
 	assert.Equal(t, "source", defs[0].Name)
 	assert.Equal(t, "dest", defs[1].Name)

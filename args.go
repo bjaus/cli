@@ -9,15 +9,8 @@ import (
 
 // ScanArgs inspects a command's struct tags and returns positional arg definitions.
 // This is exported so custom [HelpRenderer] implementations can inspect a command's args.
-// If the arg definitions are invalid (e.g., variadic arg not last), returns nil.
-func ScanArgs(cmd Commander) []ArgDef {
-	defs, _ := scanArgsValidated(cmd)
-	return defs
-}
-
-// scanArgsValidated inspects a command's struct tags and returns positional arg definitions.
 // Returns an error if the arg definitions are invalid (e.g., variadic arg not last).
-func scanArgsValidated(cmd Commander) ([]ArgDef, error) {
+func ScanArgs(cmd Commander) ([]ArgDef, error) {
 	v := reflect.ValueOf(cmd)
 	if v.Kind() == reflect.Ptr {
 		v = v.Elem()
@@ -86,7 +79,7 @@ func scanArgsRecurse(t reflect.Type, defs *[]ArgDef, sawVariadic *bool) error {
 // remaining arguments. Returns unconsumed positional arguments.
 func populateArgs(cmd Commander, args []string, envPrefix string) ([]string, error) {
 	// Validate arg order before populating (variadic args must come last).
-	if _, err := scanArgsValidated(cmd); err != nil {
+	if _, err := ScanArgs(cmd); err != nil {
 		return nil, err
 	}
 

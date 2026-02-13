@@ -92,7 +92,7 @@ func genMarkdown(cmd cli.Commander, chain []cli.Commander) string {
 
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
 	flags := cli.ScanFlags(cmd)
-	args := cli.ScanArgs(cmd)
+	args, _ := cli.ScanArgs(cmd) //nolint:errcheck // best-effort in doc generation
 
 	writeMdUsage(&b, path, args, flags, allSubs)
 	writeMdExamples(&b, cmd)
@@ -227,7 +227,7 @@ func genManPage(cmd cli.Commander, chain []cli.Commander, header *ManHeader) str
 	path := commandPath(chain)
 
 	flags := cli.ScanFlags(cmd)
-	args := cli.ScanArgs(cmd)
+	args, _ := cli.ScanArgs(cmd)          //nolint:errcheck // best-effort in doc generation
 	allSubs, _ := cli.AllSubcommands(cmd) //nolint:errcheck // best-effort in doc generation
 
 	writeManHeader(&b, path, header)

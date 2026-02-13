@@ -342,7 +342,7 @@ func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) ([]string, [
 // countBranchArgs returns the number of positional args a command expects
 // (based on arg-tagged fields, not including cli.Args).
 func countBranchArgs(cmd Commander) int {
-	defs := ScanArgs(cmd)
+	defs, _ := ScanArgs(cmd) // errors caught during populateLeafArgs
 	count := 0
 	for i := range defs {
 		if defs[i].IsSlice {
@@ -509,7 +509,7 @@ func populateBranchArgs(resolved *resolvedCommand, chain []Commander, envPrefix 
 }
 
 func populateLeafArgs(leaf Commander, resolved *resolvedCommand, envPrefix string) error {
-	defs, err := scanArgsValidated(leaf)
+	defs, err := ScanArgs(leaf)
 	if err != nil {
 		return err
 	}
@@ -772,7 +772,7 @@ func buildUsageLine(cmd Commander, path string) string {
 	}
 
 	// Add positional args.
-	args := ScanArgs(cmd)
+	args, _ := ScanArgs(cmd) // errors caught during execution
 	for i := range args {
 		switch {
 		case args[i].Required:
@@ -845,7 +845,7 @@ func renderHelp(cmd Commander, chain []Commander, opts *options) error {
 		sortFlags(globalFlags)
 	}
 
-	args := ScanArgs(cmd)
+	args, _ := ScanArgs(cmd) // errors caught during execution
 
 	var text string
 	if renderer != nil {

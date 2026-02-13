@@ -3507,7 +3507,8 @@ func TestScanArgs(t *testing.T) {
 	t.Parallel()
 
 	cmd := &internalArgCmd{}
-	defs := ScanArgs(cmd)
+	defs, err := ScanArgs(cmd)
+	require.NoError(t, err)
 	require.Len(t, defs, 3)
 
 	assert.Equal(t, "source", defs[0].Name)
@@ -3535,10 +3536,11 @@ func TestScanArgs_AutoName(t *testing.T) {
 	}{}
 	// We need a proper Commander for ScanArgs.
 	// ScanArgs only reads type info, so we can use the raw struct.
-	defs := ScanArgs(&struct {
+	defs, err := ScanArgs(&struct {
 		OutputFile string `arg:"" help:"Output file"`
 		internalBareCmd
 	}{})
+	require.NoError(t, err)
 	require.Len(t, defs, 1)
 	assert.Equal(t, "output-file", defs[0].Name)
 	_ = cmd // avoid unused
@@ -3548,8 +3550,9 @@ func TestScanArgs_NonStruct(t *testing.T) {
 	t.Parallel()
 
 	cmd := RunFunc(func(_ context.Context) error { return nil })
-	defs := ScanArgs(cmd)
-	assert.Nil(t, defs)
+	defs, err := ScanArgs(cmd)
+	require.NoError(t, err)
+	assert.Empty(t, defs)
 }
 
 // --- populateArgs ---
@@ -5827,7 +5830,8 @@ func TestScanArgs_EnhancedFields(t *testing.T) {
 	t.Parallel()
 
 	cmd := &argHelpCmd{}
-	defs := ScanArgs(cmd)
+	defs, err := ScanArgs(cmd)
+	require.NoError(t, err)
 	require.Len(t, defs, 2)
 	assert.Equal(t, "prod,staging,dev", defs[0].Enum)
 	assert.Equal(t, "dev", defs[0].Default)
@@ -6123,7 +6127,8 @@ func TestEmbedded_ArgPromotion(t *testing.T) {
 	t.Parallel()
 
 	cmd := &embeddedDeployCmd{}
-	defs := ScanArgs(cmd)
+	defs, err := ScanArgs(cmd)
+	require.NoError(t, err)
 	require.Len(t, defs, 1)
 	assert.Equal(t, "target", defs[0].Name)
 }

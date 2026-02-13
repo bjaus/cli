@@ -41,7 +41,7 @@ func defaultRenderHelp(cmd Commander, chain []Commander, flags, globalFlags []Fl
 	if len(allSubs) > 0 {
 		fmt.Fprintf(&b, "  %s [command]\n", chainNames)
 	}
-	argDefs := ScanArgs(cmd)
+	argDefs, _ := ScanArgs(cmd) // errors caught during execution
 	argUsage := buildArgUsage(argDefs)
 
 	if hasVisibleFlags(flags) || hasVisibleFlags(globalFlags) {

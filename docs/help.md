@@ -476,7 +476,7 @@ for _, f := range data.Flags {
 
 ```go
 flags := cli.ScanFlags(cmd)
-args := cli.ScanArgs(cmd)
+args, err := cli.ScanArgs(cmd)
 subs, _ := cli.AllSubcommands(cmd)
 info := help.ResolveInfo(cmd)
 ```
