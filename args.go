@@ -93,7 +93,6 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 	for i := range t.NumField() {
 		f := t.Field(i)
 
-		// Anonymous embedded struct: recurse into promoted fields.
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
 			if err := populateArgsRecurse(v.Field(i), f.Type, args, envPrefix, argIdx, argsField); err != nil {
 				return err
@@ -101,7 +100,6 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 			continue
 		}
 
-		// Check for cli.Args field (no tag needed).
 		if f.Type == argsType && f.IsExported() {
 			if *argsField != nil {
 				return fmt.Errorf("multiple cli.Args fields found; only one is allowed")
@@ -111,83 +109,96 @@ func populateArgsRecurse(v reflect.Value, t reflect.Type, args []string, envPref
 			continue
 		}
 
-		name, hasArg := f.Tag.Lookup("arg")
-		if !hasArg {
-			continue
-		}
-		if name == "" {
-			name = camelToKebab(f.Name)
-		}
-
-		field := v.Field(i)
-		enumTag := f.Tag.Get("enum")
-
-		// Slice field: consume all remaining args.
-		if f.Type.Kind() == reflect.Slice {
-			for *argIdx < len(args) {
-				elemVal, err := parseScalarValue(f.Type.Elem(), args[*argIdx])
-				if err != nil {
-					return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
-				}
-				field.Set(reflect.Append(field, elemVal))
-				*argIdx++
-			}
-			continue
-		}
-
-		// Scalar field: consume one positional arg.
-		if *argIdx < len(args) {
-			if err := setFieldValue(field, args[*argIdx]); err != nil {
-				return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
-			}
-			*argIdx++
-			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
-			}
-			continue
-		}
-
-		// No positional arg — try env (supports comma-separated names).
-		if envTag := f.Tag.Get("env"); envTag != "" {
-			found := false
-			for _, envVar := range strings.Split(envTag, ",") {
-				envVar = strings.TrimSpace(envVar)
-				envName := envPrefix + envVar
-				envVal, ok := os.LookupEnv(envName)
-				if !ok {
-					continue
-				}
-				if err := setFieldValue(field, envVal); err != nil {
-					return fmt.Errorf("%w: %s (from %s): %w", ErrInvalidArgValue, name, envName, err)
-				}
-				if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-					return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
-				}
-				found = true
-				break
-			}
-			if found {
-				continue
-			}
-		}
-
-		// Try default.
-		if def := f.Tag.Get("default"); def != "" {
-			if err := setFieldValue(field, def); err != nil {
-				return fmt.Errorf("%w: %s: invalid default: %w", ErrInvalidArgValue, name, err)
-			}
-			if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
-				return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
-			}
-			continue
-		}
-
-		// Check required.
-		if tagBool(f.Tag, "required", true) {
-			return fmt.Errorf("%w: %s", ErrRequiredArg, name)
+		if err := populateArgField(v.Field(i), f, args, envPrefix, argIdx); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+func populateArgField(field reflect.Value, f reflect.StructField, args []string, envPrefix string, argIdx *int) error {
+	name, hasArg := f.Tag.Lookup("arg")
+	if !hasArg {
+		return nil
+	}
+	if name == "" {
+		name = camelToKebab(f.Name)
+	}
+
+	enumTag := f.Tag.Get("enum")
+
+	// Slice field: consume all remaining args.
+	if f.Type.Kind() == reflect.Slice {
+		return populateSliceArg(field, f.Type.Elem(), args, argIdx, name)
+	}
+
+	// Scalar field: try positional arg, then env, then default.
+	if *argIdx < len(args) {
+		return populateScalarFromArg(field, args[*argIdx], argIdx, name, enumTag)
+	}
+	if envTag := f.Tag.Get("env"); envTag != "" {
+		if found, err := populateArgFromEnv(field, envTag, envPrefix, name, enumTag); err != nil || found {
+			return err
+		}
+	}
+	if def := f.Tag.Get("default"); def != "" {
+		return populateArgFromDefault(field, def, name, enumTag)
+	}
+	if tagBool(f.Tag, "required", true) {
+		return fmt.Errorf("%w: %s", ErrRequiredArg, name)
+	}
+	return nil
+}
+
+func populateSliceArg(field reflect.Value, elemType reflect.Type, args []string, argIdx *int, name string) error {
+	for *argIdx < len(args) {
+		elemVal, err := parseScalarValue(elemType, args[*argIdx])
+		if err != nil {
+			return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
+		}
+		field.Set(reflect.Append(field, elemVal))
+		*argIdx++
+	}
+	return nil
+}
+
+func populateScalarFromArg(field reflect.Value, arg string, argIdx *int, name, enumTag string) error {
+	if err := setFieldValue(field, arg); err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrInvalidArgValue, name, err)
+	}
+	*argIdx++
+	if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+		return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
+	}
+	return nil
+}
+
+func populateArgFromEnv(field reflect.Value, envTag, envPrefix, name, enumTag string) (bool, error) {
+	for _, envVar := range strings.Split(envTag, ",") {
+		envVar = strings.TrimSpace(envVar)
+		envName := envPrefix + envVar
+		envVal, ok := os.LookupEnv(envName)
+		if !ok {
+			continue
+		}
+		if err := setFieldValue(field, envVal); err != nil {
+			return false, fmt.Errorf("%w: %s (from %s): %w", ErrInvalidArgValue, name, envName, err)
+		}
+		if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+			return false, fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func populateArgFromDefault(field reflect.Value, def, name, enumTag string) error {
+	if err := setFieldValue(field, def); err != nil {
+		return fmt.Errorf("%w: %s: invalid default: %w", ErrInvalidArgValue, name, err)
+	}
+	if enumTag != "" && !enumContains(enumTag, fmt.Sprint(field.Interface())) {
+		return fmt.Errorf("%w: %s must be one of [%s]", ErrInvalidArgValue, name, enumTag)
+	}
 	return nil
 }
 

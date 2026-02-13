@@ -476,23 +476,7 @@ func resolveConfigResolver(cmd Commander, opts *options) ConfigResolver {
 }
 
 func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*fieldInfo, opts *options) ([]string, error) {
-	lookup := func(name string) (*fieldInfo, bool) {
-		fi, ok := fields[name]
-		if ok || opts == nil || opts.flagNormalizer == nil {
-			return fi, ok
-		}
-		// Try normalized form.
-		normalized := name
-		if strings.HasPrefix(name, "--") {
-			normalized = "--" + opts.flagNormalizer(name[2:])
-		} else if strings.HasPrefix(name, "-") && len(name) == 2 {
-			// Short flags are not normalized.
-			return nil, false
-		}
-		fi, ok = fields[normalized]
-		return fi, ok
-	}
-
+	lookup := makeFlagLookup(fields, opts)
 	ignoreUnknown := opts != nil && opts.ignoreUnknown
 
 	var remaining []string
@@ -506,52 +490,29 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 
 		// Handle --flag=value.
 		if strings.HasPrefix(arg, "-") {
-			if eqIdx := strings.Index(arg, "="); eqIdx > 0 {
-				name := arg[:eqIdx]
-				value := arg[eqIdx+1:]
-				fi, ok := lookup(name)
-				if !ok {
-					if ignoreUnknown {
-						remaining = append(remaining, arg)
-						continue
-					}
-					return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, name)
+			if handled, rem, err := parseFlagWithEquals(v, arg, lookup, ignoreUnknown, remaining); handled {
+				if err != nil {
+					return nil, err
 				}
-				field := v.FieldByIndex(fi.index)
-				if err := setFieldValueSep(field, value, fi.def.Sep); err != nil {
-					return nil, fmt.Errorf("%w: %s: %w", ErrInvalidFlagValue, name, err)
-				}
-				fi.provided = true
+				remaining = rem
 				continue
 			}
 		}
 
 		fi, ok := lookup(arg)
 		if !ok {
-			if strings.HasPrefix(arg, "-") {
-				if ignoreUnknown {
-					remaining = append(remaining, arg)
-					continue
-				}
-				return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, arg)
+			rem, err := handleUnknownArg(arg, ignoreUnknown, remaining)
+			if err != nil {
+				return nil, err
 			}
-			remaining = append(remaining, arg)
+			remaining = rem
 			continue
 		}
 
 		field := v.FieldByIndex(fi.index)
 
 		if fi.def.IsBool || fi.def.IsCounter {
-			switch {
-			case fi.def.IsCounter && (field.Kind() == reflect.Uint || field.Kind() == reflect.Uint64):
-				field.SetUint(field.Uint() + 1)
-			case fi.def.IsCounter:
-				field.SetInt(field.Int() + 1)
-			case fi.def.Negate && strings.HasPrefix(arg, "--no-"):
-				field.SetBool(false)
-			default:
-				field.SetBool(true)
-			}
+			setBoolOrCounter(field, fi.def, arg)
 			fi.provided = true
 			continue
 		}
@@ -567,6 +528,68 @@ func parseExplicitFlags(v reflect.Value, args []string, fields map[string]*field
 	}
 
 	return remaining, nil
+}
+
+func makeFlagLookup(fields map[string]*fieldInfo, opts *options) func(string) (*fieldInfo, bool) {
+	return func(name string) (*fieldInfo, bool) {
+		fi, ok := fields[name]
+		if ok || opts == nil || opts.flagNormalizer == nil {
+			return fi, ok
+		}
+		normalized := name
+		if strings.HasPrefix(name, "--") {
+			normalized = "--" + opts.flagNormalizer(name[2:])
+		} else if strings.HasPrefix(name, "-") && len(name) == 2 {
+			return nil, false
+		}
+		fi, ok = fields[normalized]
+		return fi, ok
+	}
+}
+
+func parseFlagWithEquals(v reflect.Value, arg string, lookup func(string) (*fieldInfo, bool), ignoreUnknown bool, remaining []string) (bool, []string, error) {
+	eqIdx := strings.Index(arg, "=")
+	if eqIdx <= 0 {
+		return false, remaining, nil
+	}
+	name := arg[:eqIdx]
+	value := arg[eqIdx+1:]
+	fi, ok := lookup(name)
+	if !ok {
+		if ignoreUnknown {
+			return true, append(remaining, arg), nil
+		}
+		return true, nil, fmt.Errorf("%w: %s", ErrUnknownFlag, name)
+	}
+	field := v.FieldByIndex(fi.index)
+	if err := setFieldValueSep(field, value, fi.def.Sep); err != nil {
+		return true, nil, fmt.Errorf("%w: %s: %w", ErrInvalidFlagValue, name, err)
+	}
+	fi.provided = true
+	return true, remaining, nil
+}
+
+func handleUnknownArg(arg string, ignoreUnknown bool, remaining []string) ([]string, error) {
+	if strings.HasPrefix(arg, "-") {
+		if ignoreUnknown {
+			return append(remaining, arg), nil
+		}
+		return nil, fmt.Errorf("%w: %s", ErrUnknownFlag, arg)
+	}
+	return append(remaining, arg), nil
+}
+
+func setBoolOrCounter(field reflect.Value, def FlagDef, arg string) {
+	switch {
+	case def.IsCounter && (field.Kind() == reflect.Uint || field.Kind() == reflect.Uint64):
+		field.SetUint(field.Uint() + 1)
+	case def.IsCounter:
+		field.SetInt(field.Int() + 1)
+	case def.Negate && strings.HasPrefix(arg, "--no-"):
+		field.SetBool(false)
+	default:
+		field.SetBool(true)
+	}
 }
 
 func validateFlags(v reflect.Value, fields map[string]*fieldInfo) error {
@@ -701,139 +724,184 @@ func setFieldValueSep(field reflect.Value, value, sep string) error {
 }
 
 func setFieldValue(field reflect.Value, value string) error {
-	// Check for FlagUnmarshaler interface. Struct fields are always addressable,
-	// and the pointer method set includes value receiver methods.
+	// Check for FlagUnmarshaler interface.
 	if field.CanAddr() {
 		if u, ok := field.Addr().Interface().(FlagUnmarshaler); ok {
 			return u.UnmarshalFlag(value)
 		}
 	}
 
-	if field.Type() == timeType {
+	// Handle special types.
+	if handled, err := setSpecialTypeValue(field, value); handled {
+		return err
+	}
+
+	return setBasicTypeValue(field, value)
+}
+
+func setSpecialTypeValue(field reflect.Value, value string) (bool, error) {
+	switch field.Type() {
+	case timeType:
 		t, err := parseTime(value)
 		if err != nil {
-			return err
+			return true, err
 		}
 		field.Set(reflect.ValueOf(t))
-		return nil
-	}
-
-	// *url.URL handling.
-	if field.Type() == reflect.PointerTo(urlType) {
+		return true, nil
+	case reflect.PointerTo(urlType):
 		u, err := url.Parse(value)
 		if err != nil {
-			return fmt.Errorf("invalid url: %w", err)
+			return true, fmt.Errorf("invalid url: %w", err)
 		}
 		field.Set(reflect.ValueOf(u))
-		return nil
-	}
-
-	// net.IP handling.
-	if field.Type() == ipType {
+		return true, nil
+	case ipType:
 		ip := net.ParseIP(value)
 		if ip == nil {
-			return fmt.Errorf("invalid ip address: %q", value)
+			return true, fmt.Errorf("invalid ip address: %q", value)
 		}
 		field.Set(reflect.ValueOf(ip))
-		return nil
+		return true, nil
+	case durationType:
+		d, err := time.ParseDuration(value)
+		if err != nil {
+			return true, err
+		}
+		field.Set(reflect.ValueOf(d))
+		return true, nil
 	}
+	return false, nil
+}
 
+var durationType = reflect.TypeFor[time.Duration]()
+
+func setBasicTypeValue(field reflect.Value, value string) error {
 	switch field.Kind() {
 	case reflect.String:
 		field.SetString(value)
 	case reflect.Int, reflect.Int64:
-		if field.Type() == reflect.TypeOf(time.Duration(0)) {
-			d, err := time.ParseDuration(value)
-			if err != nil {
-				return err
-			}
-			field.Set(reflect.ValueOf(d))
-			return nil
-		}
-		n, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		field.SetInt(n)
+		return setIntValue(field, value)
 	case reflect.Uint, reflect.Uint64:
-		n, err := strconv.ParseUint(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		field.SetUint(n)
+		return setUintValue(field, value)
 	case reflect.Float64:
-		n, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return err
-		}
-		field.SetFloat(n)
+		return setFloatValue(field, value)
 	case reflect.Bool:
-		b, err := strconv.ParseBool(value)
-		if err != nil {
-			return err
-		}
-		field.SetBool(b)
+		return setBoolValue(field, value)
 	case reflect.Slice:
-		elemVal, err := parseScalarValue(field.Type().Elem(), value)
-		if err != nil {
-			return err
-		}
-		field.Set(reflect.Append(field, elemVal))
+		return appendSliceValue(field, value)
 	case reflect.Map:
-		parts := strings.SplitN(value, "=", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("expected key=value, got %q", value)
-		}
-		keyVal, err := parseScalarValue(field.Type().Key(), parts[0])
-		if err != nil {
-			return err
-		}
-		valVal, err := parseScalarValue(field.Type().Elem(), parts[1])
-		if err != nil {
-			return err
-		}
-		if field.IsNil() {
-			field.Set(reflect.MakeMap(field.Type()))
-		}
-		field.SetMapIndex(keyVal, valVal)
+		return setMapValue(field, value)
 	default:
 		return fmt.Errorf("%w: %s", ErrUnsupportedType, field.Type())
 	}
 	return nil
 }
 
+func setIntValue(field reflect.Value, value string) error {
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return err
+	}
+	field.SetInt(n)
+	return nil
+}
+
+func setUintValue(field reflect.Value, value string) error {
+	n, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return err
+	}
+	field.SetUint(n)
+	return nil
+}
+
+func setFloatValue(field reflect.Value, value string) error {
+	n, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return err
+	}
+	field.SetFloat(n)
+	return nil
+}
+
+func setBoolValue(field reflect.Value, value string) error {
+	b, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	field.SetBool(b)
+	return nil
+}
+
+func appendSliceValue(field reflect.Value, value string) error {
+	elemVal, err := parseScalarValue(field.Type().Elem(), value)
+	if err != nil {
+		return err
+	}
+	field.Set(reflect.Append(field, elemVal))
+	return nil
+}
+
+func setMapValue(field reflect.Value, value string) error {
+	parts := strings.SplitN(value, "=", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("expected key=value, got %q", value)
+	}
+	keyVal, err := parseScalarValue(field.Type().Key(), parts[0])
+	if err != nil {
+		return err
+	}
+	valVal, err := parseScalarValue(field.Type().Elem(), parts[1])
+	if err != nil {
+		return err
+	}
+	if field.IsNil() {
+		field.Set(reflect.MakeMap(field.Type()))
+	}
+	field.SetMapIndex(keyVal, valVal)
+	return nil
+}
+
 // parseScalarValue parses a string into a reflect.Value of the given type.
 // Used for slice element and map key/value parsing.
 func parseScalarValue(typ reflect.Type, value string) (reflect.Value, error) {
-	if typ == reflect.TypeOf(time.Duration(0)) {
+	if v, ok, err := parseSpecialScalarType(typ, value); ok {
+		return v, err
+	}
+	return parseBasicScalarType(typ, value)
+}
+
+func parseSpecialScalarType(typ reflect.Type, value string) (reflect.Value, bool, error) {
+	switch typ {
+	case durationType:
 		d, err := time.ParseDuration(value)
 		if err != nil {
-			return reflect.Value{}, err
+			return reflect.Value{}, true, err
 		}
-		return reflect.ValueOf(d), nil
-	}
-	if typ == timeType {
+		return reflect.ValueOf(d), true, nil
+	case timeType:
 		t, err := parseTime(value)
 		if err != nil {
-			return reflect.Value{}, err
+			return reflect.Value{}, true, err
 		}
-		return reflect.ValueOf(t), nil
-	}
-	if typ == reflect.PointerTo(urlType) {
+		return reflect.ValueOf(t), true, nil
+	case reflect.PointerTo(urlType):
 		u, err := url.Parse(value)
 		if err != nil {
-			return reflect.Value{}, fmt.Errorf("invalid url: %w", err)
+			return reflect.Value{}, true, fmt.Errorf("invalid url: %w", err)
 		}
-		return reflect.ValueOf(u), nil
-	}
-	if typ == ipType {
+		return reflect.ValueOf(u), true, nil
+	case ipType:
 		ip := net.ParseIP(value)
 		if ip == nil {
-			return reflect.Value{}, fmt.Errorf("invalid ip address: %q", value)
+			return reflect.Value{}, true, fmt.Errorf("invalid ip address: %q", value)
 		}
-		return reflect.ValueOf(ip), nil
+		return reflect.ValueOf(ip), true, nil
 	}
+	return reflect.Value{}, false, nil
+}
 
+func parseBasicScalarType(typ reflect.Type, value string) (reflect.Value, error) {
 	switch typ.Kind() {
 	case reflect.String:
 		return reflect.ValueOf(value), nil
@@ -1008,7 +1076,6 @@ func validateFieldTags(f reflect.StructField) error {
 	envTag := f.Tag.Get("env")
 	_, hasDefault := f.Tag.Lookup("default")
 	_, hasRequired := f.Tag.Lookup("required")
-	// Check if field is actually required (tag exists and isn't "false")
 	isRequired := tagBool(f.Tag, "required")
 	_, hasEnum := f.Tag.Lookup("enum")
 	_, hasHelp := f.Tag.Lookup("help")
@@ -1016,7 +1083,22 @@ func validateFieldTags(f reflect.StructField) error {
 
 	hasSource := hasFlag || hasArg || envTag != ""
 
-	// Removed tag migration errors.
+	if err := validateRemovedTags(f, hasFlag); err != nil {
+		return err
+	}
+	if err := validateSourceConflicts(f, hasFlag, hasArg, isRequired, hasDefault); err != nil {
+		return err
+	}
+	if err := validateFlagOnlyTags(f, hasFlag); err != nil {
+		return err
+	}
+	if err := validateTypeConstraints(f); err != nil {
+		return err
+	}
+	return validateOrphanTags(f, hasSource, hasDefault, hasRequired, hasEnum, hasHelp, hasMask)
+}
+
+func validateRemovedTags(f reflect.StructField, hasFlag bool) error {
 	if f.Tag.Get("inherit") != "" {
 		name := f.Tag.Get("inherit")
 		return fmt.Errorf("%w: field %s: inherit tag removed; use flag:%q hidden:\"true\" for automatic inheritance", ErrInvalidTag, f.Name, name)
@@ -1030,46 +1112,53 @@ func validateFieldTags(f reflect.StructField) error {
 	if f.Tag.Get("negatable") != "" {
 		return fmt.Errorf("%w: field %s: negatable renamed to negate", ErrInvalidTag, f.Name)
 	}
+	return nil
+}
 
-	// Mutually exclusive source tags.
+func validateSourceConflicts(f reflect.StructField, hasFlag, hasArg, isRequired, hasDefault bool) error {
 	if hasFlag && hasArg {
 		return fmt.Errorf("%w: field %s: flag and arg are mutually exclusive", ErrInvalidTag, f.Name)
 	}
-
-	// Contradictory constraints.
 	if isRequired && hasDefault {
 		return fmt.Errorf("%w: field %s: required and default are mutually exclusive", ErrInvalidTag, f.Name)
 	}
+	return nil
+}
 
-	// Tags that require flag (value-based tags).
-	flagOnlyValueTags := []string{"short", "alt", "sep", "placeholder", "deprecated", "category"}
-	for _, tag := range flagOnlyValueTags {
+func validateFlagOnlyTags(f reflect.StructField, hasFlag bool) error {
+	valueTags := []string{"short", "alt", "sep", "placeholder", "deprecated", "category"}
+	for _, tag := range valueTags {
 		if f.Tag.Get(tag) != "" && !hasFlag {
 			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
 		}
 	}
-	// Tags that require flag (boolean tags — existence-based).
-	flagOnlyBoolTags := []string{"counter", "negate", "hidden"}
-	for _, tag := range flagOnlyBoolTags {
+	boolTags := []string{"counter", "negate", "hidden"}
+	for _, tag := range boolTags {
 		if _, ok := f.Tag.Lookup(tag); ok && !hasFlag {
 			return fmt.Errorf("%w: field %s: %s requires flag", ErrInvalidTag, f.Name, tag)
 		}
 	}
+	return nil
+}
 
-	// Type-specific constraints.
-	if tagBool(f.Tag, "counter") && f.Type.Kind() != reflect.Int && f.Type.Kind() != reflect.Int64 &&
-		f.Type.Kind() != reflect.Uint && f.Type.Kind() != reflect.Uint64 {
-		return fmt.Errorf("%w: field %s: counter requires int or uint type", ErrInvalidTag, f.Name)
+func validateTypeConstraints(f reflect.StructField) error {
+	kind := f.Type.Kind()
+	if tagBool(f.Tag, "counter") {
+		if kind != reflect.Int && kind != reflect.Int64 && kind != reflect.Uint && kind != reflect.Uint64 {
+			return fmt.Errorf("%w: field %s: counter requires int or uint type", ErrInvalidTag, f.Name)
+		}
 	}
-	if tagBool(f.Tag, "negate") && f.Type.Kind() != reflect.Bool {
+	if tagBool(f.Tag, "negate") && kind != reflect.Bool {
 		return fmt.Errorf("%w: field %s: negate requires bool type", ErrInvalidTag, f.Name)
 	}
-	if f.Tag.Get("sep") != "" && f.Type.Kind() != reflect.Slice {
+	if f.Tag.Get("sep") != "" && kind != reflect.Slice {
 		return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
 	}
+	return nil
+}
 
-	// Orphan detection: CLI-related tags without a source.
-	orphanTags := []struct {
+func validateOrphanTags(f reflect.StructField, hasSource, hasDefault, hasRequired, hasEnum, hasHelp, hasMask bool) error {
+	orphans := []struct {
 		name string
 		set  bool
 	}{
@@ -1079,9 +1168,9 @@ func validateFieldTags(f reflect.StructField) error {
 		{"help", hasHelp},
 		{"mask", hasMask},
 	}
-	for _, ot := range orphanTags {
-		if ot.set && !hasSource {
-			return fmt.Errorf("%w: field %s: %s requires flag, arg, or env tag", ErrInvalidTag, f.Name, ot.name)
+	for _, o := range orphans {
+		if o.set && !hasSource {
+			return fmt.Errorf("%w: field %s: %s requires flag, arg, or env tag", ErrInvalidTag, f.Name, o.name)
 		}
 	}
 	return nil

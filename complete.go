@@ -163,15 +163,36 @@ func RuntimeComplete(ctx context.Context, root Commander, args []string, w io.Wr
 
 // computeCompletions resolves the command chain and returns a CompletionResult.
 func computeCompletions(ctx context.Context, root Commander, args []string) CompletionResult {
-	// Split args: everything except last is context, last is the prefix to complete.
-	var contextArgs []string
-	var toComplete string
-	if len(args) > 0 {
-		contextArgs = args[:len(args)-1]
-		toComplete = args[len(args)-1]
+	contextArgs, toComplete := splitCompletionArgs(args)
+	target := walkCommandTree(root, contextArgs)
+
+	// Try Completer interface first.
+	if result, ok := tryCompleterInterface(ctx, target, args, toComplete); ok {
+		return result
 	}
 
-	// Walk the command tree to find the target command.
+	// Complete flags if prefix starts with "-".
+	if strings.HasPrefix(toComplete, "-") {
+		return completeFlagNames(target, toComplete)
+	}
+
+	// Complete flag values if previous arg was a value flag.
+	if result, ok := completeFlagValue(ctx, target, contextArgs, toComplete); ok {
+		return result
+	}
+
+	// Complete subcommand names.
+	return completeSubcommandNames(target, toComplete)
+}
+
+func splitCompletionArgs(args []string) ([]string, string) {
+	if len(args) == 0 {
+		return nil, ""
+	}
+	return args[:len(args)-1], args[len(args)-1]
+}
+
+func walkCommandTree(root Commander, contextArgs []string) Commander {
 	target := root
 	remaining := contextArgs
 	for len(remaining) > 0 {
@@ -181,8 +202,6 @@ func computeCompletions(ctx context.Context, root Commander, args []string) Comp
 		}
 
 		arg := remaining[0]
-
-		// Skip flags during walk.
 		if strings.HasPrefix(arg, "-") {
 			fi := buildFlagIndex(target)
 			if consumed, ok := tryConsumeFlag(remaining, 0, fi); ok {
@@ -193,81 +212,84 @@ func computeCompletions(ctx context.Context, root Commander, args []string) Comp
 			continue
 		}
 
-		// Try to match a subcommand.
 		sub := findSubcommand(subs, arg, false, false)
 		if sub == nil {
-			// Unknown positional arg — skip.
 			remaining = remaining[1:]
 			continue
 		}
-
 		target = sub
 		remaining = remaining[1:]
 	}
+	return target
+}
 
-	// If the target command implements Completer, delegate.
-	if c, ok := target.(Completer); ok {
-		result := c.Complete(ctx, args)
-		if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
-			filtered := filterCompletions(result.Completions, toComplete)
-			directive := result.Directive
-			if len(filtered) == 0 && result.Directive != ShellCompDirectiveError {
-				directive = ShellCompDirectiveDefault
-			}
-			return CompletionResult{
-				Completions: filtered,
-				ActiveHelp:  result.ActiveHelp,
-				Directive:   directive,
-			}
-		}
-		// Empty result: fall through to static completion.
+func tryCompleterInterface(ctx context.Context, target Commander, args []string, toComplete string) (CompletionResult, bool) {
+	c, ok := target.(Completer)
+	if !ok {
+		return CompletionResult{}, false
+	}
+	result := c.Complete(ctx, args)
+	if len(result.Completions) == 0 && len(result.ActiveHelp) == 0 {
+		return CompletionResult{}, false
+	}
+	return filterResult(result, toComplete), true
+}
+
+func filterResult(result CompletionResult, toComplete string) CompletionResult {
+	filtered := filterCompletions(result.Completions, toComplete)
+	directive := result.Directive
+	if len(filtered) == 0 && result.Directive != ShellCompDirectiveError {
+		directive = ShellCompDirectiveDefault
+	}
+	return CompletionResult{
+		Completions: filtered,
+		ActiveHelp:  result.ActiveHelp,
+		Directive:   directive,
+	}
+}
+
+func completeFlagNames(target Commander, toComplete string) CompletionResult {
+	candidates := completeCommandFlags(target, toComplete)
+	directive := ShellCompDirectiveNoFileComp
+	if len(candidates) == 0 {
+		directive = ShellCompDirectiveDefault
+	}
+	return CompletionResult{Completions: candidates, Directive: directive}
+}
+
+func completeFlagValue(ctx context.Context, target Commander, contextArgs []string, toComplete string) (CompletionResult, bool) {
+	if len(contextArgs) == 0 {
+		return CompletionResult{}, false
+	}
+	prev := contextArgs[len(contextArgs)-1]
+	flagName := lookupValueFlagName(target, prev)
+	if flagName == "" {
+		return CompletionResult{}, false
 	}
 
-	// If toComplete starts with "-", complete flags.
-	if strings.HasPrefix(toComplete, "-") {
-		candidates := completeCommandFlags(target, toComplete)
+	// Try FlagCompleter interface.
+	if fc, ok := target.(FlagCompleter); ok {
+		result := fc.CompleteFlag(ctx, flagName, toComplete)
+		if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
+			return filterResult(result, toComplete), true
+		}
+	}
+
+	// Try enum completion.
+	if enumVals := lookupFlagEnum(target, prev); enumVals != "" {
+		vals := strings.Split(enumVals, ",")
+		filtered := filterStrings(vals, toComplete)
 		directive := ShellCompDirectiveNoFileComp
-		if len(candidates) == 0 {
+		if len(filtered) == 0 {
 			directive = ShellCompDirectiveDefault
 		}
-		return CompletionResult{Completions: candidates, Directive: directive}
+		return CompletionResult{Completions: stringsToCompletions(filtered), Directive: directive}, true
 	}
 
-	// If the previous arg was a value flag, try FlagCompleter then enum.
-	if len(contextArgs) > 0 {
-		prev := contextArgs[len(contextArgs)-1]
-		if flagName := lookupValueFlagName(target, prev); flagName != "" {
-			// Try FlagCompleter interface first.
-			if fc, ok := target.(FlagCompleter); ok {
-				result := fc.CompleteFlag(ctx, flagName, toComplete)
-				if len(result.Completions) > 0 || len(result.ActiveHelp) > 0 {
-					filtered := filterCompletions(result.Completions, toComplete)
-					directive := result.Directive
-					if len(filtered) == 0 && result.Directive != ShellCompDirectiveError {
-						directive = ShellCompDirectiveDefault
-					}
-					return CompletionResult{
-						Completions: filtered,
-						ActiveHelp:  result.ActiveHelp,
-						Directive:   directive,
-					}
-				}
-			}
+	return CompletionResult{}, false
+}
 
-			// Fall through to enum completion.
-			if enumVals := lookupFlagEnum(target, prev); enumVals != "" {
-				vals := strings.Split(enumVals, ",")
-				filtered := filterStrings(vals, toComplete)
-				directive := ShellCompDirectiveNoFileComp
-				if len(filtered) == 0 {
-					directive = ShellCompDirectiveDefault
-				}
-				return CompletionResult{Completions: stringsToCompletions(filtered), Directive: directive}
-			}
-		}
-	}
-
-	// Complete subcommand names + aliases.
+func completeSubcommandNames(target Commander, toComplete string) CompletionResult {
 	subs, _ := allSubcommands(target) //nolint:errcheck
 	var candidates []Completion
 	for _, sub := range subs {
