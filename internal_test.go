@@ -719,22 +719,36 @@ func TestCommandChainNames(t *testing.T) {
 func TestSuggestFromError(t *testing.T) {
 	t.Parallel()
 
-	cmd := &internalFlagCmdForSuggest{}
+	flagCmd := &internalFlagCmdForSuggest{}
 
 	tests := map[string]struct {
+		cmd  Commander
 		err  error
 		want string
 	}{
 		"matching flag suggestion": {
+			cmd:  flagCmd,
 			err:  fmt.Errorf("unknown flag: --prot"),
 			want: `Did you mean "--port"?`,
 		},
-		"no match": {
+		"no flag match": {
+			cmd:  flagCmd,
 			err:  fmt.Errorf("unknown flag: --zzzzz"),
 			want: "",
 		},
 		"non-flag error": {
+			cmd:  flagCmd,
 			err:  fmt.Errorf("something else"),
+			want: "",
+		},
+		"matching command suggestion": {
+			cmd:  &internalParentWithSubs{},
+			err:  fmt.Errorf("unknown command: serv"),
+			want: `Did you mean "serve"?`,
+		},
+		"no command match": {
+			cmd:  &internalParentWithSubs{},
+			err:  fmt.Errorf("unknown command: zzzzz"),
 			want: "",
 		},
 	}
@@ -742,7 +756,7 @@ func TestSuggestFromError(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, suggestFromError(cmd, tt.err))
+			assert.Equal(t, tt.want, suggestFromError(tt.cmd, tt.err))
 		})
 	}
 }

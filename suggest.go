@@ -163,5 +163,12 @@ func suggestFromError(cmd Commander, err error) string {
 		}
 	}
 
+	if strings.HasPrefix(msg, "unknown command: ") {
+		unknown := strings.TrimPrefix(msg, "unknown command: ")
+		if suggestion := suggestSubcommand(cmd, unknown); suggestion != "" {
+			return fmt.Sprintf("Did you mean %q?", suggestion)
+		}
+	}
+
 	return ""
 }

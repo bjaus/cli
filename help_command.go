@@ -42,7 +42,11 @@ func (h *helpCmd) Run(_ context.Context) error {
 			return err
 		}
 		if sub == nil {
-			return fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+			err := fmt.Errorf("%w: %s", ErrUnknownCommand, name)
+			if suggestion := suggestSubcommand(target, name); suggestion != "" {
+				return fmt.Errorf("%w\n\nDid you mean %q?", err, suggestion)
+			}
+			return err
 		}
 		target = sub
 		chain = append(chain, sub)
