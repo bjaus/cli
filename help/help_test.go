@@ -7,7 +7,15 @@ import (
 
 	"github.com/bjaus/cli"
 	"github.com/bjaus/cli/help"
+	"github.com/stretchr/testify/require"
 )
+
+func scanArgs(t *testing.T, cmd cli.Commander) []cli.ArgDef {
+	t.Helper()
+	args, err := cli.ScanArgs(cmd)
+	require.NoError(t, err)
+	return args
+}
 
 // testCmd is a simple command for testing.
 type testCmd struct {
@@ -196,7 +204,7 @@ func TestDefaultRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default()
@@ -225,7 +233,7 @@ func TestCompactRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Compact()
@@ -246,7 +254,7 @@ func TestTreeRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Tree()
@@ -263,7 +271,7 @@ func TestManRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Man()
@@ -283,7 +291,7 @@ func TestJSONRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.JSON()
@@ -306,7 +314,7 @@ func TestMarkdownRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Markdown()
@@ -333,7 +341,7 @@ func TestWithColor(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default(help.WithColor(true))
@@ -350,7 +358,7 @@ func TestWithSorted(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default(help.WithSorted())
@@ -434,7 +442,7 @@ func TestTemplateRenderer(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	tmpl := `# {{.Name}}
@@ -490,7 +498,7 @@ func TestTemplateWithFunctions(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	tmpl := `{{upper .Name}}
@@ -517,7 +525,7 @@ func TestBuildData(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	data := help.BuildData(serve, chain, flags, args, globalFlags, false)
@@ -541,7 +549,7 @@ func TestWithWidth(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default(help.WithWidth(40))
@@ -557,7 +565,7 @@ func TestWithColorAuto(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	// ColorAuto should work without panic.
@@ -863,7 +871,7 @@ func TestRenderersWithArgs(t *testing.T) {
 	cmd := &cmdWithArgs{}
 	chain := []cli.Commander{root, cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 	globalFlags := cli.ScanFlags(root)
 
 	renderers := []struct {
@@ -910,7 +918,7 @@ func TestRenderersWithSubcommands(t *testing.T) {
 	root := &rootWithSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderers := []struct {
 		name     string
@@ -947,7 +955,7 @@ func TestTemplateFunctions(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	tests := []struct {
@@ -1043,7 +1051,7 @@ func TestTemplateRenderError(t *testing.T) {
 	serve := &testCmd{}
 	chain := []cli.Commander{root, serve}
 	flags := cli.ScanFlags(serve)
-	args, _ := cli.ScanArgs(serve)
+	args := scanArgs(t, serve)
 	globalFlags := cli.ScanFlags(root)
 
 	// Template that references non-existent field.
@@ -1062,7 +1070,7 @@ func TestBuildDataWithSubcommands(t *testing.T) {
 	root := &rootWithSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	data := help.BuildData(root, chain, flags, args, nil, false)
 
@@ -1076,7 +1084,7 @@ func TestBuildDataSorted(t *testing.T) {
 	root := &rootWithSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	data := help.BuildData(root, chain, flags, args, nil, true)
 
@@ -1104,7 +1112,7 @@ func TestRenderersWithCategorizedCommands(t *testing.T) {
 	root := &rootWithCategorizedSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	// Test with sorting enabled.
 	renderer := help.Default(help.WithSorted())
@@ -1137,7 +1145,7 @@ func TestRenderersWithCategorizedFlags(t *testing.T) {
 	cmd := &cmdWithCategorizedFlags{}
 	chain := []cli.Commander{root, cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 	globalFlags := cli.ScanFlags(root)
 
 	renderers := []struct {
@@ -1193,7 +1201,7 @@ func TestRenderersWithDeprecatedFlags(t *testing.T) {
 	cmd := &cmdWithDeprecatedFlags{}
 	chain := []cli.Commander{root, cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default()
@@ -1226,7 +1234,7 @@ func TestRenderersWithMaskedDefault(t *testing.T) {
 	cmd := &cmdWithMaskedDefault{}
 	chain := []cli.Commander{root, cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 	globalFlags := cli.ScanFlags(root)
 
 	renderer := help.Default()
@@ -1348,7 +1356,7 @@ func TestDefaultRendererCategorizedSubcommands(t *testing.T) {
 	root := &cmdWithCategorizedSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderer := help.Default()
 	output := renderer.RenderHelp(root, chain, flags, args, nil)
@@ -1370,7 +1378,7 @@ func TestDefaultRendererSortedCategories(t *testing.T) {
 	root := &cmdWithCategorizedSubs{}
 	chain := []cli.Commander{root}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderer := help.Default(help.WithSorted())
 	output := renderer.RenderHelp(root, chain, flags, args, nil)
@@ -1405,7 +1413,7 @@ func TestDefaultRendererRequiredFlags(t *testing.T) {
 	cmd := &cmdWithRequiredFlags{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Default()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1434,7 +1442,7 @@ func TestDefaultRendererArgDefs(t *testing.T) {
 	cmd := &cmdWithArgAttributes{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Default()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1457,7 +1465,7 @@ func TestDefaultRendererCategorizedFlags(t *testing.T) {
 	cmd := &cmdWithCategorizedFlags{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Default()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1479,7 +1487,7 @@ func TestDefaultRendererSortedCategorizedFlags(t *testing.T) {
 	cmd := &cmdWithCategorizedFlags{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Default(help.WithSorted())
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1552,7 +1560,7 @@ func TestFlagRightDeprecated(t *testing.T) {
 func TestTreeRendererSorted(t *testing.T) {
 	root := &testRoot{}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderer := help.Tree(help.WithSorted())
 	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)
@@ -1600,7 +1608,7 @@ func (c *nestedChildCmd) Run(ctx context.Context) error { return nil }
 func TestTreeRendererNestedSubcommands(t *testing.T) {
 	root := &nestedRootCmd{}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderer := help.Tree()
 	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)
@@ -1621,7 +1629,7 @@ func TestManRendererNoDescription(t *testing.T) {
 	cmd := &noDescCmd{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Man()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1645,7 +1653,7 @@ func TestManRendererWithArgs(t *testing.T) {
 	cmd := &cmdWithArgsForMan{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Man()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1673,7 +1681,7 @@ func TestMarkdownRendererNoSubcommands(t *testing.T) {
 	cmd := &testCmd{}
 	chain := []cli.Commander{cmd}
 	flags := cli.ScanFlags(cmd)
-	args, _ := cli.ScanArgs(cmd)
+	args := scanArgs(t, cmd)
 
 	renderer := help.Markdown()
 	output := renderer.RenderHelp(cmd, chain, flags, args, nil)
@@ -1691,7 +1699,7 @@ func TestMarkdownRendererNoSubcommands(t *testing.T) {
 func TestMarkdownRendererSorted(t *testing.T) {
 	root := &testRoot{}
 	flags := cli.ScanFlags(root)
-	args, _ := cli.ScanArgs(root)
+	args := scanArgs(t, root)
 
 	renderer := help.Markdown(help.WithSorted())
 	output := renderer.RenderHelp(root, []cli.Commander{root}, flags, args, nil)

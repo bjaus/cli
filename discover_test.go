@@ -373,7 +373,7 @@ func TestDiscover_UnreadableDirectory_WithWarnFunc(t *testing.T) {
 	readable := filepath.Join(dir, "readable")
 	unreadable := filepath.Join(dir, "noperm")
 
-	require.NoError(t, os.Mkdir(readable, 0o755))
+	require.NoError(t, os.Mkdir(readable, 0o750))
 	require.NoError(t, os.Mkdir(unreadable, 0o000))
 	t.Cleanup(func() {
 		_ = os.Chmod(unreadable, 0o750) //nolint:errcheck,gosec // best-effort cleanup

@@ -1232,10 +1232,7 @@ func validateTypeConstraints(f reflect.StructField) error {
 	if f.Tag.Get("sep") != "" && kind != reflect.Slice {
 		return fmt.Errorf("%w: field %s: sep requires slice type", ErrInvalidTag, f.Name)
 	}
-	if err := validateEnumValues(f); err != nil {
-		return err
-	}
-	return nil
+	return validateEnumValues(f)
 }
 
 // validateEnumValues checks that all enum values can be parsed as the field type.

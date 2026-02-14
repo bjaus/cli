@@ -298,12 +298,12 @@ func findSubcommand(subs []Commander, name string, prefixMatch, caseInsensitive 
 		}
 	}
 
+	var match Commander
 	if !prefixMatch {
-		return nil, nil
+		return match, nil
 	}
 
 	// Unique prefix match.
-	var match Commander
 	var matches []string
 	for _, s := range subs {
 		info := resolveInfo(s)
@@ -370,7 +370,10 @@ func scanBranchingLevel(args []string, fi flagIndex, cmd Commander) ([]string, [
 // expects. Only required args are consumed during routing; optional args are
 // handled after subcommand matching to avoid consuming subcommand names.
 func countBranchArgs(cmd Commander) int {
-	defs, _ := ScanArgs(cmd) // errors caught during populateLeafArgs
+	defs, err := ScanArgs(cmd)
+	if err != nil {
+		return 0
+	}
 	count := 0
 	for i := range defs {
 		if defs[i].IsSlice {
@@ -388,7 +391,8 @@ func countBranchArgs(cmd Commander) int {
 // Returns the matched subcommand, any non-flag args that appeared before it
 // (potential optional args for the parent), remaining args after it, and any error.
 func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInsensitive bool) (*subMatch, error) {
-	var before []string
+	var result *subMatch
+	before := make([]string, 0, len(args))
 	for i, arg := range args {
 		if strings.HasPrefix(arg, "-") {
 			continue
@@ -398,11 +402,12 @@ func findSubcommandInArgs(args []string, subs []Commander, prefixMatch, caseInse
 			return nil, err
 		}
 		if sub != nil {
-			return &subMatch{sub: sub, before: before, remaining: args[i+1:]}, nil
+			result = &subMatch{sub: sub, before: before, remaining: args[i+1:]}
+			return result, nil
 		}
 		before = append(before, arg)
 	}
-	return nil, nil
+	return result, nil
 }
 
 // filterNonFlags returns only the non-flag args from the input slice.
@@ -826,7 +831,10 @@ func buildUsageLine(cmd Commander, path string) string {
 	}
 
 	// Add positional args.
-	args, _ := ScanArgs(cmd) // errors caught during execution
+	args, err := ScanArgs(cmd)
+	if err != nil {
+		return usage.String()
+	}
 	for i := range args {
 		switch {
 		case args[i].Required:
@@ -899,7 +907,10 @@ func renderHelp(cmd Commander, chain []Commander, opts *options) error {
 		sortFlags(globalFlags)
 	}
 
-	args, _ := ScanArgs(cmd) // errors caught during execution
+	args, err := ScanArgs(cmd)
+	if err != nil {
+		return err
+	}
 
 	var text string
 	if renderer != nil {
@@ -908,7 +919,7 @@ func renderHelp(cmd Commander, chain []Commander, opts *options) error {
 		text = defaultRenderHelp(cmd, chain, flags, globalFlags, opts.sortedHelp)
 	}
 
-	_, err := fmt.Fprint(opts.stdout, text)
+	_, err = fmt.Fprint(opts.stdout, text)
 	return err
 }
 
@@ -973,7 +984,10 @@ func checkSubcommandRequired(cmd Commander) error {
 		return nil
 	}
 	subs, err := allSubcommands(cmd)
-	if err != nil || len(subs) == 0 {
+	if err != nil {
+		return err
+	}
+	if len(subs) == 0 {
 		return nil // no subcommands defined, nothing to require
 	}
 	return fmt.Errorf("%w: %s", ErrMissingSubcommand, resolveInfo(cmd).name)
